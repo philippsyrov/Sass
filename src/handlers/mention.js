@@ -22,7 +22,6 @@ export async function handleMention(message, client) {
 
   // Check if this is the creator
   const isCreator = userId === process.env.CREATOR_ID;
-
   // If they just tagged us with nothing else
   if (!cleanContent) {
     if (isCreator) {
@@ -34,15 +33,23 @@ export async function handleMention(message, client) {
   }
 
   // Build context — include who is speaking so the AI understands the conversation
-  const recentContext = messageBuffer.getRecent(message.channel.id, 5);
+  const recentMessages = messageBuffer.getRecentRaw(message.channel.id, 5);
+  const recentContext = recentMessages.map(
+    (msg) => `${msg.author}${msg.isBot ? ' [BOT]' : ''}: ${msg.content}`
+  ).join('\n');
   const userContext = userMemory.getContext(userId);
+  const peopleContext = userMemory.buildPeopleContext(recentMessages);
+
+  // Check if someone is talking about the creator — protect them
+  const creatorName = userMemory.getCreatorName();
+  const mentionsCreator = !isCreator && userMemory.isAboutCreator(cleanContent);
 
   // Frame the message with the speaker's name
   const framedMessage = `${displayName} says: ${cleanContent}`;
 
   try {
     await message.channel.sendTyping();
-    const response = await getSassResponse(framedMessage, { recentContext, userContext, isCreator });
+    const response = await getSassResponse(framedMessage, { recentContext, userContext, peopleContext, isCreator, mentionsCreator, creatorName });
     await message.reply(response);
 
     // Don't track roast topics for the creator (we don't roast them)

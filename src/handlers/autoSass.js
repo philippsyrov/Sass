@@ -1,5 +1,6 @@
 import { getAutoSassDecision, getReactionDecision } from '../ai.js';
 import { messageBuffer } from '../messageBuffer.js';
+import { userMemory } from '../userMemory.js';
 import { isOnAutoSassCooldown, setAutoSassCooldown } from '../cooldown.js';
 
 // Track message count per channel since last auto-sass
@@ -18,6 +19,9 @@ const MIN_MESSAGES = parseInt(process.env.AUTO_SASS_MIN_MESSAGES, 10) || 2;
  * 4. AI decides if it's worth commenting on or SKIPs
  */
 export async function handleAutoSass(message, _client) {
+  // Never auto-sass the creator
+  if (message.author.id === process.env.CREATOR_ID) return;
+
   const channelId = message.channel.id;
 
   // Increment counter
@@ -36,8 +40,13 @@ export async function handleAutoSass(message, _client) {
   // Reset counter regardless of outcome
   messageCounters.set(channelId, 0);
 
-  const recentContext = messageBuffer.getRecent(channelId, 4);
-  if (!recentContext) return;
+  const recentMessages = messageBuffer.getRecentRaw(channelId, 4);
+  if (!recentMessages || recentMessages.length === 0) return;
+
+  const recentContext = recentMessages.map(
+    (msg) => `${msg.author}${msg.isBot ? ' [BOT]' : ''}: ${msg.content}`
+  ).join('\n');
+  const peopleContext = userMemory.buildPeopleContext(recentMessages);
 
   try {
     // 30% chance of just a reaction emoji instead of a full response
@@ -54,7 +63,8 @@ export async function handleAutoSass(message, _client) {
       }
     }
 
-    const remark = await getAutoSassDecision(recentContext);
+    const contextWithPeople = peopleContext ? `${peopleContext}\n\n${recentContext}` : recentContext;
+    const remark = await getAutoSassDecision(contextWithPeople);
 
     // AI decided the conversation wasn't worth commenting on
     if (!remark || remark.trim().toUpperCase() === 'SKIP') return;

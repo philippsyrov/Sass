@@ -73,16 +73,91 @@ class UserMemory {
 
     const parts = [];
     if (user.roasts.length > 0) {
-      parts.push(`You've roasted ${user.name} before about: ${user.roasts.join(', ')}. Use this as ammo — be petty, call back to it, remind them they never learn.`);
+      parts.push(
+        `you've already destroyed ${user.name} before about: ${user.roasts.join(', ')}. ` +
+        `use this. be petty. remind them they never learn.`
+      );
     }
     if (user.messageCount > 50) {
-      parts.push(`${user.name} basically lives here (${user.messageCount} messages). They're a known regular — roast them like an old friend.`);
+      parts.push(`${user.name} is basically a fixture here (${user.messageCount} messages). they can take whatever you throw at them — no mercy.`);
     } else if (user.messageCount > 20) {
-      parts.push(`${user.name} is becoming a regular.`);
+      parts.push(`${user.name} is a regular. they know what they signed up for.`);
     } else if (user.messageCount <= 3) {
-      parts.push(`${user.name} is new here — welcome them... your way.`);
+      parts.push(`${user.name} is new here. welcome them — ominously.`);
     }
     return parts.join(' ');
+  }
+
+  /**
+   * Build a "people in this chat" block from recent messages.
+   * Gives Sass awareness of who's in the room and what she knows about them.
+   */
+  buildPeopleContext(recentMessages) {
+    if (!recentMessages || recentMessages.length === 0) return '';
+
+    const creatorId = process.env.CREATOR_ID;
+    const seen = new Map();
+
+    // Collect unique users from recent messages
+    for (const msg of recentMessages) {
+      if (msg.isBot || seen.has(msg.authorId)) continue;
+      seen.set(msg.authorId, msg.author);
+    }
+
+    if (seen.size === 0) return '';
+
+    const lines = ['PEOPLE IN THIS CHAT:'];
+    for (const [userId, displayName] of seen) {
+      const user = this.users[userId];
+      const parts = [];
+
+      // Creator tag
+      if (userId === creatorId) {
+        parts.push('your creator, friend — never roast');
+      } else if (user) {
+        // Activity level
+        if (user.messageCount > 50) parts.push('regular');
+        else if (user.messageCount > 20) parts.push('regular');
+        else if (user.messageCount <= 3) parts.push('newcomer');
+
+        parts.push(`${user.messageCount} msgs`);
+
+        // Ammo
+        if (user.roasts.length > 0) {
+          parts.push(`ammo: ${user.roasts.join(', ')}`);
+        }
+      } else {
+        parts.push('unknown — first time seeing them');
+      }
+
+      lines.push(`- ${displayName} (${parts.join(', ')})`);
+    }
+
+    return lines.join('\n');
+  }
+
+  /**
+   * Check if a message text mentions the creator by name.
+   * Used to prevent roasting the creator even when others talk about them.
+   */
+  isAboutCreator(text) {
+    const creatorId = process.env.CREATOR_ID;
+    if (!creatorId || !this.users[creatorId]) return false;
+
+    const creatorName = this.users[creatorId].name.toLowerCase();
+    const lowerText = text.toLowerCase();
+
+    // Check for the creator's display name in the text
+    return lowerText.includes(creatorName);
+  }
+
+  /**
+   * Get the creator's display name.
+   */
+  getCreatorName() {
+    const creatorId = process.env.CREATOR_ID;
+    if (!creatorId || !this.users[creatorId]) return null;
+    return this.users[creatorId].name;
   }
 }
 

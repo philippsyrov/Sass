@@ -20,9 +20,11 @@ class MessageBuffer {
 
     const buffer = this.channels.get(channelId);
     buffer.push({
+      authorId: message.author.id,
       author: message.author.displayName || message.author.username,
       content: message.content,
       timestamp: message.createdTimestamp,
+      isBot: message.author.bot || false,
     });
 
     // Keep only the last N messages
