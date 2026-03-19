@@ -1,0 +1,30 @@
+{
+  "name": "sass",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "lint": "eslint src/",
+    "verify": "./scripts/verify.sh"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "ai",
+    "roast"
+  ],
+  "author": "",
+  "license": "ISC",
+  "description": "Sass — a sassy AI Discord bot that roasts users",
+  "dependencies": {
+    "discord.js": "^14.25.1",
+    "dotenv": "^17.3.1",
+    "ollama": "^0.6.3",
+    "openai": "^6.32.0"
+  },
+  "devDependencies": {
+    "eslint": "^10.0.3"
+  }
+}
