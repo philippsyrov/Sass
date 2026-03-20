@@ -79,7 +79,7 @@ class UserMemory {
       );
     }
     if (user.messageCount > 50) {
-      parts.push(`${user.name} is basically a fixture here (${user.messageCount} messages). they can take whatever you throw at them — no mercy.`);
+      parts.push(`${user.name} is basically a fixture here. they can take whatever you throw at them — no mercy.`);
     } else if (user.messageCount > 20) {
       parts.push(`${user.name} is a regular. they know what they signed up for.`);
     } else if (user.messageCount <= 3) {
@@ -115,12 +115,10 @@ class UserMemory {
       if (userId === creatorId) {
         parts.push('your creator, friend — never roast');
       } else if (user) {
-        // Activity level
-        if (user.messageCount > 50) parts.push('regular');
+        // Activity level — no exact counts, just vibes
+        if (user.messageCount > 50) parts.push('regular, been around a while');
         else if (user.messageCount > 20) parts.push('regular');
         else if (user.messageCount <= 3) parts.push('newcomer');
-
-        parts.push(`${user.messageCount} msgs`);
 
         // Ammo
         if (user.roasts.length > 0) {
