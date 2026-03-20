@@ -2,6 +2,7 @@ import { Client, GatewayIntentBits, Partials } from 'discord.js';
 import dotenv from 'dotenv';
 import { handleMention } from './handlers/mention.js';
 import { handleAutoSass } from './handlers/autoSass.js';
+import { handleCommand } from './commands.js';
 import { messageBuffer } from './messageBuffer.js';
 import { userMemory } from './userMemory.js';
 
@@ -13,6 +14,7 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMessageReactions,
+    GatewayIntentBits.GuildPresences,
   ],
   partials: [Partials.Message, Partials.Channel, Partials.Reaction],
 });
@@ -42,6 +44,22 @@ client.on('guildCreate', (guild) => {
     "somebody called for chaos? no? too bad.",
   ];
   sendToFirstChannel(guild, intros[Math.floor(Math.random() * intros.length)]);
+});
+
+// Slash commands
+client.on('interactionCreate', async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+  try {
+    await handleCommand(interaction);
+  } catch (err) {
+    console.error('Command failed:', err.message);
+    const reply = { content: "something broke. probably your fault.", ephemeral: true };
+    if (interaction.replied || interaction.deferred) {
+      await interaction.followUp(reply).catch(() => {});
+    } else {
+      await interaction.reply(reply).catch(() => {});
+    }
+  }
 });
 
 // Dedup guard — prevent processing the same message twice

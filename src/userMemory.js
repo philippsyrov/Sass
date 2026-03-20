@@ -222,6 +222,37 @@ class UserMemory {
   }
 
   /**
+   * Store a wild quote from a user. Keeps top 20 across all users.
+   */
+  addWildQuote(userId, quote) {
+    if (!this.users[userId]) return;
+    if (!this._wildQuotes) this._wildQuotes = this._loadWildQuotes();
+    this._wildQuotes.push({ userId, name: this.users[userId].name, quote, timestamp: Date.now() });
+    if (this._wildQuotes.length > 20) this._wildQuotes.shift();
+    this._saveWildQuotes();
+  }
+
+  getWildQuotes(limit = 10) {
+    if (!this._wildQuotes) this._wildQuotes = this._loadWildQuotes();
+    return this._wildQuotes.slice(-limit).reverse();
+  }
+
+  _loadWildQuotes() {
+    try {
+      const path = join(MEMORY_DIR, 'wild-quotes.json');
+      if (existsSync(path)) return JSON.parse(readFileSync(path, 'utf-8'));
+    } catch { /* ignore */ }
+    return [];
+  }
+
+  _saveWildQuotes() {
+    try {
+      if (!existsSync(MEMORY_DIR)) mkdirSync(MEMORY_DIR, { recursive: true });
+      writeFileSync(join(MEMORY_DIR, 'wild-quotes.json'), JSON.stringify(this._wildQuotes, null, 2));
+    } catch { /* ignore */ }
+  }
+
+  /**
    * Check if a message text mentions the creator by name.
    * Used to prevent roasting the creator even when others talk about them.
    */

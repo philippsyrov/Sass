@@ -1,7 +1,9 @@
+import { EmbedBuilder } from 'discord.js';
 import { getSassResponse, extractRoastTopic, analyzeProfile } from '../ai.js';
 import { messageBuffer } from '../messageBuffer.js';
 import { userMemory } from '../userMemory.js';
 import { isOnMentionCooldown, setMentionCooldown } from '../cooldown.js';
+import { storeMemory, searchMemories } from '../vectorMemory.js';
 
 /**
  * Handle direct @Sass mentions and replies to Sass.
@@ -32,20 +34,24 @@ export async function handleMention(message, client) {
 
   // Help command
   if (lowerClean === 'help' || lowerClean === 'commands' || lowerClean === '?') {
-    const help = [
-      "**don't tell me what to do but fine here's what i can do:**",
-      '',
-      '`@Sass <anything>` — talk to me. i\'ll probably roast you',
-      '`@Sass remember <fact>` — tell me something about yourself (i\'ll use it against you)',
-      '`@Sass remember @user <fact>` — snitch on someone',
-      '`@Sass leaderboard` — wall of shame, most roasted users',
-      '`@Sass profile` / `@Sass profile @user` — behavioral diagnosis',
-      '`@Sass help` — you\'re looking at it',
-      '',
-      'i also jump into convos when i feel like it. you can\'t stop that.',
-      'if you tell me to stop, i\'ll ignore you until you beg me to come back.',
-    ];
-    await message.reply(help.join('\n'));
+    const botAvatar = client.user.displayAvatarURL({ size: 256 });
+    const embed = new EmbedBuilder()
+      .setColor(0xFF4D6D)
+      .setAuthor({ name: 'Sass', iconURL: botAvatar })
+      .setThumbnail(botAvatar)
+      .setDescription("here's everything i can do. use it wisely (you won't).")
+      .addFields(
+        { name: '💬 Chat', value: '`@Sass <anything>` — talk to me\n`/sass <message>` — same but fancier', inline: true },
+        { name: '🧠 Memory', value: '`@Sass remember <fact>` — weaponize yourself\n`@Sass remember @user <fact>` — snitch', inline: true },
+        { name: '\u200b', value: '\u200b', inline: false },
+        { name: '📊 Stats', value: '`@Sass leaderboard` — wall of shame\n`@Sass profile [@user]` — diagnosis\n`/favorite` — punching bag\n`/halloffame` — wildest quotes', inline: true },
+        { name: '🎲 Fun', value: '`/8ball` · `/ship` · `/hottake`\n`/fortune` · `/quote` · `/npc`\n`/status @user` — roast their status', inline: true },
+        { name: '\u200b', value: '\u200b', inline: false },
+        { name: '⚠️ Fine Print', value: 'i jump into convos uninvited. tell me to stop and i\'ll ghost you until you beg.', inline: false },
+      )
+      .setFooter({ text: "i'm not a helper bot. i'm a problem.", iconURL: botAvatar })
+      .setTimestamp();
+    await message.reply({ embeds: [embed] });
     return;
   }
 
@@ -129,6 +135,7 @@ export async function handleMention(message, client) {
       return;
     }
     userMemory.remember(targetId, fact);
+    storeMemory(targetId, 'fact', fact).catch(() => {});
     const responses = [
       'noted. i\'ll use that later',
       'filed under "ammo" 📁',
@@ -145,6 +152,7 @@ export async function handleMention(message, client) {
   if (rememberSelfMatch && !rememberSelfMatch[1].startsWith('<@')) {
     const fact = rememberSelfMatch[1].trim();
     userMemory.remember(userId, fact);
+    storeMemory(userId, 'fact', fact).catch(() => {});
     const responses = [
       'noted. you just handed me a weapon',
       'filed. you\'ll regret this',
@@ -260,20 +268,36 @@ export async function handleMention(message, client) {
   const creatorName = userMemory.getCreatorName();
   const mentionsCreator = !isCreator && userMemory.isAboutCreator(cleanContent);
 
+  // Search vector memory for relevant ammo
+  let vectorContext = '';
+  if (!isCreator && cleanContent) {
+    try {
+      const memories = await searchMemories(cleanContent, { userId, limit: 3 });
+      if (memories.length > 0) {
+        vectorContext = 'RELEVANT MEMORIES (use these if they fit):\n' +
+          memories.map((m) => `- [${m.type}] ${m.content}`).join('\n');
+      }
+    } catch { /* vector search is non-critical */ }
+  }
+
   // Frame the message with the speaker's name
   const framedMessage = `${displayName} says: ${cleanContent}`;
 
   try {
     await message.channel.sendTyping();
     const imageUrl = imageAttachment ? imageAttachment.url : null;
-    const response = await getSassResponse(framedMessage, { recentContext, userContext, peopleContext, isCreator, mentionsCreator, creatorName, imageUrl });
+    const fullUserContext = [userContext, vectorContext].filter(Boolean).join('\n\n');
+    const response = await getSassResponse(framedMessage, { recentContext, userContext: fullUserContext, peopleContext, isCreator, mentionsCreator, creatorName, imageUrl });
     await message.reply(response);
 
     // Don't track roast topics for the creator (we don't roast them)
     if (!isCreator) {
       userMemory.recordRoast(userId);
       extractRoastTopic(cleanContent).then((topic) => {
-        if (topic) userMemory.addRoast(userId, topic);
+        if (topic) {
+          userMemory.addRoast(userId, topic);
+          storeMemory(userId, 'roast', topic).catch(() => {});
+        }
       }).catch(() => {});
     }
   } catch (err) {

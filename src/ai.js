@@ -155,7 +155,7 @@ const UTILITY_SYSTEM_PROMPT = `You are a utility function. Follow the instructio
 /**
  * Send a prompt to the configured AI provider and get a response.
  */
-async function queryAI(prompt, { systemPrompt = SASS_SYSTEM_PROMPT, imageUrl = null } = {}) {
+export async function queryAI(prompt, { systemPrompt = SASS_SYSTEM_PROMPT, imageUrl = null } = {}) {
   const provider = process.env.AI_PROVIDER || 'ollama';
 
   switch (provider) {

@@ -22,6 +22,18 @@ export async function handleAutoSass(message, _client) {
   // Never auto-sass the creator
   if (message.author.id === process.env.CREATOR_ID) return;
 
+  // Wild quote detection — store the craziest stuff people say
+  const text = message.content;
+  if (text.length > 10 && text.length < 200) {
+    const caps = (text.match(/[A-Z]/g) || []).length;
+    const capsRatio = caps / text.length;
+    const hasExcitement = /[!?]{2,}|lmao|wtf|bruh|bro what|no way|i can't/i.test(text);
+    const isWild = capsRatio > 0.5 || hasExcitement;
+    if (isWild) {
+      userMemory.addWildQuote(message.author.id, text);
+    }
+  }
+
   const channelId = message.channel.id;
 
   // Increment counter
