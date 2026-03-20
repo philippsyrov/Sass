@@ -529,15 +529,22 @@ export async function handleCommand(interaction) {
         break;
       }
 
-      const battleId = `${interaction.channelId}-${Date.now()}`;
+      // Create a thread for the battle
+      const thread = await interaction.channel.threads.create({
+        name: `⚔️ ${interaction.user.displayName} vs ${opponent.displayName}`,
+        autoArchiveDuration: 60,
+        reason: 'Roast battle',
+      });
+
+      const battleId = thread.id;
       activeBattles.set(battleId, {
         challenger: interaction.user,
         opponent,
-        channelId: interaction.channelId,
+        threadId: thread.id,
         round: 0,
         maxRounds: 3,
         scores: { [interaction.user.id]: [], [opponent.id]: [] },
-        phase: 'waiting', // waiting, active, judging
+        phase: 'waiting',
         currentTurn: null,
         timeout: null,
       });
@@ -546,20 +553,33 @@ export async function handleCommand(interaction) {
         .setColor(0xFF4D6D)
         .setTitle('⚔️ ROAST BATTLE CHALLENGE')
         .setDescription(
-          `**${interaction.user.displayName}** has challenged **${opponent.displayName}** to a roast battle!\n\n` +
-          `${opponent}, type **"accept"** in this channel within 60 seconds to begin.\n\n` +
-          `📋 **Rules:** 3 rounds, take turns roasting. i judge each round 1-10.\nhighest total score wins. loser gets a new title.`
-        )
-        .setFooter({ text: `Battle ID: ${battleId}` });
-
+          `**${interaction.user.displayName}** has challenged **${opponent.displayName}**!\n\n` +
+          `Head to ${thread} to watch or participate.`
+        );
       await interaction.reply({ embeds: [embed] });
+
+      const rulesEmbed = new EmbedBuilder()
+        .setColor(0xFF4D6D)
+        .setTitle(`⚔️ ${interaction.user.displayName} vs ${opponent.displayName}`)
+        .setDescription(
+          `**welcome to the ring.**\n\n` +
+          `📋 **Rules:**\n` +
+          `• 3 rounds, take turns roasting each other\n` +
+          `• i judge each roast 1-10\n` +
+          `• highest total score wins\n` +
+          `• only the fighters' messages count — spectators can watch\n\n` +
+          `${opponent}, type **"accept"** to begin. you have 60 seconds before i call you a coward.`
+        )
+        .setFooter({ text: 'may the sassiest win' });
+      await thread.send({ embeds: [rulesEmbed] });
 
       // Timeout after 60s
       const timeout = setTimeout(() => {
         const battle = activeBattles.get(battleId);
         if (battle && battle.phase === 'waiting') {
           activeBattles.delete(battleId);
-          interaction.followUp(`${opponent.displayName} didn't show up. certified coward behavior.`).catch(() => {});
+          thread.send(`${opponent.displayName} didn't show up. certified coward. archiving this embarrassment.`).catch(() => {});
+          setTimeout(() => thread.setArchived(true).catch(() => {}), 5000);
         }
       }, 60000);
       activeBattles.get(battleId).timeout = timeout;
@@ -658,86 +678,93 @@ function getZodiacEmoji(sign) {
 export const activeBattles = new Map();
 
 export async function handleBattleMessage(message) {
-  // Check if someone is accepting a battle
-  if (message.content.toLowerCase() === 'accept') {
-    for (const [_battleId, battle] of activeBattles) {
-      if (battle.channelId === message.channel.id && battle.phase === 'waiting' && message.author.id === battle.opponent.id) {
-        clearTimeout(battle.timeout);
-        battle.phase = 'active';
-        battle.round = 1;
-        battle.currentTurn = battle.challenger.id;
+  // Only handle messages in threads that are active battles
+  const battle = activeBattles.get(message.channel.id);
+  if (!battle) return false;
 
-        await message.channel.send(
-          `⚔️ **ROAST BATTLE: ${battle.challenger.displayName} vs ${battle.opponent.displayName}**\n\n` +
-          `**Round 1/3** — ${battle.challenger.displayName}, you're up first. Drop your best roast.`
-        );
-        return true;
-      }
-    }
+  // Ignore messages from non-participants
+  if (message.author.id !== battle.challenger.id && message.author.id !== battle.opponent.id) return false;
+
+  // Check if someone is accepting a battle
+  if (message.content.toLowerCase() === 'accept' && battle.phase === 'waiting' && message.author.id === battle.opponent.id) {
+    clearTimeout(battle.timeout);
+    battle.phase = 'active';
+    battle.round = 1;
+    battle.currentTurn = battle.challenger.id;
+
+    const roundEmbed = new EmbedBuilder()
+      .setColor(0xFF4D6D)
+      .setTitle('⚔️ ROUND 1/3')
+      .setDescription(`**${battle.challenger.displayName}**, you challenged — you go first.\n\ndrop your best roast.`);
+    await message.channel.send({ embeds: [roundEmbed] });
+    return true;
   }
 
   // Check if this is a roast in an active battle
-  for (const [battleId, battle] of activeBattles) {
-    if (battle.channelId === message.channel.id && battle.phase === 'active' && message.author.id === battle.currentTurn) {
-      // Score this roast
-      try {
-        const scoreResponse = await queryAI(
-          `You are judging a roast battle. Score this roast from 1-10 and give a one-sentence reaction.\n\nRoast: "${message.content}"\n\nRespond in EXACTLY this format:\nSCORE:N\nREACTION:your reaction`,
-          { systemPrompt: 'You judge roast battles. Be fair but entertaining. Score genuinely — a weak roast gets a 3-4, a decent one 5-7, a banger 8-10. One sentence reaction.' }
-        );
+  if (battle.phase === 'active' && message.author.id === battle.currentTurn) {
+    const battleId = message.channel.id;
+    try {
+      const scoreResponse = await queryAI(
+        `You are judging a roast battle. Score this roast from 1-10 and give a one-sentence reaction.\n\nRoast: "${message.content}"\n\nRespond in EXACTLY this format:\nSCORE:N\nREACTION:your reaction`,
+        { systemPrompt: 'You judge roast battles. Be fair but entertaining. Score genuinely — a weak roast gets a 3-4, a decent one 5-7, a banger 8-10. One sentence reaction.' }
+      );
 
-        const scoreLine = scoreResponse.match(/SCORE:(\d+)/);
-        const reactionLine = scoreResponse.match(/REACTION:(.+)/);
-        const score = scoreLine ? Math.min(10, Math.max(1, parseInt(scoreLine[1], 10))) : 5;
-        const reaction = reactionLine ? reactionLine[1].trim() : "interesting.";
+      const scoreLine = scoreResponse.match(/SCORE:(\d+)/);
+      const reactionLine = scoreResponse.match(/REACTION:(.+)/);
+      const score = scoreLine ? Math.min(10, Math.max(1, parseInt(scoreLine[1], 10))) : 5;
+      const reaction = reactionLine ? reactionLine[1].trim() : "interesting.";
 
-        battle.scores[message.author.id].push(score);
+      battle.scores[message.author.id].push(score);
 
-        const scoreBar = '🔥'.repeat(score) + '💨'.repeat(10 - score);
-        await message.reply(`${scoreBar} **${score}/10**\n*${reaction}*`);
+      const scoreBar = '🔥'.repeat(score) + '💨'.repeat(10 - score);
+      await message.reply(`${scoreBar} **${score}/10**\n*${reaction}*`);
 
-        // Switch turns or advance round
-        const otherId = message.author.id === battle.challenger.id ? battle.opponent.id : battle.challenger.id;
-        const otherName = message.author.id === battle.challenger.id ? battle.opponent.displayName : battle.challenger.displayName;
+      // Switch turns or advance round
+      const otherId = message.author.id === battle.challenger.id ? battle.opponent.id : battle.challenger.id;
+      const otherName = message.author.id === battle.challenger.id ? battle.opponent.displayName : battle.challenger.displayName;
 
-        if (battle.scores[otherId].length < battle.round) {
-          // Other person hasn't gone this round yet
-          battle.currentTurn = otherId;
-          await message.channel.send(`**${otherName}**, your turn. fire back.`);
+      if (battle.scores[otherId].length < battle.round) {
+        battle.currentTurn = otherId;
+        await message.channel.send(`**${otherName}**, your turn. fire back.`);
+      } else {
+        battle.round++;
+        if (battle.round > battle.maxRounds) {
+          const score1 = battle.scores[battle.challenger.id].reduce((a, b) => a + b, 0);
+          const score2 = battle.scores[battle.opponent.id].reduce((a, b) => a + b, 0);
+          const winner = score1 > score2 ? battle.challenger : score2 > score1 ? battle.opponent : null;
+          const loser = winner ? (winner.id === battle.challenger.id ? battle.opponent : battle.challenger) : null;
+
+          const embed = new EmbedBuilder()
+            .setColor(0xFFD700)
+            .setTitle('⚔️ ROAST BATTLE — FINAL RESULTS')
+            .addFields(
+              { name: battle.challenger.displayName, value: `${battle.scores[battle.challenger.id].join(' + ')} = **${score1}**`, inline: true },
+              { name: 'vs', value: '⚔️', inline: true },
+              { name: battle.opponent.displayName, value: `${battle.scores[battle.opponent.id].join(' + ')} = **${score2}**`, inline: true },
+              { name: '\u200b', value: '\u200b', inline: false },
+              { name: '🏆 Winner', value: winner ? `**${winner.displayName}** absolutely cooked.` : "it's a tie. you're both equally mid.", inline: false },
+            )
+            .setFooter({ text: loser ? `${loser.displayName} needs to sit down for a while` : 'nobody won. everybody lost.' });
+
+          await message.channel.send({ embeds: [embed] });
+          activeBattles.delete(battleId);
+          // Archive thread after 10 seconds
+          setTimeout(() => message.channel.setArchived(true).catch(() => {}), 10000);
         } else {
-          // Both went this round
-          battle.round++;
-          if (battle.round > battle.maxRounds) {
-            // Battle over — tally scores
-            const score1 = battle.scores[battle.challenger.id].reduce((a, b) => a + b, 0);
-            const score2 = battle.scores[battle.opponent.id].reduce((a, b) => a + b, 0);
-            const winner = score1 > score2 ? battle.challenger : score2 > score1 ? battle.opponent : null;
-            const loser = winner ? (winner.id === battle.challenger.id ? battle.opponent : battle.challenger) : null;
-
-            const embed = new EmbedBuilder()
-              .setColor(0xFFD700)
-              .setTitle('⚔️ ROAST BATTLE — RESULTS')
-              .addFields(
-                { name: battle.challenger.displayName, value: `${battle.scores[battle.challenger.id].join(' + ')} = **${score1}**`, inline: true },
-                { name: battle.opponent.displayName, value: `${battle.scores[battle.opponent.id].join(' + ')} = **${score2}**`, inline: true },
-                { name: '\u200b', value: '\u200b', inline: false },
-                { name: '🏆 Winner', value: winner ? `**${winner.displayName}** absolutely cooked.` : "it's a tie. you're both equally mid.", inline: false },
-              )
-              .setFooter({ text: loser ? `${loser.displayName} needs to sit down for a while` : 'nobody won. everybody lost.' });
-
-            await message.channel.send({ embeds: [embed] });
-            activeBattles.delete(battleId);
-          } else {
-            battle.currentTurn = battle.challenger.id;
-            await message.channel.send(`\n⚔️ **Round ${battle.round}/${battle.maxRounds}** — ${battle.challenger.displayName}, you're up.`);
-          }
+          const roundEmbed = new EmbedBuilder()
+            .setColor(0xFF4D6D)
+            .setTitle(`⚔️ ROUND ${battle.round}/${battle.maxRounds}`)
+            .setDescription(`**${battle.challenger.displayName}**, you're up.`);
+          battle.currentTurn = battle.challenger.id;
+          await message.channel.send({ embeds: [roundEmbed] });
         }
-      } catch {
-        await message.reply("my judging brain broke. i'll give that a 5 out of mercy.");
-        battle.scores[message.author.id].push(5);
       }
-      return true;
+    } catch {
+      await message.reply("my judging brain broke. i'll give that a 5 out of mercy.");
+      battle.scores[message.author.id].push(5);
     }
+    return true;
   }
+
   return false;
 }
