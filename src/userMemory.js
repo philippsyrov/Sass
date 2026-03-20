@@ -253,6 +253,63 @@ class UserMemory {
   }
 
   /**
+   * Track beef between two users.
+   */
+  addBeef(userId1, userId2, topic = null) {
+    if (!this._beefs) this._beefs = this._loadBeefs();
+    const key = [userId1, userId2].sort().join('-');
+    if (!this._beefs[key]) {
+      this._beefs[key] = { incidents: 0, firstBeef: Date.now(), lastBeef: 0, lastTopic: null };
+    }
+    this._beefs[key].incidents++;
+    this._beefs[key].lastBeef = Date.now();
+    if (topic) this._beefs[key].lastTopic = topic;
+    this._saveBeefs();
+  }
+
+  getBeef(userId1, userId2) {
+    if (!this._beefs) this._beefs = this._loadBeefs();
+    const key = [userId1, userId2].sort().join('-');
+    return this._beefs[key] || null;
+  }
+
+  _loadBeefs() {
+    try {
+      const path = join(MEMORY_DIR, 'beefs.json');
+      if (existsSync(path)) return JSON.parse(readFileSync(path, 'utf-8'));
+    } catch { /* ignore */ }
+    return {};
+  }
+
+  _saveBeefs() {
+    try {
+      if (!existsSync(MEMORY_DIR)) mkdirSync(MEMORY_DIR, { recursive: true });
+      writeFileSync(join(MEMORY_DIR, 'beefs.json'), JSON.stringify(this._beefs, null, 2));
+    } catch { /* ignore */ }
+  }
+
+  /**
+   * Get server-wide stats for wrapped command.
+   */
+  getServerStats() {
+    const entries = Object.entries(this.users).filter(([id]) => id !== process.env.CREATOR_ID);
+    if (entries.length === 0) return null;
+
+    const users = {};
+    let mostActive = null;
+    let mostRoasted = null;
+
+    for (const [id, data] of entries) {
+      users[id] = data;
+      if (!mostActive || data.messageCount > mostActive.messageCount) mostActive = data;
+      if (!mostRoasted || (data.timesRoasted || 0) > (mostRoasted.timesRoasted || 0)) mostRoasted = data;
+    }
+
+    const totalMessages = entries.reduce((sum, [, d]) => sum + d.messageCount, 0);
+    return { users, totalMessages, mostActive, mostRoasted };
+  }
+
+  /**
    * Check if a message text mentions the creator by name.
    * Used to prevent roasting the creator even when others talk about them.
    */

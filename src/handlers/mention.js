@@ -44,9 +44,10 @@ export async function handleMention(message, client) {
         { name: '💬 Chat', value: '`@Sass <anything>` — talk to me\n`/sass <message>` — same but fancier', inline: true },
         { name: '🧠 Memory', value: '`@Sass remember <fact>` — weaponize yourself\n`@Sass remember @user <fact>` — snitch', inline: true },
         { name: '\u200b', value: '\u200b', inline: false },
-        { name: '📊 Stats', value: '`@Sass leaderboard` — wall of shame\n`@Sass profile [@user]` — diagnosis\n`/favorite` — punching bag\n`/halloffame` — wildest quotes', inline: true },
-        { name: '🎲 Fun', value: '`/8ball` · `/ship` · `/hottake`\n`/fortune` · `/quote` · `/npc`\n`/status @user` — roast their status', inline: true },
+        { name: '📊 Stats', value: '`@Sass leaderboard` — wall of shame\n`@Sass profile [@user]` — diagnosis\n`/favorite` · `/halloffame` · `/beef`\n`/maincharacter` · `/wrapped`', inline: true },
+        { name: '🎲 Fun', value: '`/8ball` · `/ship` · `/hottake`\n`/fortune` · `/quote` · `/npc`\n`/roastas` · `/translate` · `/horoscope`\n`/conspiracy` · `/compliment`\n`/status @user` — roast their status', inline: true },
         { name: '\u200b', value: '\u200b', inline: false },
+        { name: '⚔️ Battle', value: '`/roastbattle @user` — PvP roast battle with AI judging', inline: false },
         { name: '⚠️ Fine Print', value: 'i jump into convos uninvited. tell me to stop and i\'ll ghost you until you beg.', inline: false },
       )
       .setFooter({ text: "i'm not a helper bot. i'm a problem.", iconURL: botAvatar })

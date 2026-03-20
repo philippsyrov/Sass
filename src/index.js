@@ -2,7 +2,7 @@ import { Client, GatewayIntentBits, Partials } from 'discord.js';
 import dotenv from 'dotenv';
 import { handleMention } from './handlers/mention.js';
 import { handleAutoSass } from './handlers/autoSass.js';
-import { handleCommand } from './commands.js';
+import { handleCommand, handleBattleMessage } from './commands.js';
 import { messageBuffer } from './messageBuffer.js';
 import { userMemory } from './userMemory.js';
 
@@ -84,6 +84,10 @@ client.on('messageCreate', async (message) => {
   // Track user
   const displayName = message.author.displayName || message.author.username;
   userMemory.seen(message.author.id, displayName);
+
+  // 0. Check if this is part of a roast battle
+  const isBattle = await handleBattleMessage(message);
+  if (isBattle) return;
 
   // 1. Direct mention or reply to Sass — always respond
   const isReplyToSass = message.reference && message.mentions.has(client.user);
