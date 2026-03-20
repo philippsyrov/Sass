@@ -3,6 +3,7 @@ import { messageBuffer } from '../messageBuffer.js';
 import { userMemory } from '../userMemory.js';
 import { isOnAutoSassCooldown, setAutoSassCooldown } from '../cooldown.js';
 import { getActivityDescription } from '../commands.js';
+import { mood } from '../mood.js';
 
 // Track message count per channel since last auto-sass
 const messageCounters = new Map();
@@ -32,7 +33,19 @@ export async function handleAutoSass(message, _client) {
     const isWild = capsRatio > 0.5 || hasExcitement;
     if (isWild) {
       userMemory.addWildQuote(message.author.id, text);
+      mood.shift('chaos');
     }
+  }
+
+  // Vibe detection — shift mood based on chat energy
+  const lowerText = text.toLowerCase();
+  const fightPatterns = /\b(stfu|fight me|you'?re wrong|shut up|no one asked|cope|L take|ratio)\b/i;
+  const wholesomePatterns = /\b(love you|you'?re (amazing|the best|awesome)|thank you|ily|<3|❤️|😊|🥰)\b/i;
+
+  if (fightPatterns.test(lowerText)) {
+    mood.shift('fighting');
+  } else if (wholesomePatterns.test(lowerText)) {
+    mood.shift('nice_to_each_other');
   }
 
   const channelId = message.channel.id;

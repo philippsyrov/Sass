@@ -33,7 +33,8 @@ export function buildHelpPages(botAvatar) {
         { name: '🥩 Beef', value: '`/beef @user1 @user2`\ncheck the beef history between two people.', inline: true },
         { name: '🎭 Main Character', value: '`/maincharacter`\nwho\'s the protagonist today? spoiler: not you.', inline: true },
         { name: '\u200b', value: '\u200b', inline: false },
-        { name: '📦 Wrapped', value: '`/wrapped`\nyour server\'s year in review. with my commentary.', inline: false },
+        { name: '📦 Wrapped', value: '`/wrapped`\nyour server\'s year in review. with my commentary.', inline: true },
+        { name: '🌡️ Mood', value: '`@Sass mood`\ncheck my current vibe. it shifts based on how you treat me.', inline: true },
       ),
 
     // Page 3 — Fun Commands

@@ -63,7 +63,21 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 // Dedup guard — prevent processing the same message twice
-const processedMessages = new Set();
+// Using a Map with timestamps for automatic cleanup
+const processedMessages = new Map();
+
+function isDuplicate(messageId) {
+  if (processedMessages.has(messageId)) return true;
+  processedMessages.set(messageId, Date.now());
+  // Clean up entries older than 60 seconds
+  if (processedMessages.size > 200) {
+    const cutoff = Date.now() - 60_000;
+    for (const [id, ts] of processedMessages) {
+      if (ts < cutoff) processedMessages.delete(id);
+    }
+  }
+  return false;
+}
 
 client.on('messageCreate', async (message) => {
   // Track ALL messages in buffer (including Sass's own) for conversation context
@@ -73,13 +87,7 @@ client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
   // Skip if we already processed this message (Discord can send duplicates)
-  if (processedMessages.has(message.id)) return;
-  processedMessages.add(message.id);
-  // Clean up old IDs to prevent memory leak
-  if (processedMessages.size > 100) {
-    const ids = [...processedMessages];
-    ids.slice(0, 50).forEach(id => processedMessages.delete(id));
-  }
+  if (isDuplicate(message.id)) return;
 
   // Track user
   const displayName = message.author.displayName || message.author.username;

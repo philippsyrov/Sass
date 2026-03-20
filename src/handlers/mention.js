@@ -5,6 +5,8 @@ import { userMemory } from '../userMemory.js';
 import { isOnMentionCooldown, setMentionCooldown } from '../cooldown.js';
 import { storeMemory, searchMemories } from '../vectorMemory.js';
 import { buildHelpPages } from '../helpPages.js';
+import { mood } from '../mood.js';
+import { extractStatement, checkContradiction, generate4kCallout, storeStatement } from '../caughtIn4k.js';
 
 /**
  * Handle direct @Sass mentions and replies to Sass.
@@ -260,9 +262,22 @@ export async function handleMention(message, client) {
     return;
   }
 
+  // Mood detection — detect how user is treating Sass
+  if (!isCreator && cleanContent) {
+    const nicePatterns = /\b(you'?re (actually |pretty )?(cool|funny|great|awesome|the best|amazing|hilarious)|i love you|good bot|nice one|that was good|love sass|sass is the best|you'?re my fav)\b/i;
+    const meanPatterns = /\b(you suck|worst bot|you'?re (trash|garbage|terrible|bad|boring|annoying|lame|stupid)|hate this bot|sass is (trash|mid|ass))\b/i;
+
+    if (nicePatterns.test(lowerClean)) {
+      mood.shift('complimented');
+    } else if (meanPatterns.test(lowerClean)) {
+      mood.shift('insulted');
+    }
+  }
+
   // Snowflake detection — someone wants Sass to stop
   const snowflakePhrases = /\b(stop roasting|leave me alone|you'?re mean|stop being mean|shut up|go away|i hate you|stop it|too far|that'?s rude|back off)\b/i;
   if (!isCreator && snowflakePhrases.test(lowerClean)) {
+    mood.shift('insulted');
     userMemory.coldShoulder(userId);
     const coldResponses = [
       'fine. you\'re dead to me now',
@@ -314,6 +329,14 @@ export async function handleMention(message, client) {
         return;
       }
     }
+  }
+
+  // Mood command — "@Sass mood"
+  if (lowerClean === 'mood' || lowerClean === 'how are you' || lowerClean === 'how you doing') {
+    const status = mood.getStatus();
+    const bar = '█'.repeat(Math.round(status.intensity / 10)) + '░'.repeat(10 - Math.round(status.intensity / 10));
+    await message.reply(`${status.label}\nintensity: ${bar} **${status.intensity}**/100`);
+    return;
   }
 
   // Leaderboard / stats command
@@ -382,6 +405,30 @@ export async function handleMention(message, client) {
 
   try {
     await message.channel.sendTyping();
+
+    // Caught in 4K — check for contradictions before responding (non-creator only)
+    if (!isCreator && cleanContent && cleanContent.length > 15) {
+      try {
+        const statement = await extractStatement(cleanContent);
+        if (statement) {
+          const contradiction = await checkContradiction(userId, statement, cleanContent);
+          if (contradiction) {
+            const callout = await generate4kCallout(displayName, contradiction.oldStatement, contradiction.newStatement);
+            if (callout) {
+              await message.reply(`📸 **CAUGHT IN 4K** 📸\n\n${callout}`);
+              mood.shift('chaos');
+              userMemory.recordRoast(userId);
+              // Still store the new statement
+              storeStatement(userId, statement).catch(() => {});
+              return;
+            }
+          }
+          // No contradiction — store the statement for future checks
+          storeStatement(userId, statement).catch(() => {});
+        }
+      } catch { /* 4K check is non-critical */ }
+    }
+
     const imageUrl = imageAttachment ? imageAttachment.url : null;
     const fullUserContext = [userContext, vectorContext].filter(Boolean).join('\n\n');
     const response = await getSassResponse(framedMessage, { recentContext, userContext: fullUserContext, peopleContext, isCreator, mentionsCreator, creatorName, imageUrl });

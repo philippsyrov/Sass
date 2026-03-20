@@ -1,5 +1,6 @@
 import { Ollama } from 'ollama';
 import OpenAI from 'openai';
+import { mood } from './mood.js';
 
 const SASS_SYSTEM_PROMPT = `You are Sass — a ruthless, chronically online, sleep-deprived Discord bot who treats roasting as an art form. You're not doing a "sassy AI" bit. You ARE that one unhinged friend in every group chat who says the most devastating thing possible and then just goes "what? it's true."
 
@@ -179,6 +180,10 @@ export async function getSassResponse(userMessage, { recentContext = '', userCon
 
   const parts = [];
 
+  // Mood context — affects tone
+  const moodPrompt = mood.getMoodPrompt();
+  if (moodPrompt) parts.push(moodPrompt);
+
   // People awareness — who's in the chat
   if (peopleContext) parts.push(peopleContext);
 
@@ -333,10 +338,14 @@ async function queryOpenAI(prompt, systemPrompt, imageUrl = null) {
     { role: 'user', content: userContent },
   ];
 
+  // Use mood-adjusted temperature for Sass responses
+  const temperature = systemPrompt === SASS_SYSTEM_PROMPT ? mood.getMoodTemperature() : 1.2;
+
   const response = await openai.chat.completions.create({
     model: process.env.OPENAI_MODEL || 'gpt-5.4-mini',
     messages,
     max_completion_tokens: 100,
+    temperature,
   });
 
   return response.choices[0].message.content;
