@@ -24,6 +24,26 @@ client.once('ready', () => {
   console.log(`Creator ID: ${process.env.CREATOR_ID || 'not set'}`);
 });
 
+// Send a message to the first available text channel in a guild
+async function sendToFirstChannel(guild, text) {
+  const channel = guild.channels.cache.find(
+    (ch) => ch.isTextBased() && !ch.isVoiceBased() && ch.permissionsFor(guild.members.me)?.has('SendMessages')
+  );
+  if (channel) await channel.send(text);
+}
+
+// Guild join — announce arrival
+client.on('guildCreate', (guild) => {
+  const intros = [
+    "i'm here. you're welcome.",
+    "alright who invited me. doesn't matter, i'm staying.",
+    "new server new victims",
+    "hey. i'm sass. i'm going to be a problem.",
+    "somebody called for chaos? no? too bad.",
+  ];
+  sendToFirstChannel(guild, intros[Math.floor(Math.random() * intros.length)]);
+});
+
 // Dedup guard — prevent processing the same message twice
 const processedMessages = new Set();
 

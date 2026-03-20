@@ -77,6 +77,7 @@ export async function handleAutoSass(message, _client) {
     await new Promise((resolve) => setTimeout(resolve, delay));
 
     await message.reply(remark);
+    userMemory.recordRoast(message.author.id);
   } catch (err) {
     // Auto-sass failures are silent — she just stays quiet
     console.error('Auto-sass failed:', err.message);

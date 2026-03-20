@@ -43,7 +43,7 @@ class UserMemory {
    */
   seen(userId, displayName) {
     if (!this.users[userId]) {
-      this.users[userId] = { name: displayName, roasts: [], lastSeen: 0, messageCount: 0 };
+      this.users[userId] = { name: displayName, roasts: [], lastSeen: 0, messageCount: 0, timesRoasted: 0 };
     }
     this.users[userId].name = displayName;
     this.users[userId].lastSeen = Date.now();
@@ -72,6 +72,11 @@ class UserMemory {
     if (!user) return '';
 
     const parts = [];
+    if (user.facts && user.facts.length > 0) {
+      parts.push(
+        `things you know about ${user.name}: ${user.facts.join('; ')}. weaponize this.`
+      );
+    }
     if (user.roasts.length > 0) {
       parts.push(
         `you've already destroyed ${user.name} before about: ${user.roasts.join(', ')}. ` +
@@ -121,6 +126,9 @@ class UserMemory {
         else if (user.messageCount <= 3) parts.push('newcomer');
 
         // Ammo
+        if (user.facts && user.facts.length > 0) {
+          parts.push(`intel: ${user.facts.join('; ')}`);
+        }
         if (user.roasts.length > 0) {
           parts.push(`ammo: ${user.roasts.join(', ')}`);
         }
@@ -132,6 +140,85 @@ class UserMemory {
     }
 
     return lines.join('\n');
+  }
+
+  /**
+   * Increment the roast counter for a user.
+   */
+  recordRoast(userId) {
+    if (!this.users[userId]) return;
+    this.users[userId].timesRoasted = (this.users[userId].timesRoasted || 0) + 1;
+    this._save();
+  }
+
+  /**
+   * Get the roast leaderboard — top N most roasted users.
+   */
+  getLeaderboard(limit = 10) {
+    return Object.entries(this.users)
+      .filter(([id]) => id !== process.env.CREATOR_ID)
+      .map(([id, data]) => ({ id, name: data.name, timesRoasted: data.timesRoasted || 0 }))
+      .sort((a, b) => b.timesRoasted - a.timesRoasted)
+      .slice(0, limit);
+  }
+
+  /**
+   * Store a fact about a user that Sass can weaponize later.
+   * Keeps last 10 facts per user.
+   */
+  remember(userId, fact) {
+    if (!this.users[userId]) return;
+    if (!this.users[userId].facts) this.users[userId].facts = [];
+    this.users[userId].facts.push(fact);
+    if (this.users[userId].facts.length > 10) {
+      this.users[userId].facts.shift();
+    }
+    this._save();
+  }
+
+  /**
+   * Get remembered facts about a user.
+   */
+  getFacts(userId) {
+    return this.users[userId]?.facts || [];
+  }
+
+  /**
+   * Put a user on the cold shoulder list. They asked Sass to stop.
+   * They'll need to win her back (3-5 attempts).
+   */
+  coldShoulder(userId) {
+    if (!this.users[userId]) return;
+    const attemptsNeeded = 3 + Math.floor(Math.random() * 3); // 3-5
+    this.users[userId].coldShoulder = { active: true, attemptsNeeded, attemptsMade: 0 };
+    this._save();
+  }
+
+  /**
+   * Check if user is on the cold shoulder list.
+   * Returns: false | { phase: 'icy' | 'warming' | 'forgiven', attemptsMade, attemptsNeeded }
+   */
+  getColdShoulder(userId) {
+    const cs = this.users[userId]?.coldShoulder;
+    if (!cs || !cs.active) return false;
+    const progress = cs.attemptsMade / cs.attemptsNeeded;
+    if (progress >= 1) return { phase: 'forgiven' };
+    if (progress >= 0.6) return { phase: 'warming', attemptsMade: cs.attemptsMade, attemptsNeeded: cs.attemptsNeeded };
+    return { phase: 'icy', attemptsMade: cs.attemptsMade, attemptsNeeded: cs.attemptsNeeded };
+  }
+
+  /**
+   * Record an attempt to win Sass back. Returns the current phase after the attempt.
+   */
+  coldShoulderAttempt(userId) {
+    const cs = this.users[userId]?.coldShoulder;
+    if (!cs || !cs.active) return false;
+    cs.attemptsMade++;
+    if (cs.attemptsMade >= cs.attemptsNeeded) {
+      cs.active = false;
+    }
+    this._save();
+    return this.getColdShoulder(userId);
   }
 
   /**
