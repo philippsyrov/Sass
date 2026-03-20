@@ -31,9 +31,20 @@ export async function handleMention(message, client) {
   // If they just tagged us with nothing else (and no image)
   if (!cleanContent && !imageAttachment) {
     if (isCreator) {
-      await message.reply("heyyy bestie, what's up?");
+      const creatorPings = ['yeah?', "what's up", 'hm?', 'you good?', "i'm here lol"];
+      await message.reply(creatorPings[Math.floor(Math.random() * creatorPings.length)]);
     } else {
-      await message.reply("You rang? Use your words, I don't do telepathy.");
+      const emptyPings = [
+        'use your words',
+        'you just gonna stare or',
+        'bro typed @ and then gave up',
+        '...was there a point coming or',
+        'the silence is almost worse than what you were gonna say',
+        'you rang?',
+        'okay and?',
+        'that was a whole lot of nothing',
+      ];
+      await message.reply(emptyPings[Math.floor(Math.random() * emptyPings.length)]);
     }
     return;
   }
