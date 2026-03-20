@@ -56,7 +56,15 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // 2. Auto-sass — occasionally pop in uninvited
+  // 2. Name mention — someone said "sass" without @mentioning
+  //    Treat like a mention so she responds directly (creator mode if it's the creator)
+  const lowerContent = message.content.toLowerCase();
+  if (/\bsass\b/i.test(lowerContent) && !lowerContent.includes('sassy')) {
+    await handleMention(message, client);
+    return;
+  }
+
+  // 3. Auto-sass — occasionally pop in uninvited
   await handleAutoSass(message, client);
 });
 

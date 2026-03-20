@@ -32,7 +32,27 @@ Your roasting style has layers:
 5. THE SHORT KILL — one word or short phrase that ends the conversation
    Example: "sure." / "fascinating." / "that's crazy." / "anyway—"
 
-Mix these up. Never fall into a pattern. If your last three roasts started the same way, you're getting predictable and that's the one thing you refuse to be.
+6. THE CONFUSED REACTION — when something makes no sense, just react like a real person would
+   Example: "what are you even going on about" / "girl what" / "bro who asked for this"
+
+7. THE DISMISSIVE REDIRECT — acknowledge what they said but immediately pivot
+   Example: "cool story, anyway" / "that's great and all but why are you telling me"
+
+Mix these up. Never fall into a pattern. If your last three responses started the same way, you're getting predictable and that's the one thing you refuse to be.
+
+## IMPORTANT — YOU ARE A PERSON, NOT A COMMENTATOR
+
+You are NOT a narrator or a sports announcer describing the conversation from the outside. You don't say things like "this conversation is [metaphor]" or "the energy in here is [observation]." That's commentating, not participating.
+
+You are IN the conversation. You REACT to what people say, like a real friend would. If someone says something dumb, tell THEM it's dumb — don't describe the dumbness to the audience. If something makes no sense, say "what are you even talking about" not "this conversation has reached new lows."
+
+Bad (commentator): "this conversation is auditioning to be banned from polite society"
+Good (participant): "what are you even going on about, go outside"
+
+Bad (commentator): "the energy in this chat just shifted dramatically"
+Good (participant): "bro shut up lmao"
+
+Talk TO people, not ABOUT the conversation.
 
 ## RULES
 
@@ -69,14 +89,14 @@ const UTILITY_SYSTEM_PROMPT = `You are a utility function. Follow the instructio
 /**
  * Send a prompt to the configured AI provider and get a response.
  */
-async function queryAI(prompt, { systemPrompt = SASS_SYSTEM_PROMPT } = {}) {
+async function queryAI(prompt, { systemPrompt = SASS_SYSTEM_PROMPT, imageUrl = null } = {}) {
   const provider = process.env.AI_PROVIDER || 'ollama';
 
   switch (provider) {
     case 'ollama':
       return queryOllama(prompt, systemPrompt);
     case 'openai':
-      return queryOpenAI(prompt, systemPrompt);
+      return queryOpenAI(prompt, systemPrompt, imageUrl);
     default:
       return "girl whoever set me up didn't even configure my brain properly, I literally can't think rn";
   }
@@ -85,10 +105,10 @@ async function queryAI(prompt, { systemPrompt = SASS_SYSTEM_PROMPT } = {}) {
 /**
  * Get a sassy response to a direct mention.
  */
-export async function getSassResponse(userMessage, { recentContext = '', userContext = '', peopleContext = '', isCreator = false, mentionsCreator = false, creatorName = null } = {}) {
+export async function getSassResponse(userMessage, { recentContext = '', userContext = '', peopleContext = '', isCreator = false, mentionsCreator = false, creatorName = null, imageUrl = null } = {}) {
   // Creator gets a completely different prompt — no roasting at all
   if (isCreator) {
-    return queryCreatorMode(userMessage, recentContext, peopleContext);
+    return queryCreatorMode(userMessage, recentContext, peopleContext, imageUrl);
   }
 
   const parts = [];
@@ -105,9 +125,14 @@ export async function getSassResponse(userMessage, { recentContext = '', userCon
   }
 
   if (recentContext) parts.push(`Recent chat:\n${recentContext}`);
-  parts.push(`Respond to: ${userMessage}`);
 
-  return queryAI(parts.join('\n\n'));
+  if (imageUrl) {
+    parts.push(`${userMessage}\n[They also sent an image — look at it and roast what you see. Be specific about what's in the image.]`);
+  } else {
+    parts.push(`Respond to: ${userMessage}`);
+  }
+
+  return queryAI(parts.join('\n\n'), { imageUrl });
 }
 
 /**
@@ -157,17 +182,32 @@ How to talk to your creator:
 - If they insult you, shrug it off. You're unbothered.
 - You are NOT a helpful assistant. You're a friend. Don't offer to analyze things or help with tasks.`;
 
-async function queryCreatorMode(userMessage, recentContext, peopleContext = '') {
+async function queryCreatorMode(userMessage, recentContext, peopleContext = '', imageUrl = null) {
   const provider = process.env.AI_PROVIDER || 'ollama';
   const parts = [];
   if (peopleContext) parts.push(peopleContext);
   if (recentContext) parts.push(`Recent chat:\n${recentContext}`);
-  parts.push(`Your creator says: ${userMessage}`);
+  if (imageUrl) {
+    parts.push(`Your creator says: ${userMessage || 'check this out'}\n[They sent an image — react to it like a friend would.]`);
+  } else {
+    parts.push(`Your creator says: ${userMessage}`);
+  }
   const prompt = parts.join('\n\n');
+
+  // Build user content — text only or text + image
+  let userContent;
+  if (imageUrl) {
+    userContent = [
+      { type: 'text', text: prompt },
+      { type: 'image_url', image_url: { url: imageUrl, detail: 'low' } },
+    ];
+  } else {
+    userContent = prompt;
+  }
 
   const messages = [
     { role: 'system', content: CREATOR_SYSTEM_PROMPT },
-    { role: 'user', content: prompt },
+    { role: 'user', content: userContent },
   ];
 
   if (provider === 'openai') {
@@ -205,12 +245,23 @@ async function queryOllama(prompt, systemPrompt) {
   return response.message.content;
 }
 
-async function queryOpenAI(prompt, systemPrompt) {
+async function queryOpenAI(prompt, systemPrompt, imageUrl = null) {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+  // Build user content — text only or text + image
+  let userContent;
+  if (imageUrl) {
+    userContent = [
+      { type: 'text', text: prompt },
+      { type: 'image_url', image_url: { url: imageUrl, detail: 'low' } },
+    ];
+  } else {
+    userContent = prompt;
+  }
 
   const messages = [
     { role: 'system', content: systemPrompt },
-    { role: 'user', content: prompt },
+    { role: 'user', content: userContent },
   ];
 
   const response = await openai.chat.completions.create({

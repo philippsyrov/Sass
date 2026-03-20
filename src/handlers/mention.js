@@ -22,8 +22,14 @@ export async function handleMention(message, client) {
 
   // Check if this is the creator
   const isCreator = userId === process.env.CREATOR_ID;
-  // If they just tagged us with nothing else
-  if (!cleanContent) {
+
+  // Check for image attachments (jpg, png, gif, webp)
+  const imageAttachment = message.attachments.find((a) =>
+    a.contentType && a.contentType.startsWith('image/')
+  );
+
+  // If they just tagged us with nothing else (and no image)
+  if (!cleanContent && !imageAttachment) {
     if (isCreator) {
       await message.reply("heyyy bestie, what's up?");
     } else {
@@ -33,7 +39,7 @@ export async function handleMention(message, client) {
   }
 
   // Build context — include who is speaking so the AI understands the conversation
-  const recentMessages = messageBuffer.getRecentRaw(message.channel.id, 5);
+  const recentMessages = messageBuffer.getRecentRaw(message.channel.id, 10);
   const recentContext = recentMessages.map(
     (msg) => `${msg.author}${msg.isBot ? ' [BOT]' : ''}: ${msg.content}`
   ).join('\n');
@@ -49,7 +55,8 @@ export async function handleMention(message, client) {
 
   try {
     await message.channel.sendTyping();
-    const response = await getSassResponse(framedMessage, { recentContext, userContext, peopleContext, isCreator, mentionsCreator, creatorName });
+    const imageUrl = imageAttachment ? imageAttachment.url : null;
+    const response = await getSassResponse(framedMessage, { recentContext, userContext, peopleContext, isCreator, mentionsCreator, creatorName, imageUrl });
     await message.reply(response);
 
     // Don't track roast topics for the creator (we don't roast them)

@@ -40,7 +40,7 @@ export async function handleAutoSass(message, _client) {
   // Reset counter regardless of outcome
   messageCounters.set(channelId, 0);
 
-  const recentMessages = messageBuffer.getRecentRaw(channelId, 4);
+  const recentMessages = messageBuffer.getRecentRaw(channelId, 8);
   if (!recentMessages || recentMessages.length === 0) return;
 
   const recentContext = recentMessages.map(
