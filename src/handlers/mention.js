@@ -1,9 +1,10 @@
-import { EmbedBuilder } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } from 'discord.js';
 import { getSassResponse, extractRoastTopic, analyzeProfile, queryAI } from '../ai.js';
 import { messageBuffer } from '../messageBuffer.js';
 import { userMemory } from '../userMemory.js';
 import { isOnMentionCooldown, setMentionCooldown } from '../cooldown.js';
 import { storeMemory, searchMemories } from '../vectorMemory.js';
+import { buildHelpPages } from '../helpPages.js';
 
 /**
  * Handle direct @Sass mentions and replies to Sass.
@@ -32,27 +33,39 @@ export async function handleMention(message, client) {
 
   const lowerClean = cleanContent.toLowerCase();
 
-  // Help command
+  // Help command — paginated embeds with button navigation
   if (lowerClean === 'help' || lowerClean === 'commands' || lowerClean === '?') {
     const botAvatar = client.user.displayAvatarURL({ size: 256 });
-    const embed = new EmbedBuilder()
-      .setColor(0xFF4D6D)
-      .setAuthor({ name: 'Sass', iconURL: botAvatar })
-      .setThumbnail(botAvatar)
-      .setDescription("here's everything i can do. use it wisely (you won't).\n\n*i learn from every interaction. the more you talk, the more ammo i have.*")
-      .addFields(
-        { name: '💬 Chat', value: '`@Sass <anything>` — talk to me\n`/sass <message>` — same but fancier', inline: true },
-        { name: '🧠 Memory', value: '`@Sass remember <fact>` — weaponize yourself\n`@Sass remember @user <fact>` — snitch', inline: true },
-        { name: '\u200b', value: '\u200b', inline: false },
-        { name: '📊 Stats', value: '`@Sass leaderboard` — wall of shame\n`@Sass profile [@user]` — diagnosis\n`/favorite` · `/halloffame` · `/beef`\n`/maincharacter` · `/wrapped`', inline: true },
-        { name: '🎲 Fun', value: '`/8ball` · `/ship` · `/hottake`\n`/fortune` · `/quote` · `/npc`\n`/roastas` · `/translate` · `/horoscope`\n`/conspiracy` · `/compliment`\n`/status @user` — roast their status', inline: true },
-        { name: '\u200b', value: '\u200b', inline: false },
-        { name: '⚔️ Battle', value: '`/roastbattle @user` — PvP roast battle with AI judging', inline: false },
-        { name: '⚠️ Fine Print', value: 'i jump into convos uninvited. tell me to stop and i\'ll ghost you until you beg.', inline: false },
-      )
-      .setFooter({ text: "i'm not a helper bot. i'm a problem.", iconURL: botAvatar })
-      .setTimestamp();
-    await message.reply({ embeds: [embed] });
+    const pages = buildHelpPages(botAvatar);
+
+    const buttons = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('help_prev').setLabel('◀').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('help_next').setLabel('▶').setStyle(ButtonStyle.Secondary),
+    );
+
+    let currentPage = 0;
+    const reply = await message.reply({ embeds: [pages[0]], components: [buttons] });
+
+    const collector = reply.createMessageComponentCollector({
+      componentType: ComponentType.Button,
+      time: 120_000,
+    });
+
+    collector.on('collect', async (btn) => {
+      currentPage = btn.customId === 'help_prev'
+        ? (currentPage > 0 ? currentPage - 1 : pages.length - 1)
+        : (currentPage < pages.length - 1 ? currentPage + 1 : 0);
+      await btn.update({ embeds: [pages[currentPage]], components: [buttons] });
+    });
+
+    collector.on('end', () => {
+      const disabledButtons = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('help_prev').setLabel('◀').setStyle(ButtonStyle.Secondary).setDisabled(true),
+        new ButtonBuilder().setCustomId('help_next').setLabel('▶').setStyle(ButtonStyle.Secondary).setDisabled(true),
+      );
+      reply.edit({ components: [disabledButtons] }).catch(() => {});
+    });
+
     return;
   }
 

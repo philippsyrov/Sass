@@ -1,7 +1,8 @@
-import { getAutoSassDecision, getReactionDecision } from '../ai.js';
+import { getAutoSassDecision, getReactionDecision, queryAI } from '../ai.js';
 import { messageBuffer } from '../messageBuffer.js';
 import { userMemory } from '../userMemory.js';
 import { isOnAutoSassCooldown, setAutoSassCooldown } from '../cooldown.js';
+import { getActivityDescription } from '../commands.js';
 
 // Track message count per channel since last auto-sass
 const messageCounters = new Map();
@@ -51,6 +52,40 @@ export async function handleAutoSass(message, _client) {
 
   // Reset counter regardless of outcome
   messageCounters.set(channelId, 0);
+
+  // 15% chance to roast someone's gaming activity instead of conversation
+  if (Math.random() < 0.15) {
+    try {
+      const guild = message.guild;
+      if (guild) {
+        const members = await guild.members.fetch({ withPresences: true });
+        const gamers = members.filter((m) => {
+          if (m.user.bot || m.user.id === process.env.CREATOR_ID) return false;
+          const activity = getActivityDescription(m.presence);
+          return activity && !activity.startsWith('custom status');
+        });
+        if (gamers.size > 0) {
+          const target = gamers.random();
+          const activity = getActivityDescription(target.presence);
+          const roast = await queryAI(
+            `You just noticed ${target.displayName} has been ${activity}. Call them out publicly. Be specific about the game/app. One or two sentences. Mock the time spent if applicable.`,
+            { systemPrompt: 'You are Sass. You\'re publicly shaming someone for their Discord activity. Lowercase. Funny and brutal. Make it feel like you just caught them.' }
+          );
+          if (roast && roast.trim().toUpperCase() !== 'SKIP') {
+            setAutoSassCooldown(channelId);
+            await message.channel.sendTyping();
+            const delay = 1000 + Math.random() * 2000;
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            await message.channel.send(`👀 hey <@${target.user.id}>, ${roast}`);
+            userMemory.recordRoast(target.user.id);
+            return;
+          }
+        }
+      }
+    } catch {
+      // Activity roast failed — fall through to normal auto-sass
+    }
+  }
 
   const recentMessages = messageBuffer.getRecentRaw(channelId, 8);
   if (!recentMessages || recentMessages.length === 0) return;

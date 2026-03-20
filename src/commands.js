@@ -1,6 +1,37 @@
-import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } from 'discord.js';
 import { queryAI } from './ai.js';
 import { userMemory } from './userMemory.js';
+import { buildHelpPages } from './helpPages.js';
+
+// --- Activity description helper ---
+export function getActivityDescription(presence) {
+  if (!presence?.activities || presence.activities.length === 0) return null;
+
+  const parts = [];
+  for (const activity of presence.activities) {
+    // ActivityType: 0=Playing, 1=Streaming, 2=Listening, 3=Watching, 4=Custom, 5=Competing
+    switch (activity.type) {
+      case 0: { // Playing
+        let desc = `playing ${activity.name}`;
+        if (activity.details) desc += ` — ${activity.details}`;
+        if (activity.state) desc += ` (${activity.state})`;
+        if (activity.timestamps?.start) {
+          const elapsed = Math.floor((Date.now() - activity.timestamps.start) / 60000);
+          if (elapsed >= 60) desc += ` for ${Math.floor(elapsed / 60)}h ${elapsed % 60}m`;
+          else if (elapsed > 0) desc += ` for ${elapsed}m`;
+        }
+        parts.push(desc);
+        break;
+      }
+      case 1: parts.push(`streaming ${activity.name}${activity.url ? ` on ${activity.url}` : ''}`); break;
+      case 2: parts.push(`listening to ${activity.details || activity.name}${activity.state ? ` by ${activity.state}` : ''}`); break;
+      case 3: parts.push(`watching ${activity.name}`); break;
+      case 4: if (activity.state) parts.push(`custom status: "${activity.state}"`); break;
+      case 5: parts.push(`competing in ${activity.name}`); break;
+    }
+  }
+  return parts.length > 0 ? parts.join(', ') : null;
+}
 
 // --- Main Character tracking ---
 const mainCharacters = new Map(); // guildId -> { name, userId, date }
@@ -209,24 +240,27 @@ export async function handleCommand(interaction) {
 
     case 'help': {
       const botAvatar = interaction.client.user.displayAvatarURL({ size: 256 });
-      const embed = new EmbedBuilder()
-        .setColor(0xFF4D6D)
-        .setAuthor({ name: 'Sass', iconURL: botAvatar })
-        .setThumbnail(botAvatar)
-        .setDescription("here's everything i can do. use it wisely (you won't).\n\n*i learn from every interaction. the more you talk, the more ammo i have.*")
-        .addFields(
-          { name: '💬 Chat', value: '`@Sass <anything>` — talk to me\n`/sass <message>` — same but fancier', inline: true },
-          { name: '🧠 Memory', value: '`@Sass remember <fact>` — weaponize yourself\n`@Sass remember @user <fact>` — snitch', inline: true },
-          { name: '\u200b', value: '\u200b', inline: false },
-          { name: '📊 Stats', value: '`@Sass leaderboard` — wall of shame\n`@Sass profile [@user]` — diagnosis\n`/favorite` · `/halloffame` · `/beef`\n`/maincharacter` · `/wrapped`', inline: true },
-          { name: '🎲 Fun', value: '`/8ball` · `/ship` · `/hottake`\n`/fortune` · `/quote` · `/npc`\n`/roastas` · `/translate` · `/horoscope`\n`/conspiracy` · `/compliment`\n`/status @user` — roast their status', inline: true },
-          { name: '\u200b', value: '\u200b', inline: false },
-          { name: '⚔️ Battle', value: '`/roastbattle @user` — PvP roast battle with AI judging', inline: false },
-          { name: '⚠️ Fine Print', value: 'i jump into convos uninvited. tell me to stop and i\'ll ghost you until you beg.', inline: false },
-        )
-        .setFooter({ text: "i'm not a helper bot. i'm a problem.", iconURL: botAvatar })
-        .setTimestamp();
-      await interaction.reply({ embeds: [embed] });
+      const helpPages = buildHelpPages(botAvatar);
+      const helpButtons = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('help_prev').setLabel('◀').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('help_next').setLabel('▶').setStyle(ButtonStyle.Secondary),
+      );
+      let helpPage = 0;
+      const helpReply = await interaction.reply({ embeds: [helpPages[0]], components: [helpButtons], fetchReply: true });
+      const helpCollector = helpReply.createMessageComponentCollector({ componentType: ComponentType.Button, time: 120_000 });
+      helpCollector.on('collect', async (btn) => {
+        helpPage = btn.customId === 'help_prev'
+          ? (helpPage > 0 ? helpPage - 1 : helpPages.length - 1)
+          : (helpPage < helpPages.length - 1 ? helpPage + 1 : 0);
+        await btn.update({ embeds: [helpPages[helpPage]], components: [helpButtons] });
+      });
+      helpCollector.on('end', () => {
+        const disabled = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('help_prev').setLabel('◀').setStyle(ButtonStyle.Secondary).setDisabled(true),
+          new ButtonBuilder().setCustomId('help_next').setLabel('▶').setStyle(ButtonStyle.Secondary).setDisabled(true),
+        );
+        helpReply.edit({ components: [disabled] }).catch(() => {});
+      });
       break;
     }
 
@@ -322,24 +356,24 @@ export async function handleCommand(interaction) {
       try {
         const member = await interaction.guild.members.fetch(targetUser.id);
         const presence = member.presence;
-        const status = presence?.activities?.[0]?.state || presence?.activities?.[0]?.name || null;
         const onlineStatus = presence?.status || 'offline';
 
-        if (!status && onlineStatus === 'offline') {
+        if (!presence || onlineStatus === 'offline') {
           await interaction.editReply(`${targetUser.displayName} is offline. probably for the best.`);
           break;
         }
 
-        if (!status) {
+        const activityInfo = getActivityDescription(presence);
+        if (!activityInfo) {
           await interaction.editReply(`${targetUser.displayName} doesn't have a status. the void speaks louder.`);
           break;
         }
 
         const response = await queryAI(
-          `Roast this person's Discord status. Their name is "${targetUser.displayName}" and their status says: "${status}". One brutal sentence.`,
-          { systemPrompt: 'You are Sass, a sassy Discord bot. Roast their status. One sentence. Lowercase. Brutal.' }
+          `Roast this person's Discord activity. Their name is "${targetUser.displayName}" and they are: ${activityInfo}. Be specific about the activity. One or two brutal sentences.`,
+          { systemPrompt: 'You are Sass, a sassy Discord bot. Roast their activity/status. Lowercase. Brutal and funny. Reference the specific game/app/activity.' }
         );
-        await interaction.editReply(`**${targetUser.displayName}**'s status: *"${status}"*\n\n${response}`);
+        await interaction.editReply(`**${targetUser.displayName}**: *${activityInfo}*\n\n${response}`);
       } catch {
         await interaction.editReply("couldn't read their status. they're probably hiding from me. smart.");
       }
