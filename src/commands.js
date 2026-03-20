@@ -213,7 +213,7 @@ export async function handleCommand(interaction) {
         .setColor(0xFF4D6D)
         .setAuthor({ name: 'Sass', iconURL: botAvatar })
         .setThumbnail(botAvatar)
-        .setDescription("here's everything i can do. use it wisely (you won't).")
+        .setDescription("here's everything i can do. use it wisely (you won't).\n\n*i learn from every interaction. the more you talk, the more ammo i have.*")
         .addFields(
           { name: '💬 Chat', value: '`@Sass <anything>` — talk to me\n`/sass <message>` — same but fancier', inline: true },
           { name: '🧠 Memory', value: '`@Sass remember <fact>` — weaponize yourself\n`@Sass remember @user <fact>` — snitch', inline: true },

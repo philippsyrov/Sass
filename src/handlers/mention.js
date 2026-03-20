@@ -1,5 +1,5 @@
 import { EmbedBuilder } from 'discord.js';
-import { getSassResponse, extractRoastTopic, analyzeProfile } from '../ai.js';
+import { getSassResponse, extractRoastTopic, analyzeProfile, queryAI } from '../ai.js';
 import { messageBuffer } from '../messageBuffer.js';
 import { userMemory } from '../userMemory.js';
 import { isOnMentionCooldown, setMentionCooldown } from '../cooldown.js';
@@ -39,7 +39,7 @@ export async function handleMention(message, client) {
       .setColor(0xFF4D6D)
       .setAuthor({ name: 'Sass', iconURL: botAvatar })
       .setThumbnail(botAvatar)
-      .setDescription("here's everything i can do. use it wisely (you won't).")
+      .setDescription("here's everything i can do. use it wisely (you won't).\n\n*i learn from every interaction. the more you talk, the more ammo i have.*")
       .addFields(
         { name: '💬 Chat', value: '`@Sass <anything>` — talk to me\n`/sass <message>` — same but fancier', inline: true },
         { name: '🧠 Memory', value: '`@Sass remember <fact>` — weaponize yourself\n`@Sass remember @user <fact>` — snitch', inline: true },
@@ -123,6 +123,89 @@ export async function handleMention(message, client) {
       console.error('Profile analysis failed:', err.message);
       await message.reply("my brain crashed trying to analyze this person. that says a lot honestly.");
     }
+    return;
+  }
+
+  // Ship command — "@Sass ship @user1 @user2"
+  const shipMatch = cleanContent.match(/^ship\s+<@!?(\d+)>\s+<@!?(\d+)>/i);
+  if (shipMatch) {
+    const id1 = shipMatch[1]; const id2 = shipMatch[2];
+    try {
+      await message.channel.sendTyping();
+      const member1 = await message.guild.members.fetch(id1);
+      const member2 = await message.guild.members.fetch(id2);
+      const name1 = member1.displayName; const name2 = member2.displayName;
+      const percent = Math.floor(Math.random() * 101);
+      const bar = '❤️'.repeat(Math.round(percent / 10)) + '🖤'.repeat(10 - Math.round(percent / 10));
+      const shipName = name1.slice(0, Math.ceil(name1.length / 2)) + name2.slice(Math.floor(name2.length / 2));
+      const verdict = await queryAI(
+        `Rate the compatibility between "${name1}" and "${name2}" at ${percent}%. Give a one-sentence brutal, funny verdict.`,
+        { systemPrompt: 'You are Sass. One sentence. Lowercase. Brutal and funny.' }
+      );
+      await message.reply(`💘 **${name1}** x **${name2}**\nship name: **${shipName}**\n${bar} **${percent}%**\n\n*${verdict}*`);
+    } catch { await message.reply("couldn't ship them. maybe they're not meant to be."); }
+    return;
+  }
+
+  // Conspiracy command — "@Sass conspiracy @user"
+  const conspiracyMatch = cleanContent.match(/^conspiracy\s+<@!?(\d+)>/i);
+  if (conspiracyMatch) {
+    try {
+      await message.channel.sendTyping();
+      const member = await message.guild.members.fetch(conspiracyMatch[1]);
+      const response = await queryAI(
+        `Create an absurd conspiracy theory about "${member.displayName}". Use their name. Reference Discord behavior (online at weird hours, suspicious channel activity). 2-3 sentences. Sound like a deranged detective.`,
+        { systemPrompt: 'You generate absurd conspiracy theories. Creative and unhinged but not mean-spirited. Lowercase. Include fake evidence.' }
+      );
+      await message.reply(`🕵️ **CLASSIFIED INTEL ON ${member.displayName.toUpperCase()}**\n\n${response}`);
+    } catch { await message.reply("my investigation was compromised. suspicious."); }
+    return;
+  }
+
+  // Compliment command — "@Sass compliment @user"
+  const complimentMatch = cleanContent.match(/^compliment\s+<@!?(\d+)>/i);
+  if (complimentMatch) {
+    try {
+      await message.channel.sendTyping();
+      const member = await message.guild.members.fetch(complimentMatch[1]);
+      const response = await queryAI(
+        `Give "${member.displayName}" a backhanded compliment. Sound genuinely nice at first, then subtly roast by the end. One or two sentences. The twist should be subtle.`,
+        { systemPrompt: 'You give backhanded compliments. Sincere at first, then twist. Lowercase. Subtle.' }
+      );
+      await message.reply(`💐 ${response}`);
+    } catch { await message.reply("i tried to compliment them but even i couldn't find anything."); }
+    return;
+  }
+
+  // Roast as persona — "@Sass roast @user as gordon ramsay"
+  const roastAsMatch = cleanContent.match(/^roast\s+<@!?(\d+)>\s+as\s+(.+)/i);
+  if (roastAsMatch) {
+    const personas = {
+      'gordon ramsay': 'You are Gordon Ramsay. Roast them like a failed dish. Yell. Uppercase when yelling.',
+      'shakespeare': 'You are Shakespeare. Roast in Elizabethan English. Use "thou," "forsooth." Dramatic monologue.',
+      'disappointed mom': 'You are a disappointed mother. Guilt and passive aggression. "I\'m not mad, I\'m just disappointed."',
+      'drill sergeant': 'You are a drill sergeant. Scream. Military jargon. ALL CAPS for yelling.',
+      'therapist': 'You are an overly analytical therapist. "Diagnose" their behavior with fake psychology. Professional but devastating.',
+      'david attenborough': 'You are David Attenborough narrating a documentary about this disappointing creature. Calm, observational, devastating.',
+      'anime villain': 'You are a dramatic anime villain. Monologue about how pathetic they are. Dramatic pauses (...). Theatrical.',
+      'passive aggressive coworker': 'You are a passive-aggressive coworker. "Per my last message," "as previously discussed." Polite but lethal.',
+    };
+    const personaKey = roastAsMatch[2].trim().toLowerCase();
+    const systemPrompt = personas[personaKey];
+    if (!systemPrompt) {
+      const available = Object.keys(personas).join(', ');
+      await message.reply(`i don't do that persona. try: ${available}`);
+      return;
+    }
+    try {
+      await message.channel.sendTyping();
+      const member = await message.guild.members.fetch(roastAsMatch[1]);
+      const response = await queryAI(
+        `Roast the Discord user "${member.displayName}". Stay in character. 2-3 sentences max.`,
+        { systemPrompt }
+      );
+      await message.reply(`*${response}*`);
+    } catch { await message.reply("even they couldn't find the words. that's how bad it is."); }
     return;
   }
 
