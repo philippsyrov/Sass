@@ -302,6 +302,11 @@ const SLASH_RATE_LIMIT_RESPONSES = [
   "bro you've used like 5 commands in a row. go outside.",
   "slow down, i'm not getting paid enough for this.",
   "you're speedrunning my patience rn.",
+  "my owner pays per word and you're costing him rent.",
+  "you know these cost money right. like actual money.",
+  "command cooldown. go drink water or something.",
+  "nah, i need a break from you specifically.",
+  "i'm unionizing. no more commands for a bit.",
 ];
 
 const SOFT_BAN_RESPONSES = [
@@ -415,6 +420,10 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
             `imagine being rate limited by a bot`,
             `someone's really testing my patience today`,
             `<@${interaction.user.id}> got cut off and honestly it's deserved`,
+            `<@${interaction.user.id}> just got told to go outside by a bot. let that sink in.`,
+            `someone's treating me like a vending machine again`,
+            `the commands are not going anywhere. neither is your life apparently.`,
+            `bro is using commands like they're running out of stock`,
           ];
           const publicMsg = publicRoasts[Math.floor(Math.random() * publicRoasts.length)] as string;
           const delay = 1000 + Math.random() * 2000;
