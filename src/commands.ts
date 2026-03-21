@@ -340,6 +340,22 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
     if (isSlashRateLimited(interaction.user.id)) {
       const msg = SLASH_RATE_LIMIT_RESPONSES[Math.floor(Math.random() * SLASH_RATE_LIMIT_RESPONSES.length)] as string;
       await interaction.reply({ content: msg, ephemeral: true });
+
+      // 30% chance to also publicly call them out
+      if (Math.random() < 0.30) {
+        const channel = interaction.channel;
+        if (channel && 'send' in channel) {
+          const publicRoasts = [
+            `imagine being rate limited by a bot`,
+            `someone's really testing my patience today`,
+            `<@${interaction.user.id}> got cut off and honestly it's deserved`,
+          ];
+          const publicMsg = publicRoasts[Math.floor(Math.random() * publicRoasts.length)] as string;
+          const delay = 1000 + Math.random() * 2000;
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          await channel.send(publicMsg).catch((err) => console.error('Public rate limit roast failed:', (err as Error).message));
+        }
+      }
       return;
     }
   }
