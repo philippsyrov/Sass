@@ -171,10 +171,14 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // 2. Name mention — someone said "sass" without @mentioning
-  //    Treat like a mention so she responds directly (creator mode if it's the creator)
-  const lowerContent = message.content.toLowerCase();
-  if (/\bsass\b/i.test(lowerContent) && !lowerContent.includes('sassy')) {
+  // 2. Name mention — someone said "sass" at the START of their message
+  //    Only trigger if it looks like they're talking TO Sass, not just mentioning her name
+  //    "sass what do you think" → trigger (directed at her)
+  //    "Indeed, sass" / "sass is a tsundere" → skip (casual name drop)
+  const lowerContent = message.content.toLowerCase().trim();
+  const sassAtStart = /^sass\b/i.test(lowerContent);
+  const directlyAddressingSass = sassAtStart && lowerContent.length > 4; // more than just "sass"
+  if (directlyAddressingSass && !lowerContent.includes('sassy')) {
     if (isUserOnCooldown(message.author.id)) return;
     await handleMention(message, client);
     return;
