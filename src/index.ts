@@ -72,6 +72,8 @@ client.on('interactionCreate', async (interaction) => {
 // Dedup guard — prevent processing the same message twice
 // Using a Map with timestamps for automatic cleanup
 const processedMessages = new Map<string, number>();
+const recentUserReplies = new Map<string, number>();
+const USER_REPLY_COOLDOWN_MS = 3000; // 3 second cooldown per user
 
 function isDuplicate(messageId: string): boolean {
   if (processedMessages.has(messageId)) return true;
@@ -81,6 +83,20 @@ function isDuplicate(messageId: string): boolean {
     const cutoff = Date.now() - 60_000;
     for (const [id, ts] of processedMessages) {
       if (ts < cutoff) processedMessages.delete(id);
+    }
+  }
+  return false;
+}
+
+function isUserOnCooldown(userId: string): boolean {
+  const lastReply = recentUserReplies.get(userId);
+  if (lastReply && Date.now() - lastReply < USER_REPLY_COOLDOWN_MS) return true;
+  recentUserReplies.set(userId, Date.now());
+  // Cleanup
+  if (recentUserReplies.size > 200) {
+    const cutoff = Date.now() - USER_REPLY_COOLDOWN_MS;
+    for (const [id, ts] of recentUserReplies) {
+      if (ts < cutoff) recentUserReplies.delete(id);
     }
   }
   return false;
@@ -110,6 +126,7 @@ client.on('messageCreate', async (message) => {
   const isMentionInText = message.content.includes(`<@${client.user.id}>`)
     || message.content.includes(`<@!${client.user.id}>`);
   if (isMentionInText || isReplyToSass) {
+    if (isUserOnCooldown(message.author.id)) return;
     await handleMention(message, client);
     return;
   }
@@ -118,6 +135,7 @@ client.on('messageCreate', async (message) => {
   //    Treat like a mention so she responds directly (creator mode if it's the creator)
   const lowerContent = message.content.toLowerCase();
   if (/\bsass\b/i.test(lowerContent) && !lowerContent.includes('sassy')) {
+    if (isUserOnCooldown(message.author.id)) return;
     await handleMention(message, client);
     return;
   }
