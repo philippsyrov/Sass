@@ -155,12 +155,16 @@ client.on('messageCreate', async (message) => {
 
   // 1. Direct mention or reply to Sass — always respond
   if (!client.user) return;
-  // Only count as a mention if the user EXPLICITLY typed @Sass in their message text
-  // Replying/quoting a Sass message does NOT count — Discord auto-adds mentions on replies
-  // but the user didn't intentionally tag Sass, they're just reacting to what she said
+  // Explicit @Sass in message text — always respond
   const isMentionInText = message.content.includes(`<@${client.user.id}>`)
     || message.content.includes(`<@!${client.user.id}>`);
-  if (isMentionInText) {
+  // Reply to a Sass message — only respond 20% of the time, and only if substantive
+  const isReplyToSass = !isMentionInText
+    && message.reference != null
+    && message.mentions.has(client.user)
+    && message.content.length > 10;
+  const shouldRespondToReply = isReplyToSass && Math.random() < 0.20;
+  if (isMentionInText || shouldRespondToReply) {
     if (isUserOnCooldown(message.author.id)) return;
     if (isSpamming(message.author.id, message.content)) return;
     await handleMention(message, client);
