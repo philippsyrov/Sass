@@ -498,6 +498,10 @@ export async function handleMention(message: Message, client: Client): Promise<v
       await message.reply("My brain just short-circuited. Even AI has bad days, okay?");
       return;
     }
+
+    // Typing delay — feel more human, not instant
+    const typingDelay = Math.min(1500 + response.length * 20, 4000);
+    await new Promise((resolve) => setTimeout(resolve, typingDelay));
     await message.reply(response);
 
     // Log to database
