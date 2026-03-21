@@ -13,8 +13,36 @@ import {
 import { queryAI } from './ai.js';
 import { userMemory } from './userMemory.js';
 import { buildHelpPages } from './helpPages.js';
-import { logCommand } from './database.js';
+import { logCommand, logInteraction } from './database.js';
+import { mood } from './mood.js';
 import type { BattleState, MainCharacter } from './types.js';
+
+// --- Daily rate limiting ---
+const dailyUsage = new Map<string, string>(); // key: "userId:command", value: date string
+const MAX_DAILY_TRACKED = 5000;
+
+function hasUsedToday(userId: string, command: string): boolean {
+  const key = `${userId}:${command}`;
+  const today = new Date().toDateString();
+  return dailyUsage.get(key) === today;
+}
+
+function markUsedToday(userId: string, command: string): void {
+  const key = `${userId}:${command}`;
+  dailyUsage.set(key, new Date().toDateString());
+  if (dailyUsage.size > MAX_DAILY_TRACKED) {
+    const oldest = dailyUsage.keys().next().value;
+    if (oldest) dailyUsage.delete(oldest);
+  }
+}
+
+// Clean up stale daily entries every hour
+setInterval(() => {
+  const today = new Date().toDateString();
+  for (const [key, date] of dailyUsage) {
+    if (date !== today) dailyUsage.delete(key);
+  }
+}, 60 * 60 * 1000);
 
 // --- Activity description helper ---
 export function getActivityDescription(presence: Presence | null): string | null {
@@ -193,6 +221,28 @@ export const commands = [
   new SlashCommandBuilder()
     .setName('wrapped')
     .setDescription('Get the server roast recap'),
+
+  new SlashCommandBuilder()
+    .setName('dare')
+    .setDescription('Dare someone to do something unhinged')
+    .addUserOption((opt) => opt.setName('user').setDescription('Who to dare').setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName('tierlist')
+    .setDescription('Generate a tier list for any topic')
+    .addStringOption((opt) => opt.setName('topic').setDescription('What to rank').setRequired(true))
+    .addStringOption((opt) => opt.setName('items').setDescription('Comma-separated items (optional, AI generates if empty)').setRequired(false)),
+
+  new SlashCommandBuilder()
+    .setName('confess')
+    .setDescription('Send an anonymous confession to someone')
+    .addUserOption((opt) => opt.setName('user').setDescription('Who to confess to').setRequired(true))
+    .addStringOption((opt) => opt.setName('confession').setDescription('Your anonymous confession').setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName('predict')
+    .setDescription('Predict someone\'s future based on their Discord behavior')
+    .addUserOption((opt) => opt.setName('user').setDescription('Whose future to predict (defaults to you)').setRequired(false)),
 ];
 
 // --- 8ball responses ---
@@ -563,6 +613,10 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
     }
 
     case 'horoscope': {
+      if (hasUsedToday(interaction.user.id, 'horoscope')) {
+        await interaction.reply("you already got your daily reading. the stars don't refresh on demand.");
+        break;
+      }
       await interaction.deferReply();
       const sign = interaction.options.getString('sign') ?? '';
       try {
@@ -570,6 +624,8 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           `Give a sassy, backhanded daily horoscope for ${sign}. Start with something that sounds positive, then twist it. Include a "lucky" element that's actually an insult. 2-3 sentences. Format:\n[horoscope text]\n\n🍀 lucky item: [something insulting]`,
           { systemPrompt: 'You write sassy horoscopes. Sound mystical at first, then roast. Lowercase. Include zodiac personality stereotypes as ammunition.' }
         );
+        if (!response) throw new Error('Empty response');
+        markUsedToday(interaction.user.id, 'horoscope');
         await interaction.editReply(`${getZodiacEmoji(sign)} **${sign}** — daily reading\n\n${response}`);
       } catch {
         await interaction.editReply(`${getZodiacEmoji(sign)} **${sign}**: the stars tried to read your future but fell asleep. that's the reading.`);
@@ -697,6 +753,10 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
     }
 
     case 'wrapped': {
+      if (hasUsedToday(interaction.user.id, 'wrapped')) {
+        await interaction.reply("you already got today's recap. it hasn't gotten any less embarrassing.");
+        break;
+      }
       await interaction.deferReply();
       const stats = userMemory.getServerStats();
       if (!stats || stats.totalMessages === 0) {
@@ -724,9 +784,159 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           )
           .setFooter({ text: "sass analytics department" })
           .setTimestamp();
+        markUsedToday(interaction.user.id, 'wrapped');
         await interaction.editReply({ embeds: [embed] });
       } catch {
         await interaction.editReply("my analytics department is on strike. try again later.");
+      }
+      break;
+    }
+
+    case 'dare': {
+      await interaction.deferReply();
+      const targetUser = interaction.options.getUser('user', true);
+      const userContext = userMemory.getContext(targetUser.id);
+      try {
+        const response = await queryAI(
+          `Generate a dare for the Discord user "${targetUser.displayName}". The dare should be something they can do in the Discord server (send a message, change their nickname, post something, etc). Make it funny and slightly unhinged but not harmful. Also rate the difficulty 1-5.\n\n${userContext ? `What you know about them: ${userContext}` : 'You don\'t know much about them yet.'}\n\nRespond in EXACTLY this format:\nDARE: [the dare]\nDIFFICULTY: [1-5]`,
+          { systemPrompt: 'You generate funny Discord dares. Creative, unhinged, but not harmful or against TOS. Lowercase. The dare should be specific and doable in Discord.' }
+        );
+        const dareMatch = response?.match(/DARE:\s*(.+)/i);
+        const diffMatch = response?.match(/DIFFICULTY:\s*(\d)/);
+        const dareText = dareMatch?.[1]?.trim() ?? 'i dare you to explain why you needed a bot to dare you';
+        const difficulty = Math.min(5, Math.max(1, parseInt(diffMatch?.[1] ?? '3', 10)));
+        const skulls = '💀'.repeat(difficulty) + '🩶'.repeat(5 - difficulty);
+
+        const embed = new EmbedBuilder()
+          .setColor(0xFF4D6D)
+          .setTitle(`🎲 DARE — ${targetUser.displayName.toUpperCase()}`)
+          .setDescription(dareText)
+          .addFields(
+            { name: 'Difficulty', value: skulls, inline: true },
+          )
+          .setFooter({ text: 'sass dares you. do it or be a coward.' });
+        await interaction.editReply({ embeds: [embed] });
+      } catch {
+        await interaction.editReply(`i dare ${targetUser.displayName} to do literally anything interesting for once.`);
+      }
+      break;
+    }
+
+    case 'tierlist': {
+      await interaction.deferReply();
+      const topic = interaction.options.getString('topic') ?? '';
+      const itemsRaw = interaction.options.getString('items');
+      const itemsPrompt = itemsRaw
+        ? `Rank EXACTLY these items: ${itemsRaw}`
+        : `Generate 6-8 items for this topic and rank them`;
+      try {
+        const response = await queryAI(
+          `Create a tier list for: "${topic}"\n\n${itemsPrompt}\n\nAssign each item to a tier (S, A, B, C, D, or F) and give a brutal one-liner explanation for each placement. Format EXACTLY like this:\n\nS: [item] — [why]\nA: [item] — [why]\nB: [item] — [why]\nC: [item] — [why]\nD: [item] — [why]\nF: [item] — [why]\n\nNot every tier needs entries. Be opinionated and brutal.`,
+          { systemPrompt: 'You create tier lists. Be opinionated, funny, and brutal. Lowercase. Your rankings are objectively correct and anyone who disagrees is wrong.' }
+        );
+        if (!response) throw new Error('Empty response');
+        const embed = new EmbedBuilder()
+          .setColor(0xFF4D6D)
+          .setTitle(`📊 TIER LIST — ${topic.toUpperCase()}`)
+          .setDescription(response)
+          .setFooter({ text: 'my rankings are objectively correct. don\'t @ me.' });
+        await interaction.editReply({ embeds: [embed] });
+      } catch {
+        await interaction.editReply(`i tried to rank "${topic}" but everything was F tier. including this question.`);
+      }
+      break;
+    }
+
+    case 'confess': {
+      const targetUser = interaction.options.getUser('user', true);
+      const confession = interaction.options.getString('confession') ?? '';
+
+      if (targetUser.id === interaction.user.id) {
+        await interaction.reply({ content: "you can't confess to yourself. that's just thinking.", ephemeral: true });
+        break;
+      }
+      if (targetUser.bot) {
+        await interaction.reply({ content: "confessing to a bot? down bad doesn't even begin to cover it.", ephemeral: true });
+        break;
+      }
+      if (hasUsedToday(interaction.user.id, 'confess')) {
+        await interaction.reply({ content: "one confession per day. you're not a priest.", ephemeral: true });
+        break;
+      }
+
+      // Ephemeral ack to confessor
+      await interaction.reply({ content: "got it. your secret's safe with me... for now 👀", ephemeral: true });
+
+      try {
+        const commentary = await queryAI(
+          `Someone sent an anonymous confession to "${targetUser.displayName}". The confession is: "${confession}"\n\nDeliver this confession with a backhanded comment roasting the fact that they couldn't say it themselves. Be a dramatic messenger. One sentence delivery + one sentence roasting their cowardice.`,
+          { systemPrompt: 'You are Sass, delivering anonymous confessions. Be dramatic about the delivery and roast the confessor for being anonymous. Lowercase.' }
+        );
+        const channel = interaction.channel;
+        if (channel && 'send' in channel) {
+          await channel.send(`📩 **ANONYMOUS CONFESSION** for <@${targetUser.id}>:\n\n> *"${confession}"*\n\n${commentary ?? "someone couldn't find the guts to say this themselves. shocking."}`);
+          markUsedToday(interaction.user.id, 'confess');
+          logInteraction({
+            serverId: interaction.guild?.id ?? '',
+            serverName: interaction.guild?.name ?? '',
+            channelId: channel.id,
+            channelName: 'name' in channel ? (channel as { name: string }).name : '',
+            userId: interaction.user.id,
+            username: interaction.user.displayName ?? interaction.user.username,
+            triggerType: 'confess',
+            commandName: 'confess',
+            userMessage: confession,
+            sassResponse: commentary ?? '',
+            mood: mood.getStatus().mood,
+            moodIntensity: mood.getStatus().intensity,
+          }).catch((err) => console.error('DB log failed:', err.message));
+        }
+      } catch (err) {
+        console.error('Confess failed:', (err as Error).message);
+        // Don't expose error to channel since we already replied ephemerally
+      }
+      break;
+    }
+
+    case 'predict': {
+      const targetUser = interaction.options.getUser('user') ?? interaction.user;
+      const targetKey = `${targetUser.id}:predict`;
+      if (hasUsedToday(interaction.user.id, targetKey)) {
+        await interaction.reply(`you already got ${targetUser.id === interaction.user.id ? 'your' : 'their'} prediction today. the future hasn't changed in the last 5 minutes.`);
+        break;
+      }
+      await interaction.deferReply();
+
+      const userData = userMemory.getContext(targetUser.id);
+      const facts = userMemory.getFacts(targetUser.id);
+      const user = (userMemory as unknown as { users: Record<string, { messageCount?: number; timesRoasted?: number }> }).users[targetUser.id];
+      const messageCount = user?.messageCount ?? 0;
+      const timesRoasted = user?.timesRoasted ?? 0;
+
+      const dataPrompt = [
+        `User: ${targetUser.displayName}`,
+        messageCount > 0 ? `Messages sent: ${messageCount}` : null,
+        timesRoasted > 0 ? `Times roasted: ${timesRoasted}` : null,
+        facts.length > 0 ? `Known facts: ${facts.join('; ')}` : null,
+        userData ? `Context: ${userData}` : null,
+      ].filter(Boolean).join('\n');
+
+      try {
+        const response = await queryAI(
+          `You are a fortune teller who's been stalking someone's Discord. Based on this data, predict their future.\n\n${dataPrompt}\n\nFormat your response EXACTLY like this:\n🔮 PAST: [one sentence about what you know about their history]\n📍 PRESENT: [one sentence about their current vibe]\n🌟 FUTURE: [one sentence prediction, be specific and funny]\n\n🍀 lucky item: [something insulting based on their behavior]`,
+          { systemPrompt: 'You are a sassy fortune teller who uses Discord behavior data to make predictions. Be specific to the user data provided. Lowercase. Mystical but devastating.' }
+        );
+        if (!response) throw new Error('Empty response');
+        markUsedToday(interaction.user.id, targetKey);
+        const embed = new EmbedBuilder()
+          .setColor(0x9B59B6)
+          .setTitle(`🔮 PREDICTION — ${targetUser.displayName.toUpperCase()}`)
+          .setDescription(response)
+          .setFooter({ text: 'sass sees all. sass knows all. sass judges all.' })
+          .setTimestamp();
+        await interaction.editReply({ embeds: [embed] });
+      } catch {
+        await interaction.editReply(`the crystal ball showed me ${targetUser.displayName}'s future and honestly? it cracked. that's the prediction.`);
       }
       break;
     }
