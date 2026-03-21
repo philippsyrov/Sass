@@ -133,7 +133,7 @@ export async function handleAutoSass(message: Message, _client: Client): Promise
     }
   }
 
-  const recentMessages = messageBuffer.getRecentRaw(channelId, 8);
+  const recentMessages = messageBuffer.getRecentRaw(channelId, 15);
   if (!recentMessages || recentMessages.length === 0) return;
 
   const recentContext = recentMessages.map(

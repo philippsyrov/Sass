@@ -5,7 +5,7 @@ import type { Message, BufferEntry } from './types.js';
  * Keeps the last N messages so Sass can read recent context
  * without fetching full channel history.
  */
-const MAX_MESSAGES_PER_CHANNEL = 10;
+const MAX_MESSAGES_PER_CHANNEL = 20;
 const MAX_TRACKED_CHANNELS = 1000;
 
 class MessageBuffer {

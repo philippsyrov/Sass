@@ -323,6 +323,30 @@ export async function handleMention(message: Message, client: Client): Promise<v
     return;
   }
 
+  // Mood command — "@Sass mood" (before cold shoulder so it always works)
+  if (lowerClean === 'mood' || lowerClean === 'how are you' || lowerClean === 'how you doing') {
+    const status = mood.getStatus();
+    const bar = '█'.repeat(Math.round(status.intensity / 10)) + '░'.repeat(10 - Math.round(status.intensity / 10));
+    await message.reply(`${status.label}\nintensity: ${bar} **${status.intensity}**/100`);
+    return;
+  }
+
+  // Leaderboard / stats command (before cold shoulder so it always works)
+  if (lowerClean === 'leaderboard' || lowerClean === 'stats' || lowerClean === 'scoreboard') {
+    const board = userMemory.getLeaderboard(5);
+    if (board.length === 0 || board.every((u) => u.timesRoasted === 0)) {
+      await message.reply("nobody's been roasted enough to make a list yet. give it time.");
+      return;
+    }
+    const medals = ['👑', '💀', '🪦', '💩', '🤡'];
+    const lines = board
+      .filter((u) => u.timesRoasted > 0)
+      .map((u, i) => `${medals[i] || '•'} **${u.name}** — roasted ${u.timesRoasted} time${u.timesRoasted === 1 ? '' : 's'}`);
+    const header = "**sass's wall of shame**";
+    await message.reply(`${header}\n${lines.join('\n')}`);
+    return;
+  }
+
   // Mood detection — detect how user is treating Sass
   if (!isCreator && cleanContent) {
     const nicePatterns = /\b(you'?re (actually |pretty )?(cool|funny|great|awesome|the best|amazing|hilarious)|i love you|good bot|nice one|that was good|love sass|sass is the best|you'?re my fav)\b/i;
@@ -393,30 +417,6 @@ export async function handleMention(message: Message, client: Client): Promise<v
     }
   }
 
-  // Mood command — "@Sass mood"
-  if (lowerClean === 'mood' || lowerClean === 'how are you' || lowerClean === 'how you doing') {
-    const status = mood.getStatus();
-    const bar = '█'.repeat(Math.round(status.intensity / 10)) + '░'.repeat(10 - Math.round(status.intensity / 10));
-    await message.reply(`${status.label}\nintensity: ${bar} **${status.intensity}**/100`);
-    return;
-  }
-
-  // Leaderboard / stats command
-  if (lowerClean === 'leaderboard' || lowerClean === 'stats' || lowerClean === 'scoreboard') {
-    const board = userMemory.getLeaderboard(5);
-    if (board.length === 0 || board.every((u) => u.timesRoasted === 0)) {
-      await message.reply("nobody's been roasted enough to make a list yet. give it time.");
-      return;
-    }
-    const medals = ['👑', '💀', '🪦', '💩', '🤡'];
-    const lines = board
-      .filter((u) => u.timesRoasted > 0)
-      .map((u, i) => `${medals[i] || '•'} **${u.name}** — roasted ${u.timesRoasted} time${u.timesRoasted === 1 ? '' : 's'}`);
-    const header = "**sass's wall of shame**";
-    await message.reply(`${header}\n${lines.join('\n')}`);
-    return;
-  }
-
   // If they just tagged us with nothing else (and no image)
   if (!cleanContent && !imageAttachment) {
     if (isCreator) {
@@ -439,7 +439,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
   }
 
   // Build context — include who is speaking so the AI understands the conversation
-  const recentMessages = messageBuffer.getRecentRaw(channel.id, 10);
+  const recentMessages = messageBuffer.getRecentRaw(channel.id, 20);
   const recentContext = recentMessages.map(
     (msg) => `${msg.author}${msg.isBot ? ' [BOT]' : ''}: ${msg.content}`
   ).join('\n');
