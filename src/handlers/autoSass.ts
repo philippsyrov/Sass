@@ -37,9 +37,15 @@ const SHORT_REACTIONS = [
  * - Short text react (10%) — "lol", "real", "💀", no AI call
  * - Lurk react (10%) — react to an older message (3-5 msgs back)
  */
-export async function handleAutoSass(message: Message, _client: Client): Promise<void> {
-  // Never auto-sass the creator
-  if (message.author.id === process.env.CREATOR_ID) return;
+interface AutoSassOptions {
+  heardName?: boolean; // someone said "sass" — skip dice roll, let AI decide
+}
+
+export async function handleAutoSass(message: Message, _client: Client, options: AutoSassOptions = {}): Promise<void> {
+  const { heardName = false } = options;
+
+  // Never auto-sass the creator (unless they said her name)
+  if (message.author.id === process.env.CREATOR_ID && !heardName) return;
 
   // Wild quote detection — store the craziest stuff people say
   const text = message.content;
@@ -82,14 +88,17 @@ export async function handleAutoSass(message: Message, _client: Client): Promise
     }
   }
 
-  // Not enough messages yet
-  if (count < MIN_MESSAGES) return;
+  // If she heard her name, skip the gates — let the AI decide
+  if (!heardName) {
+    // Not enough messages yet
+    if (count < MIN_MESSAGES) return;
 
-  // Channel cooldown — don't auto-sass too frequently
-  if (isOnAutoSassCooldown(channelId)) return;
+    // Channel cooldown — don't auto-sass too frequently
+    if (isOnAutoSassCooldown(channelId)) return;
 
-  // Roll the dice
-  if (Math.random() > AUTO_SASS_CHANCE) return;
+    // Roll the dice
+    if (Math.random() > AUTO_SASS_CHANCE) return;
+  }
 
   // Reset counter regardless of outcome
   messageCounters.set(channelId, 0);

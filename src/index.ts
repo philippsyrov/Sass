@@ -168,19 +168,17 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // 2. Creator says "sass" — always respond to the boss
-  const isCreator = message.author.id === process.env.CREATOR_ID;
+  // 2. Someone said "sass" without @ — she heard her name
+  //    Don't force a response. Skip the dice roll and cooldown so auto-sass
+  //    always evaluates the context, but the AI still decides via SKIP if
+  //    it's not worth responding to. She reads the room, not a coin flip.
   const lowerContent = message.content.toLowerCase().trim();
-  if (isCreator && /\bsass\b/i.test(lowerContent)) {
-    if (isUserOnCooldown(message.author.id)) return;
-    await handleMention(message, client);
+  if (/\bsass\b/i.test(lowerContent) && !lowerContent.includes('sassy')) {
+    await handleAutoSass(message, client, { heardName: true });
     return;
   }
 
-  // 3. Everyone else mentioning "sass" without @
-  //    Let it flow through auto-sass — AI reads context and decides organically.
-
-  // 4. Auto-sass — occasionally pop in uninvited
+  // 3. Auto-sass — occasionally pop in uninvited
   await handleAutoSass(message, client);
 });
 
