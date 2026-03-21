@@ -10,3 +10,4 @@ data/
 *.log
 npm-debug.log*
 .eslintcache
+.claude/settings.local.json
