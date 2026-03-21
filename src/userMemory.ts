@@ -101,7 +101,7 @@ class UserMemory {
     } else if (user.messageCount > 20) {
       parts.push(`${user.name} is a regular. they know what they signed up for.`);
     } else if (user.messageCount <= 3) {
-      parts.push(`${user.name} is new here. welcome them \u2014 ominously.`);
+      parts.push(`${user.name} hasn't talked much yet. don't assume they're brand new \u2014 they might just be quiet.`);
     }
     return parts.join(' ');
   }
