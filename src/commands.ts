@@ -288,10 +288,12 @@ const QUOTE_AUTHORS: string[] = [
 
 // --- Command handlers ---
 
-// Global slash command rate limit per user
+// Global slash command rate limit per user with soft ban escalation
 const slashCmdTracker = new Map<string, number[]>();
+const slashCmdStrikes = new Map<string, { count: number; bannedUntil: number }>();
 const SLASH_CMD_LIMIT = 5; // max commands per window
 const SLASH_CMD_WINDOW_MS = 3 * 60 * 1000; // 3 minute window
+const SOFT_BAN_DURATION_MS = 10 * 60 * 1000; // 10 min soft ban
 const SLASH_CMD_MAX_TRACKED = 500;
 
 const SLASH_RATE_LIMIT_RESPONSES = [
@@ -302,8 +304,35 @@ const SLASH_RATE_LIMIT_RESPONSES = [
   "you're speedrunning my patience rn.",
 ];
 
-function isSlashRateLimited(userId: string): boolean {
+const SOFT_BAN_RESPONSES = [
+  "you're cut off. come back in 10 minutes and think about what you did.",
+  "nope. you've been benched. 10 minute timeout.",
+  "i'm putting you in the corner for 10 minutes. reflect.",
+];
+
+const SOFT_BAN_ATTEMPT_RESPONSES = [
+  "you're still banned. go touch grass.",
+  "no.",
+  "timeout means timeout.",
+  "still no. try again in a few.",
+];
+
+type RateLimitResult = 'ok' | 'limited' | 'soft-banned' | 'already-banned';
+
+function checkSlashRateLimit(userId: string): RateLimitResult {
   const now = Date.now();
+
+  // Check soft ban first
+  const strike = slashCmdStrikes.get(userId);
+  if (strike && strike.bannedUntil > now) {
+    return 'already-banned';
+  }
+
+  // Clear expired ban
+  if (strike && strike.bannedUntil <= now) {
+    slashCmdStrikes.delete(userId);
+  }
+
   if (!slashCmdTracker.has(userId)) {
     if (slashCmdTracker.size >= SLASH_CMD_MAX_TRACKED) {
       const oldest = slashCmdTracker.keys().next().value;
@@ -312,23 +341,39 @@ function isSlashRateLimited(userId: string): boolean {
     slashCmdTracker.set(userId, []);
   }
   const timestamps = slashCmdTracker.get(userId);
-  if (!timestamps) return false;
+  if (!timestamps) return 'ok';
 
-  // Clean old entries
   const recent = timestamps.filter((ts) => now - ts < SLASH_CMD_WINDOW_MS);
   recent.push(now);
   slashCmdTracker.set(userId, recent);
 
-  return recent.length > SLASH_CMD_LIMIT;
+  if (recent.length <= SLASH_CMD_LIMIT) return 'ok';
+
+  // They hit the limit — track strikes
+  const currentStrike = slashCmdStrikes.get(userId) ?? { count: 0, bannedUntil: 0 };
+  currentStrike.count++;
+
+  // 3rd strike = soft ban
+  if (currentStrike.count >= 3) {
+    currentStrike.bannedUntil = now + SOFT_BAN_DURATION_MS;
+    slashCmdStrikes.set(userId, currentStrike);
+    return 'soft-banned';
+  }
+
+  slashCmdStrikes.set(userId, currentStrike);
+  return 'limited';
 }
 
-// Cleanup slash command tracker
+// Cleanup trackers
 setInterval(() => {
   const now = Date.now();
   for (const [id, timestamps] of slashCmdTracker) {
     const recent = timestamps.filter((ts) => now - ts < SLASH_CMD_WINDOW_MS);
     if (recent.length === 0) slashCmdTracker.delete(id);
     else slashCmdTracker.set(id, recent);
+  }
+  for (const [id, strike] of slashCmdStrikes) {
+    if (strike.bannedUntil < now) slashCmdStrikes.delete(id);
   }
 }, 5 * 60 * 1000);
 
@@ -337,11 +382,32 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
 
   // Global slash command rate limit (skip for ping/help)
   if (commandName !== 'ping' && commandName !== 'help') {
-    if (isSlashRateLimited(interaction.user.id)) {
+    const limitResult = checkSlashRateLimit(interaction.user.id);
+
+    if (limitResult === 'already-banned') {
+      const msg = SOFT_BAN_ATTEMPT_RESPONSES[Math.floor(Math.random() * SOFT_BAN_ATTEMPT_RESPONSES.length)] as string;
+      await interaction.reply({ content: msg, ephemeral: true });
+      return;
+    }
+
+    if (limitResult === 'soft-banned') {
+      const msg = SOFT_BAN_RESPONSES[Math.floor(Math.random() * SOFT_BAN_RESPONSES.length)] as string;
+      await interaction.reply({ content: msg, ephemeral: true });
+      // Always publicly shame on soft ban
+      const channel = interaction.channel;
+      if (channel && 'send' in channel) {
+        const delay = 1000 + Math.random() * 2000;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        await channel.send(`<@${interaction.user.id}> just got put in timeout for 10 minutes. let that be a lesson.`).catch((err) => console.error('Soft ban announcement failed:', (err as Error).message));
+      }
+      return;
+    }
+
+    if (limitResult === 'limited') {
       const msg = SLASH_RATE_LIMIT_RESPONSES[Math.floor(Math.random() * SLASH_RATE_LIMIT_RESPONSES.length)] as string;
       await interaction.reply({ content: msg, ephemeral: true });
 
-      // 30% chance to also publicly call them out
+      // 30% chance to publicly call them out
       if (Math.random() < 0.30) {
         const channel = interaction.channel;
         if (channel && 'send' in channel) {
