@@ -540,7 +540,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
       await interaction.deferReply();
       const user1 = interaction.options.getUser('user1', true);
       const user2 = interaction.options.getUser('user2', true);
-      const percent = Math.floor(Math.random() * 101);
+      const percent = Math.floor(Math.random() * 99);
       const bar = '❤️'.repeat(Math.round(percent / 10)) + '🖤'.repeat(10 - Math.round(percent / 10));
 
       try {
