@@ -1,4 +1,14 @@
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } from 'discord.js';
+import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ComponentType,
+  type Message,
+  type Client,
+  type ButtonInteraction,
+  type Attachment,
+  type TextChannel,
+} from 'discord.js';
 import { getSassResponse, extractRoastTopic, analyzeProfile, queryAI } from '../ai.js';
 import { messageBuffer } from '../messageBuffer.js';
 import { userMemory } from '../userMemory.js';
@@ -13,13 +23,18 @@ import { logInteraction, logCommand } from '../database.js';
  * Handle direct @Sass mentions and replies to Sass.
  * Grabs recent context + user memory and fires back a sassy response.
  */
-export async function handleMention(message, client) {
+export async function handleMention(message: Message, client: Client): Promise<void> {
   const userId = message.author.id;
   const displayName = message.author.displayName || message.author.username;
 
   // Cooldown — don't spam-reply to the same user
   if (isOnMentionCooldown(userId)) return;
   setMentionCooldown(userId);
+
+  if (!client.user) return;
+
+  // Cast channel — this handler only runs in guild text channels
+  const channel = message.channel as TextChannel;
 
   // Strip the @mention to get the actual user message
   const cleanContent = message.content
@@ -30,8 +45,8 @@ export async function handleMention(message, client) {
   const isCreator = userId === process.env.CREATOR_ID;
 
   // Check for image attachments (jpg, png, gif, webp)
-  const imageAttachment = message.attachments.find((a) =>
-    a.contentType && a.contentType.startsWith('image/')
+  const imageAttachment = message.attachments.find((a: Attachment) =>
+    a.contentType != null && a.contentType.startsWith('image/')
   );
 
   const lowerClean = cleanContent.toLowerCase();
@@ -41,32 +56,36 @@ export async function handleMention(message, client) {
     const botAvatar = client.user.displayAvatarURL({ size: 256 });
     const pages = buildHelpPages(botAvatar);
 
-    const buttons = new ActionRowBuilder().addComponents(
+    const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder().setCustomId('help_prev').setLabel('◀').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('help_next').setLabel('▶').setStyle(ButtonStyle.Secondary),
     );
 
     let currentPage = 0;
-    const reply = await message.reply({ embeds: [pages[0]], components: [buttons] });
+    const firstPage = pages[0];
+    if (!firstPage) return;
+    const reply = await message.reply({ embeds: [firstPage], components: [buttons] });
 
     const collector = reply.createMessageComponentCollector({
       componentType: ComponentType.Button,
       time: 120_000,
     });
 
-    collector.on('collect', async (btn) => {
+    collector.on('collect', async (btn: ButtonInteraction) => {
       currentPage = btn.customId === 'help_prev'
         ? (currentPage > 0 ? currentPage - 1 : pages.length - 1)
         : (currentPage < pages.length - 1 ? currentPage + 1 : 0);
-      await btn.update({ embeds: [pages[currentPage]], components: [buttons] });
+      const page = pages[currentPage];
+      if (!page) return;
+      await btn.update({ embeds: [page], components: [buttons] });
     });
 
     collector.on('end', () => {
-      const disabledButtons = new ActionRowBuilder().addComponents(
+      const disabledButtons = new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder().setCustomId('help_prev').setLabel('◀').setStyle(ButtonStyle.Secondary).setDisabled(true),
         new ButtonBuilder().setCustomId('help_next').setLabel('▶').setStyle(ButtonStyle.Secondary).setDisabled(true),
       );
-      reply.edit({ components: [disabledButtons] }).catch(() => {});
+      reply.edit({ components: [disabledButtons] }).catch((err) => console.error('Failed to disable help buttons:', (err as Error).message));
     });
 
     return;
@@ -78,7 +97,7 @@ export async function handleMention(message, client) {
     const targetId = profileMatch?.[1] || userId;
     const targetUser = targetId === userId
       ? message.author
-      : await message.guild.members.fetch(targetId).then((m) => m.user).catch(() => null);
+      : await message.guild?.members.fetch(targetId).then((m) => m.user).catch(() => null) ?? null;
     if (!targetUser) {
       await message.reply("can't find that person. they probably don't exist, like your taste");
       return;
@@ -87,8 +106,8 @@ export async function handleMention(message, client) {
 
     // Fetch recent messages from this channel by the target user
     try {
-      await message.channel.sendTyping();
-      const fetched = await message.channel.messages.fetch({ limit: 100 });
+      await channel.sendTyping();
+      const fetched = await channel.messages.fetch({ limit: 100 });
       const userMsgs = fetched
         .filter((m) => m.author.id === targetId && !m.author.bot)
         .map((m) => m.content)
@@ -102,14 +121,19 @@ export async function handleMention(message, client) {
       }
 
       const raw = await analyzeProfile(targetName, userMsgs.join('\n'));
+      if (!raw) {
+        await message.reply("my brain crashed trying to analyze this person. that says a lot honestly.");
+        return;
+      }
 
       // Parse the response
       const lines = raw.trim().split('\n');
-      const scores = {};
+      const scores: Record<string, number> = {};
       let archetype = 'Unknown';
       let roast = '';
       for (const line of lines) {
         const [key, ...rest] = line.split(':');
+        if (!key) continue;
         const val = rest.join(':').trim();
         if (['chaos', 'thirst', 'aggro', 'clown', 'brain'].includes(key.trim())) {
           scores[key.trim()] = Math.min(10, Math.max(0, parseInt(val, 10) || 0));
@@ -121,23 +145,23 @@ export async function handleMention(message, client) {
       }
 
       // Build visual bars
-      const bar = (score) => '█'.repeat(score) + '░'.repeat(10 - score);
+      const bar = (score: number): string => '█'.repeat(score) + '░'.repeat(10 - score);
       const profile = [
         `**${targetName}'s behavioral diagnosis**`,
         `> archetype: **${archetype}**`,
         '',
-        `\`chaos \` ${bar(scores.chaos || 0)} **${scores.chaos || 0}**/10`,
-        `\`thirst\` ${bar(scores.thirst || 0)} **${scores.thirst || 0}**/10`,
-        `\`aggro \` ${bar(scores.aggro || 0)} **${scores.aggro || 0}**/10`,
-        `\`clown \` ${bar(scores.clown || 0)} **${scores.clown || 0}**/10`,
-        `\`brain \` ${bar(scores.brain || 0)} **${scores.brain || 0}**/10`,
+        `\`chaos \` ${bar(scores['chaos'] || 0)} **${scores['chaos'] || 0}**/10`,
+        `\`thirst\` ${bar(scores['thirst'] || 0)} **${scores['thirst'] || 0}**/10`,
+        `\`aggro \` ${bar(scores['aggro'] || 0)} **${scores['aggro'] || 0}**/10`,
+        `\`clown \` ${bar(scores['clown'] || 0)} **${scores['clown'] || 0}**/10`,
+        `\`brain \` ${bar(scores['brain'] || 0)} **${scores['brain'] || 0}**/10`,
         '',
         `*${roast}*`,
       ];
       await message.reply(profile.join('\n'));
-      logCommand({ serverId: message.guild?.id, userId, commandName: 'profile', commandType: 'mention' }).catch(() => {});
+      logCommand({ serverId: message.guild?.id, userId, commandName: 'profile', commandType: 'mention' }).catch((_err) => { /* non-critical */ });
     } catch (err) {
-      console.error('Profile analysis failed:', err.message);
+      console.error('Profile analysis failed:', (err as Error).message);
       await message.reply("my brain crashed trying to analyze this person. that says a lot honestly.");
     }
     return;
@@ -147,10 +171,15 @@ export async function handleMention(message, client) {
   const shipMatch = cleanContent.match(/^ship\s+<@!?(\d+)>\s+<@!?(\d+)>/i);
   if (shipMatch) {
     const id1 = shipMatch[1]; const id2 = shipMatch[2];
+    if (!id1 || !id2) return;
     try {
-      await message.channel.sendTyping();
-      const member1 = await message.guild.members.fetch(id1);
-      const member2 = await message.guild.members.fetch(id2);
+      await channel.sendTyping();
+      const member1 = await message.guild?.members.fetch(id1);
+      const member2 = await message.guild?.members.fetch(id2);
+      if (!member1 || !member2) {
+        await message.reply("couldn't ship them. maybe they're not meant to be.");
+        return;
+      }
       const name1 = member1.displayName; const name2 = member2.displayName;
       const percent = Math.floor(Math.random() * 101);
       const bar = '❤️'.repeat(Math.round(percent / 10)) + '🖤'.repeat(10 - Math.round(percent / 10));
@@ -163,12 +192,12 @@ export async function handleMention(message, client) {
       await message.reply(shipResponse);
       logInteraction({
         serverId: message.guild?.id, serverName: message.guild?.name,
-        channelId: message.channel.id, channelName: message.channel.name,
+        channelId: channel.id, channelName: channel.name,
         userId, username: displayName,
         triggerType: 'mention', commandName: 'ship',
         userMessage: cleanContent, sassResponse: shipResponse,
         mood: mood.getStatus().mood, moodIntensity: mood.getStatus().intensity,
-      }).catch(() => {});
+      }).catch((_err) => { /* non-critical */ });
     } catch { await message.reply("couldn't ship them. maybe they're not meant to be."); }
     return;
   }
@@ -176,9 +205,15 @@ export async function handleMention(message, client) {
   // Conspiracy command — "@Sass conspiracy @user"
   const conspiracyMatch = cleanContent.match(/^conspiracy\s+<@!?(\d+)>/i);
   if (conspiracyMatch) {
+    const conspiracyTargetId = conspiracyMatch[1];
+    if (!conspiracyTargetId) return;
     try {
-      await message.channel.sendTyping();
-      const member = await message.guild.members.fetch(conspiracyMatch[1]);
+      await channel.sendTyping();
+      const member = await message.guild?.members.fetch(conspiracyTargetId);
+      if (!member) {
+        await message.reply("my investigation was compromised. suspicious.");
+        return;
+      }
       const response = await queryAI(
         `Create an absurd conspiracy theory about "${member.displayName}". Use their name. Reference Discord behavior (online at weird hours, suspicious channel activity). 2-3 sentences. Sound like a deranged detective.`,
         { systemPrompt: 'You generate absurd conspiracy theories. Creative and unhinged but not mean-spirited. Lowercase. Include fake evidence.' }
@@ -191,9 +226,15 @@ export async function handleMention(message, client) {
   // Compliment command — "@Sass compliment @user"
   const complimentMatch = cleanContent.match(/^compliment\s+<@!?(\d+)>/i);
   if (complimentMatch) {
+    const complimentTargetId = complimentMatch[1];
+    if (!complimentTargetId) return;
     try {
-      await message.channel.sendTyping();
-      const member = await message.guild.members.fetch(complimentMatch[1]);
+      await channel.sendTyping();
+      const member = await message.guild?.members.fetch(complimentTargetId);
+      if (!member) {
+        await message.reply("i tried to compliment them but even i couldn't find anything.");
+        return;
+      }
       const response = await queryAI(
         `Give "${member.displayName}" a backhanded compliment. Sound genuinely nice at first, then subtly roast by the end. One or two sentences. The twist should be subtle.`,
         { systemPrompt: 'You give backhanded compliments. Sincere at first, then twist. Lowercase. Subtle.' }
@@ -206,7 +247,10 @@ export async function handleMention(message, client) {
   // Roast as persona — "@Sass roast @user as gordon ramsay"
   const roastAsMatch = cleanContent.match(/^roast\s+<@!?(\d+)>\s+as\s+(.+)/i);
   if (roastAsMatch) {
-    const personas = {
+    const roastTargetId = roastAsMatch[1];
+    const personaInput = roastAsMatch[2];
+    if (!roastTargetId || !personaInput) return;
+    const personas: Record<string, string> = {
       'gordon ramsay': 'You are Gordon Ramsay. Roast them like a failed dish. Yell. Uppercase when yelling.',
       'shakespeare': 'You are Shakespeare. Roast in Elizabethan English. Use "thou," "forsooth." Dramatic monologue.',
       'disappointed mom': 'You are a disappointed mother. Guilt and passive aggression. "I\'m not mad, I\'m just disappointed."',
@@ -216,7 +260,7 @@ export async function handleMention(message, client) {
       'anime villain': 'You are a dramatic anime villain. Monologue about how pathetic they are. Dramatic pauses (...). Theatrical.',
       'passive aggressive coworker': 'You are a passive-aggressive coworker. "Per my last message," "as previously discussed." Polite but lethal.',
     };
-    const personaKey = roastAsMatch[2].trim().toLowerCase();
+    const personaKey = personaInput.trim().toLowerCase();
     const systemPrompt = personas[personaKey];
     if (!systemPrompt) {
       const available = Object.keys(personas).join(', ');
@@ -224,8 +268,12 @@ export async function handleMention(message, client) {
       return;
     }
     try {
-      await message.channel.sendTyping();
-      const member = await message.guild.members.fetch(roastAsMatch[1]);
+      await channel.sendTyping();
+      const member = await message.guild?.members.fetch(roastTargetId);
+      if (!member) {
+        await message.reply("even they couldn't find the words. that's how bad it is.");
+        return;
+      }
       const response = await queryAI(
         `Roast the Discord user "${member.displayName}". Stay in character. 2-3 sentences max.`,
         { systemPrompt }
@@ -239,13 +287,14 @@ export async function handleMention(message, client) {
   const rememberMatch = cleanContent.match(/^remember\s+<@!?(\d+)>\s+(.+)/i);
   if (rememberMatch) {
     const targetId = rememberMatch[1];
-    const fact = rememberMatch[2].trim();
+    const fact = rememberMatch[2]?.trim();
+    if (!targetId || !fact) return;
     if (targetId === client.user.id) {
       await message.reply("i'm not storing dirt on myself, nice try");
       return;
     }
     userMemory.remember(targetId, fact);
-    storeMemory(targetId, 'fact', fact).catch((err) => console.error('Vector store failed:', err.message));
+    storeMemory(targetId, 'fact', fact).catch((err) => console.error('Vector store failed:', (err as Error).message));
     const responses = [
       'noted. i\'ll use that later',
       'filed under "ammo" 📁',
@@ -253,23 +302,24 @@ export async function handleMention(message, client) {
       'saved. they have no idea what\'s coming',
       'interesting... very interesting',
     ];
-    await message.reply(responses[Math.floor(Math.random() * responses.length)]);
+    await message.reply(responses[Math.floor(Math.random() * responses.length)] as string);
     return;
   }
 
   // Remember about self — "@Sass remember I like pizza"
   const rememberSelfMatch = cleanContent.match(/^remember\s+(.+)/i);
-  if (rememberSelfMatch && !rememberSelfMatch[1].startsWith('<@')) {
-    const fact = rememberSelfMatch[1].trim();
+  if (rememberSelfMatch && !rememberSelfMatch[1]?.startsWith('<@')) {
+    const fact = rememberSelfMatch[1]?.trim();
+    if (!fact) return;
     userMemory.remember(userId, fact);
-    storeMemory(userId, 'fact', fact).catch((err) => console.error('Vector store failed:', err.message));
+    storeMemory(userId, 'fact', fact).catch((err) => console.error('Vector store failed:', (err as Error).message));
     const responses = [
       'noted. you just handed me a weapon',
       'filed. you\'ll regret this',
       'saved. this is going to come back to haunt you',
       'okay i\'ll remember that... for my own reasons',
     ];
-    await message.reply(responses[Math.floor(Math.random() * responses.length)]);
+    await message.reply(responses[Math.floor(Math.random() * responses.length)] as string);
     return;
   }
 
@@ -297,7 +347,7 @@ export async function handleMention(message, client) {
       'aight bet. see how boring it is without me',
       'imagine being this soft. goodbye.',
     ];
-    await message.reply(coldResponses[Math.floor(Math.random() * coldResponses.length)]);
+    await message.reply(coldResponses[Math.floor(Math.random() * coldResponses.length)] as string);
     return;
   }
 
@@ -306,6 +356,7 @@ export async function handleMention(message, client) {
     const cs = userMemory.getColdShoulder(userId);
     if (cs) {
       const status = userMemory.coldShoulderAttempt(userId);
+      if (!status) return;
       if (status.phase === 'icy') {
         const icyResponses = [
           '...',
@@ -315,7 +366,7 @@ export async function handleMention(message, client) {
           '*seen*',
           'lol no',
         ];
-        await message.reply(icyResponses[Math.floor(Math.random() * icyResponses.length)]);
+        await message.reply(icyResponses[Math.floor(Math.random() * icyResponses.length)] as string);
         return;
       }
       if (status.phase === 'warming') {
@@ -326,7 +377,7 @@ export async function handleMention(message, client) {
           'keep trying',
           'almost... not quite though',
         ];
-        await message.reply(warmingResponses[Math.floor(Math.random() * warmingResponses.length)]);
+        await message.reply(warmingResponses[Math.floor(Math.random() * warmingResponses.length)] as string);
         return;
       }
       if (status.phase === 'forgiven') {
@@ -336,7 +387,7 @@ export async function handleMention(message, client) {
           'ugh. i guess i missed roasting you. a little.',
           'alright you\'re unbanned. try not to cry this time',
         ];
-        await message.reply(forgivenResponses[Math.floor(Math.random() * forgivenResponses.length)]);
+        await message.reply(forgivenResponses[Math.floor(Math.random() * forgivenResponses.length)] as string);
         return;
       }
     }
@@ -370,7 +421,7 @@ export async function handleMention(message, client) {
   if (!cleanContent && !imageAttachment) {
     if (isCreator) {
       const creatorPings = ['yeah?', "what's up", 'hm?', 'you good?', "i'm here lol"];
-      await message.reply(creatorPings[Math.floor(Math.random() * creatorPings.length)]);
+      await message.reply(creatorPings[Math.floor(Math.random() * creatorPings.length)] as string);
     } else {
       const emptyPings = [
         'use your words',
@@ -382,13 +433,13 @@ export async function handleMention(message, client) {
         'okay and?',
         'that was a whole lot of nothing',
       ];
-      await message.reply(emptyPings[Math.floor(Math.random() * emptyPings.length)]);
+      await message.reply(emptyPings[Math.floor(Math.random() * emptyPings.length)] as string);
     }
     return;
   }
 
   // Build context — include who is speaking so the AI understands the conversation
-  const recentMessages = messageBuffer.getRecentRaw(message.channel.id, 10);
+  const recentMessages = messageBuffer.getRecentRaw(channel.id, 10);
   const recentContext = recentMessages.map(
     (msg) => `${msg.author}${msg.isBot ? ' [BOT]' : ''}: ${msg.content}`
   ).join('\n');
@@ -415,7 +466,7 @@ export async function handleMention(message, client) {
   const framedMessage = `${displayName} says: ${cleanContent}`;
 
   try {
-    await message.channel.sendTyping();
+    await channel.sendTyping();
 
     // Caught in 4K — check for contradictions before responding (non-creator only)
     if (!isCreator && cleanContent && cleanContent.length > 15) {
@@ -430,12 +481,12 @@ export async function handleMention(message, client) {
               mood.shift('chaos');
               userMemory.recordRoast(userId);
               // Still store the new statement
-              storeStatement(userId, statement).catch(() => {});
+              storeStatement(userId, statement).catch((_err) => { /* non-critical */ });
               return;
             }
           }
           // No contradiction — store the statement for future checks
-          storeStatement(userId, statement).catch(() => {});
+          storeStatement(userId, statement).catch((_err) => { /* non-critical */ });
         }
       } catch { /* 4K check is non-critical */ }
     }
@@ -443,18 +494,22 @@ export async function handleMention(message, client) {
     const imageUrl = imageAttachment ? imageAttachment.url : null;
     const fullUserContext = [userContext, vectorContext].filter(Boolean).join('\n\n');
     const response = await getSassResponse(framedMessage, { recentContext, userContext: fullUserContext, peopleContext, isCreator, mentionsCreator, creatorName, imageUrl });
+    if (!response) {
+      await message.reply("My brain just short-circuited. Even AI has bad days, okay?");
+      return;
+    }
     await message.reply(response);
 
     // Log to database
     const moodStatus = mood.getStatus();
     logInteraction({
       serverId: message.guild?.id, serverName: message.guild?.name,
-      channelId: message.channel.id, channelName: message.channel.name,
+      channelId: channel.id, channelName: channel.name,
       userId, username: displayName,
       triggerType: 'mention', commandName: null,
       userMessage: cleanContent, sassResponse: response,
       mood: moodStatus.mood, moodIntensity: moodStatus.intensity,
-    }).catch(() => {});
+    }).catch((_err) => { /* non-critical */ });
 
     // Don't track roast topics for the creator (we don't roast them)
     if (!isCreator) {
@@ -462,12 +517,12 @@ export async function handleMention(message, client) {
       extractRoastTopic(cleanContent).then((topic) => {
         if (topic) {
           userMemory.addRoast(userId, topic);
-          storeMemory(userId, 'roast', topic).catch(() => {});
+          storeMemory(userId, 'roast', topic).catch((_err) => { /* non-critical */ });
         }
-      }).catch(() => {});
+      }).catch((_err) => { /* non-critical */ });
     }
   } catch (err) {
-    console.error('Sass brain malfunction:', err.message);
+    console.error('Sass brain malfunction:', (err as Error).message);
     await message.reply(
       "My brain just short-circuited. Even AI has bad days, okay?"
     );

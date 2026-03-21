@@ -11,3 +11,4 @@ data/
 npm-debug.log*
 .eslintcache
 .claude/settings.local.json
+dist/

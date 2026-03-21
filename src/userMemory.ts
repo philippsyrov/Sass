@@ -1,6 +1,10 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import type {
+  UserData, ColdShoulderStatus, WildQuote, BeefRecord,
+  LeaderboardEntry, ServerStats, BufferEntry,
+} from './types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MEMORY_DIR = join(__dirname, '..', 'data');
@@ -11,29 +15,34 @@ const MEMORY_FILE = join(MEMORY_DIR, 'user-memory.json');
  * Stores last few roast topics per user so she can call back to them.
  */
 class UserMemory {
+  users: Record<string, UserData>;
+  _wildQuotes: WildQuote[] | null;
+  _beefs: Record<string, BeefRecord> | null;
+
   constructor() {
-    // { userId: { name, roasts: [string], lastSeen: timestamp, messageCount: number } }
     this.users = this._load();
+    this._wildQuotes = null;
+    this._beefs = null;
   }
 
-  _load() {
+  _load(): Record<string, UserData> {
     try {
       if (existsSync(MEMORY_FILE)) {
-        return JSON.parse(readFileSync(MEMORY_FILE, 'utf-8'));
+        return JSON.parse(readFileSync(MEMORY_FILE, 'utf-8')) as Record<string, UserData>;
       }
-    } catch {
+    } catch (_err) {
       console.error('Failed to load user memory, starting fresh');
     }
     return {};
   }
 
-  _save() {
+  _save(): void {
     try {
       if (!existsSync(MEMORY_DIR)) {
         mkdirSync(MEMORY_DIR, { recursive: true });
       }
       writeFileSync(MEMORY_FILE, JSON.stringify(this.users, null, 2));
-    } catch {
+    } catch (_err) {
       console.error('Failed to save user memory');
     }
   }
@@ -41,13 +50,16 @@ class UserMemory {
   /**
    * Track that a user sent a message.
    */
-  seen(userId, displayName) {
-    if (!this.users[userId]) {
+  seen(userId: string, displayName: string): void {
+    const existing = this.users[userId];
+    if (!existing) {
       this.users[userId] = { name: displayName, roasts: [], lastSeen: 0, messageCount: 0, timesRoasted: 0 };
     }
-    this.users[userId].name = displayName;
-    this.users[userId].lastSeen = Date.now();
-    this.users[userId].messageCount++;
+    const user = this.users[userId];
+    if (!user) return;
+    user.name = displayName;
+    user.lastSeen = Date.now();
+    user.messageCount++;
     this._save();
   }
 
@@ -55,11 +67,12 @@ class UserMemory {
    * Store a roast topic so Sass can reference it later.
    * Keeps only the last 5 per user.
    */
-  addRoast(userId, topic) {
-    if (!this.users[userId]) return;
-    this.users[userId].roasts.push(topic);
-    if (this.users[userId].roasts.length > 5) {
-      this.users[userId].roasts.shift();
+  addRoast(userId: string, topic: string): void {
+    const user = this.users[userId];
+    if (!user) return;
+    user.roasts.push(topic);
+    if (user.roasts.length > 5) {
+      user.roasts.shift();
     }
     this._save();
   }
@@ -67,11 +80,11 @@ class UserMemory {
   /**
    * Get context string about a user for the AI prompt.
    */
-  getContext(userId) {
+  getContext(userId: string): string {
     const user = this.users[userId];
     if (!user) return '';
 
-    const parts = [];
+    const parts: string[] = [];
     if (user.facts && user.facts.length > 0) {
       parts.push(
         `things you know about ${user.name}: ${user.facts.join('; ')}. weaponize this.`
@@ -84,11 +97,11 @@ class UserMemory {
       );
     }
     if (user.messageCount > 50) {
-      parts.push(`${user.name} is basically a fixture here. they can take whatever you throw at them — no mercy.`);
+      parts.push(`${user.name} is basically a fixture here. they can take whatever you throw at them \u2014 no mercy.`);
     } else if (user.messageCount > 20) {
       parts.push(`${user.name} is a regular. they know what they signed up for.`);
     } else if (user.messageCount <= 3) {
-      parts.push(`${user.name} is new here. welcome them — ominously.`);
+      parts.push(`${user.name} is new here. welcome them \u2014 ominously.`);
     }
     return parts.join(' ');
   }
@@ -97,11 +110,11 @@ class UserMemory {
    * Build a "people in this chat" block from recent messages.
    * Gives Sass awareness of who's in the room and what she knows about them.
    */
-  buildPeopleContext(recentMessages) {
+  buildPeopleContext(recentMessages: BufferEntry[]): string {
     if (!recentMessages || recentMessages.length === 0) return '';
 
     const creatorId = process.env.CREATOR_ID;
-    const seen = new Map();
+    const seen = new Map<string, string>();
 
     // Collect unique users from recent messages
     for (const msg of recentMessages) {
@@ -111,14 +124,14 @@ class UserMemory {
 
     if (seen.size === 0) return '';
 
-    const lines = ['PEOPLE IN THIS CHAT:'];
+    const lines: string[] = ['PEOPLE IN THIS CHAT:'];
     for (const [userId, displayName] of seen) {
       const user = this.users[userId];
-      const parts = [];
+      const parts: string[] = [];
 
       // Creator tag
       if (userId === creatorId) {
-        parts.push('your creator, friend — never roast');
+        parts.push('your creator, friend \u2014 never roast');
       } else if (user) {
         // Activity level — no exact counts, just vibes
         if (user.messageCount > 50) parts.push('regular, been around a while');
@@ -133,7 +146,7 @@ class UserMemory {
           parts.push(`ammo: ${user.roasts.join(', ')}`);
         }
       } else {
-        parts.push('unknown — first time seeing them');
+        parts.push('unknown \u2014 first time seeing them');
       }
 
       lines.push(`- ${displayName} (${parts.join(', ')})`);
@@ -145,16 +158,17 @@ class UserMemory {
   /**
    * Increment the roast counter for a user.
    */
-  recordRoast(userId) {
-    if (!this.users[userId]) return;
-    this.users[userId].timesRoasted = (this.users[userId].timesRoasted || 0) + 1;
+  recordRoast(userId: string): void {
+    const user = this.users[userId];
+    if (!user) return;
+    user.timesRoasted = (user.timesRoasted || 0) + 1;
     this._save();
   }
 
   /**
    * Get the roast leaderboard — top N most roasted users.
    */
-  getLeaderboard(limit = 10) {
+  getLeaderboard(limit = 10): LeaderboardEntry[] {
     return Object.entries(this.users)
       .filter(([id]) => id !== process.env.CREATOR_ID)
       .map(([id, data]) => ({ id, name: data.name, timesRoasted: data.timesRoasted || 0 }))
@@ -166,12 +180,13 @@ class UserMemory {
    * Store a fact about a user that Sass can weaponize later.
    * Keeps last 10 facts per user.
    */
-  remember(userId, fact) {
-    if (!this.users[userId]) return;
-    if (!this.users[userId].facts) this.users[userId].facts = [];
-    this.users[userId].facts.push(fact);
-    if (this.users[userId].facts.length > 10) {
-      this.users[userId].facts.shift();
+  remember(userId: string, fact: string): void {
+    const user = this.users[userId];
+    if (!user) return;
+    if (!user.facts) user.facts = [];
+    user.facts.push(fact);
+    if (user.facts.length > 10) {
+      user.facts.shift();
     }
     this._save();
   }
@@ -179,7 +194,7 @@ class UserMemory {
   /**
    * Get remembered facts about a user.
    */
-  getFacts(userId) {
+  getFacts(userId: string): string[] {
     return this.users[userId]?.facts || [];
   }
 
@@ -187,10 +202,11 @@ class UserMemory {
    * Put a user on the cold shoulder list. They asked Sass to stop.
    * They'll need to win her back (3-5 attempts).
    */
-  coldShoulder(userId) {
-    if (!this.users[userId]) return;
+  coldShoulder(userId: string): void {
+    const user = this.users[userId];
+    if (!user) return;
     const attemptsNeeded = 3 + Math.floor(Math.random() * 3); // 3-5
-    this.users[userId].coldShoulder = { active: true, attemptsNeeded, attemptsMade: 0 };
+    user.coldShoulder = { active: true, attemptsNeeded, attemptsMade: 0 };
     this._save();
   }
 
@@ -198,7 +214,7 @@ class UserMemory {
    * Check if user is on the cold shoulder list.
    * Returns: false | { phase: 'icy' | 'warming' | 'forgiven', attemptsMade, attemptsNeeded }
    */
-  getColdShoulder(userId) {
+  getColdShoulder(userId: string): false | ColdShoulderStatus {
     const cs = this.users[userId]?.coldShoulder;
     if (!cs || !cs.active) return false;
     const progress = cs.attemptsMade / cs.attemptsNeeded;
@@ -210,7 +226,7 @@ class UserMemory {
   /**
    * Record an attempt to win Sass back. Returns the current phase after the attempt.
    */
-  coldShoulderAttempt(userId) {
+  coldShoulderAttempt(userId: string): false | ColdShoulderStatus {
     const cs = this.users[userId]?.coldShoulder;
     if (!cs || !cs.active) return false;
     cs.attemptsMade++;
@@ -227,80 +243,84 @@ class UserMemory {
   /**
    * Store a wild quote from a user. Keeps top 20 across all users.
    */
-  addWildQuote(userId, quote) {
-    if (!this.users[userId]) return;
+  addWildQuote(userId: string, quote: string): void {
+    const user = this.users[userId];
+    if (!user) return;
     if (!this._wildQuotes) this._wildQuotes = this._loadWildQuotes();
-    this._wildQuotes.push({ userId, name: this.users[userId].name, quote, timestamp: Date.now() });
+    this._wildQuotes.push({ userId, name: user.name, quote, timestamp: Date.now() });
     if (this._wildQuotes.length > 20) this._wildQuotes.shift();
     this._saveWildQuotes();
   }
 
-  getWildQuotes(limit = 10) {
+  getWildQuotes(limit = 10): WildQuote[] {
     if (!this._wildQuotes) this._wildQuotes = this._loadWildQuotes();
     return this._wildQuotes.slice(-limit).reverse();
   }
 
-  _loadWildQuotes() {
+  _loadWildQuotes(): WildQuote[] {
     try {
       const path = join(MEMORY_DIR, 'wild-quotes.json');
-      if (existsSync(path)) return JSON.parse(readFileSync(path, 'utf-8'));
-    } catch { /* ignore */ }
+      if (existsSync(path)) return JSON.parse(readFileSync(path, 'utf-8')) as WildQuote[];
+    } catch (_err) { /* non-critical */ }
     return [];
   }
 
-  _saveWildQuotes() {
+  _saveWildQuotes(): void {
     try {
       if (!existsSync(MEMORY_DIR)) mkdirSync(MEMORY_DIR, { recursive: true });
       writeFileSync(join(MEMORY_DIR, 'wild-quotes.json'), JSON.stringify(this._wildQuotes, null, 2));
-    } catch { /* ignore */ }
+    } catch (_err) { /* non-critical */ }
   }
 
   /**
    * Track beef between two users.
    */
-  addBeef(userId1, userId2, topic = null) {
+  addBeef(userId1: string, userId2: string, topic: string | null = null): void {
     if (!this._beefs) this._beefs = this._loadBeefs();
     const key = [userId1, userId2].sort().join('-');
-    if (!this._beefs[key]) {
+    const existing = this._beefs[key];
+    if (!existing) {
       this._beefs[key] = { incidents: 0, firstBeef: Date.now(), lastBeef: 0, lastTopic: null };
     }
-    this._beefs[key].incidents++;
-    this._beefs[key].lastBeef = Date.now();
-    if (topic) this._beefs[key].lastTopic = topic;
+    const beef = this._beefs[key];
+    if (!beef) return;
+    beef.incidents++;
+    beef.lastBeef = Date.now();
+    if (topic) beef.lastTopic = topic;
     this._saveBeefs();
   }
 
-  getBeef(userId1, userId2) {
+  getBeef(userId1: string, userId2: string): BeefRecord | null {
     if (!this._beefs) this._beefs = this._loadBeefs();
     const key = [userId1, userId2].sort().join('-');
-    return this._beefs[key] || null;
+    return this._beefs[key] ?? null;
   }
 
-  _loadBeefs() {
+  _loadBeefs(): Record<string, BeefRecord> {
     try {
       const path = join(MEMORY_DIR, 'beefs.json');
-      if (existsSync(path)) return JSON.parse(readFileSync(path, 'utf-8'));
-    } catch { /* ignore */ }
+      if (existsSync(path)) return JSON.parse(readFileSync(path, 'utf-8')) as Record<string, BeefRecord>;
+    } catch (_err) { /* non-critical */ }
     return {};
   }
 
-  _saveBeefs() {
+  _saveBeefs(): void {
     try {
       if (!existsSync(MEMORY_DIR)) mkdirSync(MEMORY_DIR, { recursive: true });
       writeFileSync(join(MEMORY_DIR, 'beefs.json'), JSON.stringify(this._beefs, null, 2));
-    } catch { /* ignore */ }
+    } catch (_err) { /* non-critical */ }
   }
 
   /**
    * Get server-wide stats for wrapped command.
    */
-  getServerStats() {
+  getServerStats(): ServerStats | null {
     const entries = Object.entries(this.users).filter(([id]) => id !== process.env.CREATOR_ID);
     if (entries.length === 0) return null;
 
-    const users = {};
-    let mostActive = null;
-    let mostRoasted = null;
+    const users: Record<string, UserData> = {};
+    let mostActive: UserData | null = null;
+    let mostRoasted: UserData | null = null;
 
     for (const [id, data] of entries) {
       users[id] = data;
@@ -316,11 +336,13 @@ class UserMemory {
    * Check if a message text mentions the creator by name.
    * Used to prevent roasting the creator even when others talk about them.
    */
-  isAboutCreator(text) {
+  isAboutCreator(text: string): boolean {
     const creatorId = process.env.CREATOR_ID;
-    if (!creatorId || !this.users[creatorId]) return false;
+    if (!creatorId) return false;
+    const creatorUser = this.users[creatorId];
+    if (!creatorUser) return false;
 
-    const creatorName = this.users[creatorId].name?.toLowerCase();
+    const creatorName = creatorUser.name?.toLowerCase();
     if (!creatorName) return false;
     const lowerText = text.toLowerCase();
 
@@ -331,10 +353,12 @@ class UserMemory {
   /**
    * Get the creator's display name.
    */
-  getCreatorName() {
+  getCreatorName(): string | null {
     const creatorId = process.env.CREATOR_ID;
-    if (!creatorId || !this.users[creatorId]) return null;
-    return this.users[creatorId].name;
+    if (!creatorId) return null;
+    const creatorUser = this.users[creatorId];
+    if (!creatorUser) return null;
+    return creatorUser.name;
   }
 }
 

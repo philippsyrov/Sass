@@ -2,10 +2,11 @@
   "name": "sass",
   "version": "1.0.0",
   "type": "module",
-  "main": "src/index.js",
+  "main": "dist/index.js",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx --watch src/index.ts",
     "lint": "eslint src/",
     "verify": "./scripts/verify.sh"
   },
@@ -30,6 +31,13 @@
     "pg": "^8.20.0"
   },
   "devDependencies": {
-    "eslint": "^10.0.3"
+    "@eslint/js": "^10.0.1",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.5.0",
+    "@types/pg": "^8.20.0",
+    "eslint": "^10.0.3",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.57.1"
   }
 }

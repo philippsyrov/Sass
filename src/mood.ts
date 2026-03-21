@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import type { MoodType, MoodEvent, MoodState, MoodStatus } from './types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MOOD_FILE = join(__dirname, '..', 'data', 'mood.json');
@@ -25,7 +26,7 @@ const DATA_DIR = join(__dirname, '..', 'data');
 const MOOD_DECAY_MS = 30 * 60 * 1000; // mood decays every 30 min
 const DECAY_AMOUNT = 15; // how much intensity drops per decay tick
 
-const MOOD_PROMPTS = {
+const MOOD_PROMPTS: Record<MoodType, string> = {
   neutral: '',
   chaotic: `YOUR CURRENT MOOD: chaotic. you're in full gremlin mode right now. things are funny to you. you're more likely to use caps lock and be unhinged. lean into the chaos. "LMAO WHAT" energy.`,
   chill: `YOUR CURRENT MOOD: chill. you're in a rare good mood. still sassy but more playful than mean. your roasts have a smile behind them. you might even — barely — compliment someone. don't overdo the niceness tho, you still have a reputation.`,
@@ -35,7 +36,7 @@ const MOOD_PROMPTS = {
   soft: `YOUR CURRENT MOOD: soft (don't tell anyone). something nice happened and you're feeling almost... kind? still sassy, but there's warmth underneath. you might say something genuinely nice and then immediately backtrack. "that was actually cool... don't let it go to your head." cover your softness with deflection.`,
 };
 
-const MOOD_TEMPERATURES = {
+const MOOD_TEMPERATURES: Record<MoodType, number> = {
   neutral: 1.2,
   chaotic: 1.4,
   chill: 1.0,
@@ -45,27 +46,34 @@ const MOOD_TEMPERATURES = {
   soft: 1.0,
 };
 
+interface MoodShiftConfig {
+  mood: MoodType;
+  delta: number;
+}
+
 class MoodSystem {
+  state: MoodState;
+
   constructor() {
     this.state = this._load();
   }
 
-  _load() {
+  _load(): MoodState {
     try {
       if (existsSync(MOOD_FILE)) {
-        return JSON.parse(readFileSync(MOOD_FILE, 'utf-8'));
+        return JSON.parse(readFileSync(MOOD_FILE, 'utf-8')) as MoodState;
       }
-    } catch {
+    } catch (_err) {
       console.error('Failed to load mood state, starting fresh');
     }
     return { mood: 'neutral', intensity: 0, lastShift: Date.now(), lastDecay: Date.now() };
   }
 
-  _save() {
+  _save(): void {
     try {
       if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
       writeFileSync(MOOD_FILE, JSON.stringify(this.state, null, 2));
-    } catch {
+    } catch (_err) {
       console.error('Failed to save mood state');
     }
   }
@@ -73,7 +81,7 @@ class MoodSystem {
   /**
    * Get current mood after applying decay.
    */
-  getMood() {
+  getMood(): { mood: MoodType; intensity: number } {
     this._applyDecay();
     if (this.state.intensity <= 0) {
       this.state.mood = 'neutral';
@@ -85,7 +93,7 @@ class MoodSystem {
   /**
    * Get the mood-specific addition to the system prompt.
    */
-  getMoodPrompt() {
+  getMoodPrompt(): string {
     const { mood, intensity } = this.getMood();
     if (mood === 'neutral' || intensity <= 10) return '';
     return MOOD_PROMPTS[mood] || '';
@@ -94,7 +102,7 @@ class MoodSystem {
   /**
    * Get the temperature adjustment for the current mood.
    */
-  getMoodTemperature() {
+  getMoodTemperature(): number {
     const { mood, intensity } = this.getMood();
     if (mood === 'neutral' || intensity <= 10) return 1.2; // default
     // Blend between neutral temp and mood temp based on intensity
@@ -104,17 +112,10 @@ class MoodSystem {
   }
 
   /**
-   * Shift mood based on an event. Events:
-   * - 'complimented'  — someone was nice to Sass
-   * - 'insulted'      — someone tried to roast Sass back
-   * - 'chaos'         — chaotic messages in chat
-   * - 'boring'        — mundane/dead chat
-   * - 'nice_to_each_other' — users being wholesome
-   * - 'fighting'      — users arguing/beefing
-   * - 'begged_back'   — someone came back from cold shoulder
+   * Shift mood based on an event.
    */
-  shift(event) {
-    const shifts = {
+  shift(event: MoodEvent): void {
+    const shifts: Record<MoodEvent, MoodShiftConfig> = {
       complimented: { mood: 'soft', delta: 25 },
       insulted: { mood: 'petty', delta: 30 },
       chaos: { mood: 'chaotic', delta: 20 },
@@ -147,7 +148,7 @@ class MoodSystem {
   /**
    * Apply time-based decay toward neutral.
    */
-  _applyDecay() {
+  _applyDecay(): void {
     const now = Date.now();
     const elapsed = now - (this.state.lastDecay || now);
     const ticks = Math.floor(elapsed / MOOD_DECAY_MS);
@@ -165,16 +166,16 @@ class MoodSystem {
   /**
    * Get a human-readable mood status for display.
    */
-  getStatus() {
+  getStatus(): MoodStatus {
     const { mood, intensity } = this.getMood();
-    const labels = {
-      neutral: '😐 neutral — just vibing',
-      chaotic: '🤪 chaotic — gremlin mode activated',
-      chill: '😎 chill — almost friendly (don\'t get used to it)',
-      petty: '💅 petty — holding grudges and names',
-      bored: '😑 bored — couldn\'t care less',
-      unhinged: '🔥 UNHINGED — no filter, no mercy',
-      soft: '🥺 soft — (don\'t tell anyone)',
+    const labels: Record<MoodType, string> = {
+      neutral: '\u{1F610} neutral \u2014 just vibing',
+      chaotic: '\u{1F92A} chaotic \u2014 gremlin mode activated',
+      chill: '\u{1F60E} chill \u2014 almost friendly (don\'t get used to it)',
+      petty: '\u{1F485} petty \u2014 holding grudges and names',
+      bored: '\u{1F611} bored \u2014 couldn\'t care less',
+      unhinged: '\u{1F525} UNHINGED \u2014 no filter, no mercy',
+      soft: '\u{1F97A} soft \u2014 (don\'t tell anyone)',
     };
     return { mood, intensity, label: labels[mood] || labels.neutral };
   }

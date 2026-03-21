@@ -7,24 +7,24 @@ const MENTION_COOLDOWN_MS = 3000;   // 3s between replies to same user
 const AUTO_SASS_COOLDOWN_MS = 60000; // 60s between auto-sass in same channel
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // clean up every 5 min
 
-const userCooldowns = new Map();
-const channelCooldowns = new Map();
+const userCooldowns = new Map<string, number>();
+const channelCooldowns = new Map<string, number>();
 
-export function isOnMentionCooldown(userId) {
+export function isOnMentionCooldown(userId: string): boolean {
   const last = userCooldowns.get(userId) || 0;
   return Date.now() - last < MENTION_COOLDOWN_MS;
 }
 
-export function setMentionCooldown(userId) {
+export function setMentionCooldown(userId: string): void {
   userCooldowns.set(userId, Date.now());
 }
 
-export function isOnAutoSassCooldown(channelId) {
+export function isOnAutoSassCooldown(channelId: string): boolean {
   const last = channelCooldowns.get(channelId) || 0;
   return Date.now() - last < AUTO_SASS_COOLDOWN_MS;
 }
 
-export function setAutoSassCooldown(channelId) {
+export function setAutoSassCooldown(channelId: string): void {
   channelCooldowns.set(channelId, Date.now());
 }
 

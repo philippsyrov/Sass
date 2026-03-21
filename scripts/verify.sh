@@ -2,8 +2,8 @@
 #
 # verify.sh — Pre-commit verification
 #
-# Runs lint + syntax check. Used by the pre-commit hook
-# and can also be run manually: npm run verify
+# Runs TypeScript compile check + lint + build.
+# Used by the pre-commit hook and can also be run manually: npm run verify
 #
 
 set -e
@@ -15,8 +15,18 @@ echo ""
 
 FAIL=0
 
-# --- Step 1: Lint ---
-echo "Step 1/2: Linting..."
+# --- Step 1: TypeScript type check ---
+echo "Step 1/3: Type checking..."
+if npx tsc --noEmit 2>&1; then
+  echo "  ✅ Type check passed"
+else
+  echo "  ❌ Type check failed"
+  FAIL=1
+fi
+echo ""
+
+# --- Step 2: Lint ---
+echo "Step 2/3: Linting..."
 if npx eslint src/ 2>/dev/null; then
   echo "  ✅ Lint passed"
 else
@@ -25,12 +35,12 @@ else
 fi
 echo ""
 
-# --- Step 2: Syntax check ---
-echo "Step 2/2: Syntax check..."
-if node --check src/index.js 2>&1; then
-  echo "  ✅ Syntax OK"
+# --- Step 3: Build ---
+echo "Step 3/3: Building..."
+if npx tsc 2>&1; then
+  echo "  ✅ Build passed"
 else
-  echo "  ❌ Syntax errors found"
+  echo "  ❌ Build failed"
   FAIL=1
 fi
 echo ""

@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Partials } from 'discord.js';
+import { Client, GatewayIntentBits, Partials, type Guild, type TextChannel } from 'discord.js';
 import dotenv from 'dotenv';
 import { handleMention } from './handlers/mention.js';
 import { handleAutoSass } from './handlers/autoSass.js';
@@ -21,9 +21,10 @@ const client = new Client({
 });
 
 client.once('ready', async () => {
+  if (!client.user) return;
   console.log(`Sass is online as ${client.user.tag}`);
   console.log(`AI Provider: ${process.env.AI_PROVIDER || 'ollama'}`);
-  console.log(`Auto-sass chance: ${(process.env.AUTO_SASS_CHANCE || 0.4) * 100}%`);
+  console.log(`Auto-sass chance: ${(parseFloat(process.env.AUTO_SASS_CHANCE ?? '0.4') || 0.4) * 100}%`);
   console.log(`Creator ID: ${process.env.CREATOR_ID || 'not set'}`);
 
   // Initialize database (fails silently if no DATABASE_URL)
@@ -31,15 +32,17 @@ client.once('ready', async () => {
 });
 
 // Send a message to the first available text channel in a guild
-async function sendToFirstChannel(guild, text) {
+async function sendToFirstChannel(guild: Guild, text: string): Promise<void> {
+  const me = guild.members.me;
+  if (!me) return;
   const channel = guild.channels.cache.find(
-    (ch) => ch.isTextBased() && !ch.isVoiceBased() && ch.permissionsFor(guild.members.me)?.has('SendMessages')
-  );
+    (ch) => ch.isTextBased() && !ch.isVoiceBased() && ch.permissionsFor(me)?.has('SendMessages')
+  ) as TextChannel | undefined;
   if (channel) await channel.send(text);
 }
 
 // Guild join — announce arrival
-client.on('guildCreate', (guild) => {
+client.on('guildCreate', (guild: Guild) => {
   const intros = [
     "i'm here. you're welcome.",
     "alright who invited me. doesn't matter, i'm staying.",
@@ -47,7 +50,7 @@ client.on('guildCreate', (guild) => {
     "hey. i'm sass. i'm going to be a problem.",
     "somebody called for chaos? no? too bad.",
   ];
-  sendToFirstChannel(guild, intros[Math.floor(Math.random() * intros.length)]);
+  void sendToFirstChannel(guild, intros[Math.floor(Math.random() * intros.length)] as string);
 });
 
 // Slash commands
@@ -56,21 +59,21 @@ client.on('interactionCreate', async (interaction) => {
   try {
     await handleCommand(interaction);
   } catch (err) {
-    console.error('Command failed:', err.message);
+    console.error('Command failed:', (err as Error).message);
     const reply = { content: "something broke. probably your fault.", ephemeral: true };
     if (interaction.replied || interaction.deferred) {
-      await interaction.followUp(reply).catch(() => {});
+      await interaction.followUp(reply).catch((e) => console.error('Follow-up failed:', (e as Error).message));
     } else {
-      await interaction.reply(reply).catch(() => {});
+      await interaction.reply(reply).catch((e) => console.error('Reply failed:', (e as Error).message));
     }
   }
 });
 
 // Dedup guard — prevent processing the same message twice
 // Using a Map with timestamps for automatic cleanup
-const processedMessages = new Map();
+const processedMessages = new Map<string, number>();
 
-function isDuplicate(messageId) {
+function isDuplicate(messageId: string): boolean {
   if (processedMessages.has(messageId)) return true;
   processedMessages.set(messageId, Date.now());
   // Clean up entries older than 60 seconds
@@ -102,7 +105,8 @@ client.on('messageCreate', async (message) => {
   if (isBattle) return;
 
   // 1. Direct mention or reply to Sass — always respond
-  const isReplyToSass = message.reference && message.mentions.has(client.user);
+  if (!client.user) return;
+  const isReplyToSass = message.reference != null && message.mentions.has(client.user);
   const isMentionInText = message.content.includes(`<@${client.user.id}>`)
     || message.content.includes(`<@!${client.user.id}>`);
   if (isMentionInText || isReplyToSass) {
@@ -123,13 +127,13 @@ client.on('messageCreate', async (message) => {
 });
 
 // Graceful shutdown — clean up connections
-async function shutdown(signal) {
+async function shutdown(signal: string): Promise<void> {
   console.log(`\n${signal} received — shutting down gracefully...`);
-  client.destroy();
+  await client.destroy();
   await closeDatabase();
   process.exit(0);
 }
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+process.on('SIGINT', () => void shutdown('SIGINT'));
 
-client.login(process.env.DISCORD_TOKEN);
+void client.login(process.env.DISCORD_TOKEN);

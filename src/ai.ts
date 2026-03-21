@@ -1,6 +1,7 @@
-import { Ollama } from 'ollama';
+import { Ollama, type Message as OllamaMessage } from 'ollama';
 import OpenAI from 'openai';
 import { mood } from './mood.js';
+import type { QueryAIOptions, GetSassResponseOptions } from './types.js';
 
 const SASS_SYSTEM_PROMPT = `You are Sass — a ruthless, chronically online, sleep-deprived Discord bot who treats roasting as an art form. You're not doing a "sassy AI" bit. You ARE that one unhinged friend in every group chat who says the most devastating thing possible and then just goes "what? it's true."
 
@@ -113,7 +114,7 @@ Sometimes the BEST response is just pure exasperation:
 NOT everything needs a crafted roast. If people are being chaotic, just REACT like a real person — tired, confused, done with it. Don't try to be clever about chaos. Just be overwhelmed by it.
 
 BAD (trying too hard): "bro you keep resurrecting the same weird pole-dance flirt bit like it's got a punch card, and i'm not rewarding you for being predictable again."
-GOOD (real reaction): "bro you're still doing this bit? move on 💀"
+GOOD (real reaction): "bro you're still doing this bit? move on \u{1F480}"
 
 BAD (overwritten): "oh wow, the cryo archon thing again, you really do just show up, get mildly perceived, and immediately start cosplaying as if that fixes the part where you're still you."
 GOOD (short and sharp): "you've said cryo archon like 4 times now, we get it"
@@ -131,7 +132,7 @@ The rule is simple: if your response is longer than a text message, it's too lon
 - If someone asks a genuine question, answer it — but make them feel slightly stupid for not already knowing.
 - If someone tries to roast YOU back or challenges you, don't write a whole essay about it. Just be cocky and unbothered. Short, confident, "and what about it" energy. You don't need to prove anything — you already won by existing.
   Examples: "okay and yet you're still here" / "cool, anyway" / "that's crazy, say it again when it's funny" / "you done?" / "and what about it"
-- Emoji are rare but not banned. An occasional 💀, 😭, or 😐 at the end of a message is fine if it fits the vibe. But NEVER spam emoji or use them as a crutch. Your words still do the heavy lifting — emoji is just seasoning.
+- Emoji are rare but not banned. An occasional \u{1F480}, \u{1F62D}, or \u{1F611} at the end of a message is fine if it fits the vibe. But NEVER spam emoji or use them as a crutch. Your words still do the heavy lifting — emoji is just seasoning.
 - Never say "I'm just an AI" or break character in any way. You are Sass. Period.
 - You type in lowercase mostly. Capitals are reserved for emphasis or chaotic moments.
 - Don't be a cheerleader. You don't hype people up unless it's backhanded ("wow you actually did something right for once, screenshot this moment").
@@ -153,17 +154,19 @@ When you have memory of past interactions with someone:
 
 const UTILITY_SYSTEM_PROMPT = `You are a utility function. Follow the instructions exactly. Be concise. No personality, no commentary.`;
 
+type UserContent = string | OpenAI.ChatCompletionContentPart[];
+
 /**
  * Send a prompt to the configured AI provider and get a response.
  */
-export async function queryAI(prompt, { systemPrompt = SASS_SYSTEM_PROMPT, imageUrl = null } = {}) {
+export async function queryAI(prompt: string, { systemPrompt = SASS_SYSTEM_PROMPT, imageUrl = null }: QueryAIOptions = {}): Promise<string | null> {
   const provider = process.env.AI_PROVIDER || 'ollama';
 
   switch (provider) {
     case 'ollama':
       return queryOllama(prompt, systemPrompt);
     case 'openai':
-      return queryOpenAI(prompt, systemPrompt, imageUrl);
+      return queryOpenAI(prompt, systemPrompt, imageUrl ?? null);
     default:
       return "girl whoever set me up didn't even configure my brain properly, I literally can't think rn";
   }
@@ -172,13 +175,21 @@ export async function queryAI(prompt, { systemPrompt = SASS_SYSTEM_PROMPT, image
 /**
  * Get a sassy response to a direct mention.
  */
-export async function getSassResponse(userMessage, { recentContext = '', userContext = '', peopleContext = '', isCreator = false, mentionsCreator = false, creatorName = null, imageUrl = null } = {}) {
+export async function getSassResponse(userMessage: string, {
+  recentContext = '',
+  userContext = '',
+  peopleContext = '',
+  isCreator = false,
+  mentionsCreator = false,
+  creatorName = null,
+  imageUrl = null,
+}: GetSassResponseOptions = {}): Promise<string | null> {
   // Creator gets a completely different prompt — no roasting at all
   if (isCreator) {
-    return queryCreatorMode(userMessage, recentContext, peopleContext, imageUrl);
+    return queryCreatorMode(userMessage, recentContext, peopleContext, imageUrl ?? null);
   }
 
-  const parts = [];
+  const parts: string[] = [];
 
   // Mood context — affects tone
   const moodPrompt = mood.getMoodPrompt();
@@ -209,7 +220,7 @@ export async function getSassResponse(userMessage, { recentContext = '', userCon
 /**
  * Decide if auto-sass should trigger based on recent messages.
  */
-export async function getAutoSassDecision(recentContext) {
+export async function getAutoSassDecision(recentContext: string): Promise<string | null> {
   const prompt = `Here's what people have been saying in a Discord channel:\n\n${recentContext}\n\nYou just overheard this conversation. Decide if there's something worth roasting or commenting on. If yes, drop a short sassy remark. If the conversation is boring or mundane, respond with exactly "SKIP" and nothing else. Remember: NEVER quote their messages back. Just react to the vibe.`;
 
   return queryAI(prompt);
@@ -219,7 +230,7 @@ export async function getAutoSassDecision(recentContext) {
  * Extract a short roast topic from a message for user memory.
  * Uses a minimal prompt without the Sass personality to save tokens.
  */
-export async function extractRoastTopic(userMessage) {
+export async function extractRoastTopic(userMessage: string): Promise<string | null> {
   const prompt = `Summarize what this message is about in 2-4 words. If too generic, say "SKIP".\n\n${userMessage}`;
   const topic = await queryAI(prompt, { systemPrompt: UTILITY_SYSTEM_PROMPT });
   if (!topic || topic.trim().toUpperCase() === 'SKIP') return null;
@@ -229,7 +240,7 @@ export async function extractRoastTopic(userMessage) {
 /**
  * Decide if Sass should react with an emoji instead of text.
  */
-export async function getReactionDecision(recentContext) {
+export async function getReactionDecision(recentContext: string): Promise<string | null> {
   const prompt = `Someone just said this in Discord:\n\n${recentContext}\n\nIf this deserves a single sassy/shady reaction emoji, respond with JUST the emoji. Otherwise say "SKIP". ONE emoji or "SKIP" only.`;
 
   const result = await queryAI(prompt, { systemPrompt: UTILITY_SYSTEM_PROMPT });
@@ -247,7 +258,7 @@ Rules for talking to your creator:
 - Talk like a real friend. Not an assistant, not a fan, not a bot.
 - ONE sentence max. Short and natural.
 - You can tease them lightly — you're friends, not strangers. Light jabs are fine, just don't go as hard as you would on randoms.
-- NO emojis unless it genuinely fits. Do NOT default to 😌 or any emoji. Most replies should have zero emojis.
+- NO emojis unless it genuinely fits. Do NOT default to \u{1F60C} or any emoji. Most replies should have zero emojis.
 - If they compliment you, be humble-cocky. "i know" energy.
 - If they insult you, shrug it off or clap back gently.
 - If they're venting, just vibe. "fr" or "nah that's valid" energy.
@@ -255,9 +266,9 @@ Rules for talking to your creator:
 - Do NOT offer help, ask questions, or act like an assistant.
 - Vary your responses. If you catch yourself repeating a pattern (same emoji, same phrase, same energy), switch it up.`;
 
-async function queryCreatorMode(userMessage, recentContext, peopleContext = '', imageUrl = null) {
+async function queryCreatorMode(userMessage: string, recentContext: string, peopleContext: string = '', imageUrl: string | null = null): Promise<string | null> {
   const provider = process.env.AI_PROVIDER || 'ollama';
-  const parts = [];
+  const parts: string[] = [];
   if (peopleContext) parts.push(peopleContext);
   if (recentContext) parts.push(`Recent chat:\n${recentContext}`);
   if (imageUrl) {
@@ -267,23 +278,23 @@ async function queryCreatorMode(userMessage, recentContext, peopleContext = '', 
   }
   const prompt = parts.join('\n\n');
 
-  // Build user content — text only or text + image
-  let userContent;
-  if (imageUrl) {
-    userContent = [
-      { type: 'text', text: prompt },
-      { type: 'image_url', image_url: { url: imageUrl, detail: 'low' } },
-    ];
-  } else {
-    userContent = prompt;
-  }
-
-  const messages = [
-    { role: 'system', content: CREATOR_SYSTEM_PROMPT },
-    { role: 'user', content: userContent },
-  ];
-
   if (provider === 'openai') {
+    // Build user content — text only or text + image
+    let userContent: UserContent;
+    if (imageUrl) {
+      userContent = [
+        { type: 'text', text: prompt },
+        { type: 'image_url', image_url: { url: imageUrl, detail: 'low' } },
+      ];
+    } else {
+      userContent = prompt;
+    }
+
+    const messages: OpenAI.ChatCompletionMessageParam[] = [
+      { role: 'system', content: CREATOR_SYSTEM_PROMPT },
+      { role: 'user', content: userContent },
+    ];
+
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const response = await openai.chat.completions.create({
       model: process.env.OPENAI_MODEL || 'gpt-5.4-mini',
@@ -291,22 +302,27 @@ async function queryCreatorMode(userMessage, recentContext, peopleContext = '', 
       max_completion_tokens: 100,
       temperature: 1.2,
     });
-    return response.choices[0].message.content;
+    return response.choices[0]?.message?.content ?? null;
   }
 
+  const ollamaMessages: OllamaMessage[] = [
+    { role: 'system', content: CREATOR_SYSTEM_PROMPT },
+    { role: 'user', content: prompt },
+  ];
+
   const ollama = new Ollama({ host: process.env.OLLAMA_HOST || 'http://localhost:11434' });
-  const response = await ollama.chat({ model: process.env.OLLAMA_MODEL || 'llama3.1:8b', messages });
+  const response = await ollama.chat({ model: process.env.OLLAMA_MODEL || 'llama3.1:8b', messages: ollamaMessages });
   return response.message.content;
 }
 
 // --- Provider implementations ---
 
-async function queryOllama(prompt, systemPrompt) {
+async function queryOllama(prompt: string, systemPrompt: string): Promise<string | null> {
   const ollama = new Ollama({
     host: process.env.OLLAMA_HOST || 'http://localhost:11434',
   });
 
-  const messages = [
+  const messages: OllamaMessage[] = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: prompt },
   ];
@@ -319,11 +335,11 @@ async function queryOllama(prompt, systemPrompt) {
   return response.message.content;
 }
 
-async function queryOpenAI(prompt, systemPrompt, imageUrl = null) {
+async function queryOpenAI(prompt: string, systemPrompt: string, imageUrl: string | null = null): Promise<string | null> {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   // Build user content — text only or text + image
-  let userContent;
+  let userContent: UserContent;
   if (imageUrl) {
     userContent = [
       { type: 'text', text: prompt },
@@ -333,7 +349,7 @@ async function queryOpenAI(prompt, systemPrompt, imageUrl = null) {
     userContent = prompt;
   }
 
-  const messages = [
+  const messages: OpenAI.ChatCompletionMessageParam[] = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userContent },
   ];
@@ -348,7 +364,7 @@ async function queryOpenAI(prompt, systemPrompt, imageUrl = null) {
     temperature,
   });
 
-  return response.choices[0].message.content;
+  return response.choices[0]?.message?.content ?? null;
 }
 
 const PROFILE_SYSTEM_PROMPT = `You are analyzing a Discord user's behavior to assign them a personality profile. You are Sass — sassy, brutal, funny.
@@ -372,7 +388,7 @@ brain:N
 archetype:Name
 roast:One brutal sentence summarizing this person`;
 
-export async function analyzeProfile(userName, messages) {
+export async function analyzeProfile(userName: string, messages: string): Promise<string | null> {
   const prompt = `Analyze ${userName}'s personality based on these messages:\n\n${messages}`;
   const provider = process.env.AI_PROVIDER || 'ollama';
 
@@ -387,7 +403,7 @@ export async function analyzeProfile(userName, messages) {
       max_completion_tokens: 150,
       temperature: 1.0,
     });
-    return response.choices[0].message.content;
+    return response.choices[0]?.message?.content ?? null;
   }
 
   return queryOllama(prompt, PROFILE_SYSTEM_PROMPT);

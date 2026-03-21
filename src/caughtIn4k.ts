@@ -1,5 +1,6 @@
 import { queryAI } from './ai.js';
 import { storeMemory, searchMemories } from './vectorMemory.js';
+import type { ContradictionResult } from './types.js';
 
 const UTILITY_PROMPT = 'You are a utility function. Follow instructions exactly. Be concise. No personality.';
 
@@ -7,7 +8,7 @@ const UTILITY_PROMPT = 'You are a utility function. Follow instructions exactly.
  * Extract a claim/opinion/statement from a message if there is one.
  * Returns null if the message is too generic or has no real claim.
  */
-export async function extractStatement(userMessage) {
+export async function extractStatement(userMessage: string): Promise<string | null> {
   if (!userMessage || userMessage.length < 10) return null;
 
   const prompt = `Does this Discord message contain a clear opinion, preference, claim, or statement about themselves? If yes, extract it as a short factual claim (e.g., "hates pineapple pizza", "thinks valorant is better than cs", "says they're good at cooking"). If no clear claim, say "SKIP".
@@ -18,7 +19,7 @@ Message: "${userMessage}"`;
     const result = await queryAI(prompt, { systemPrompt: UTILITY_PROMPT });
     if (!result || result.trim().toUpperCase() === 'SKIP') return null;
     return result.trim().replace(/^["']|["']$/g, '');
-  } catch {
+  } catch (_err) {
     return null;
   }
 }
@@ -27,7 +28,7 @@ Message: "${userMessage}"`;
  * Check if a new statement contradicts any previous statements from this user.
  * Returns the contradiction details or null if no contradiction found.
  */
-export async function checkContradiction(userId, newStatement, newMessage) {
+export async function checkContradiction(userId: string, newStatement: string, newMessage: string): Promise<ContradictionResult | null> {
   try {
     // Search for semantically similar past statements
     const pastMemories = await searchMemories(newStatement, { userId, limit: 5 });
@@ -57,7 +58,7 @@ If no clear contradiction, say "CLEAN".`;
 
     const oldStatement = result.replace('CAUGHT:', '').trim();
     return { oldStatement, newStatement };
-  } catch {
+  } catch (_err) {
     return null;
   }
 }
@@ -65,7 +66,7 @@ If no clear contradiction, say "CLEAN".`;
 /**
  * Generate a sassy "caught in 4K" callout.
  */
-export async function generate4kCallout(userName, oldStatement, newStatement) {
+export async function generate4kCallout(userName: string, oldStatement: string, newStatement: string): Promise<string | null> {
   const prompt = `${userName} previously said: "${oldStatement}"
 But now they just said: "${newStatement}"
 
@@ -76,7 +77,7 @@ Write a short, brutal callout catching them in this contradiction. You caught th
       systemPrompt: 'You are Sass, a sassy Discord bot. You just caught someone contradicting themselves. Be petty and specific about what they said before vs now. Lowercase. Devastating.',
     });
     return result;
-  } catch {
+  } catch (_err) {
     return null;
   }
 }
@@ -84,6 +85,6 @@ Write a short, brutal callout catching them in this contradiction. You caught th
 /**
  * Store a user's statement for future contradiction checking.
  */
-export async function storeStatement(userId, statement) {
+export async function storeStatement(userId: string, statement: string): Promise<void> {
   await storeMemory(userId, 'statement', statement);
 }

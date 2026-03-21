@@ -1,5 +1,5 @@
 /**
- * database.js — PostgreSQL logging & persistence layer
+ * database.ts — PostgreSQL logging & persistence layer
  *
  * Logs interactions for analytics and debugging.
  * Uses Railway's internal DATABASE_URL (private network, no egress fees).
@@ -11,20 +11,21 @@
  */
 
 import pg from 'pg';
+import type { InteractionLog, MoodLog, CommandLog, StatsResult, TrainingDataRow } from './types.js';
 
 const { Pool } = pg;
 
-let pool;
+let pool: InstanceType<typeof Pool> | null = null;
 let isConnected = false;
 
 /**
  * Initialize the database connection and create tables if needed.
  * Fails silently if DATABASE_URL is not set (local dev without DB).
  */
-export async function initDatabase() {
+export async function initDatabase(): Promise<boolean> {
   const url = process.env.DATABASE_URL;
   if (!url) {
-    console.log('DATABASE_URL not set — database logging disabled (local dev mode)');
+    console.log('DATABASE_URL not set \u2014 database logging disabled (local dev mode)');
     return false;
   }
 
@@ -44,16 +45,17 @@ export async function initDatabase() {
     await createTables();
 
     isConnected = true;
-    console.log('Database connected — logging enabled');
+    console.log('Database connected \u2014 logging enabled');
     return true;
   } catch (err) {
-    console.error('Database connection failed:', err.message);
+    console.error('Database connection failed:', (err as Error).message);
     console.log('Bot will continue without database logging.');
     return false;
   }
 }
 
-async function createTables() {
+async function createTables(): Promise<void> {
+  if (!pool) return;
   await pool.query(`
     CREATE TABLE IF NOT EXISTS interactions (
       id SERIAL PRIMARY KEY,
@@ -106,9 +108,9 @@ async function createTables() {
 export async function logInteraction({
   serverId, serverName, channelId, channelName,
   userId, username, triggerType, commandName,
-  userMessage, sassResponse, mood, moodIntensity
-}) {
-  if (!isConnected) return;
+  userMessage, sassResponse, mood, moodIntensity,
+}: InteractionLog): Promise<void> {
+  if (!isConnected || !pool) return;
 
   // Rough token estimate: ~4 chars per token
   const tokensEstimate = Math.ceil(
@@ -125,15 +127,15 @@ export async function logInteraction({
        triggerType, commandName, userMessage, sassResponse, mood, moodIntensity, tokensEstimate]
     );
   } catch (err) {
-    console.error('Failed to log interaction:', err.message);
+    console.error('Failed to log interaction:', (err as Error).message);
   }
 }
 
 /**
  * Log a mood shift.
  */
-export async function logMoodShift({ serverId, oldMood, newMood, intensity, reason }) {
-  if (!isConnected) return;
+export async function logMoodShift({ serverId, oldMood, newMood, intensity, reason }: MoodLog): Promise<void> {
+  if (!isConnected || !pool) return;
 
   try {
     await pool.query(
@@ -142,15 +144,15 @@ export async function logMoodShift({ serverId, oldMood, newMood, intensity, reas
       [serverId, oldMood, newMood, intensity, reason]
     );
   } catch (err) {
-    console.error('Failed to log mood shift:', err.message);
+    console.error('Failed to log mood shift:', (err as Error).message);
   }
 }
 
 /**
  * Log command usage (slash or @mention command).
  */
-export async function logCommand({ serverId, userId, commandName, commandType }) {
-  if (!isConnected) return;
+export async function logCommand({ serverId, userId, commandName, commandType }: CommandLog): Promise<void> {
+  if (!isConnected || !pool) return;
 
   try {
     await pool.query(
@@ -159,15 +161,15 @@ export async function logCommand({ serverId, userId, commandName, commandType })
       [serverId, userId, commandName, commandType]
     );
   } catch (err) {
-    console.error('Failed to log command:', err.message);
+    console.error('Failed to log command:', (err as Error).message);
   }
 }
 
 /**
  * Get stats for analytics.
  */
-export async function getStats() {
-  if (!isConnected) return null;
+export async function getStats(): Promise<StatsResult | null> {
+  if (!isConnected || !pool) return null;
 
   try {
     const [total, byTrigger, topUsers, topCommands, recent] = await Promise.all([
@@ -179,14 +181,14 @@ export async function getStats() {
     ]);
 
     return {
-      totalInteractions: parseInt(total.rows[0].count),
-      last24h: parseInt(recent.rows[0].count),
-      byTrigger: byTrigger.rows,
-      topUsers: topUsers.rows,
-      topCommands: topCommands.rows,
+      totalInteractions: parseInt(total.rows[0].count as string),
+      last24h: parseInt(recent.rows[0].count as string),
+      byTrigger: byTrigger.rows as StatsResult['byTrigger'],
+      topUsers: topUsers.rows as StatsResult['topUsers'],
+      topCommands: topCommands.rows as StatsResult['topCommands'],
     };
   } catch (err) {
-    console.error('Failed to get stats:', err.message);
+    console.error('Failed to get stats:', (err as Error).message);
     return null;
   }
 }
@@ -194,8 +196,8 @@ export async function getStats() {
 /**
  * Export interaction input/output pairs.
  */
-export async function getTrainingData(limit = 1000) {
-  if (!isConnected) return [];
+export async function getTrainingData(limit = 1000): Promise<TrainingDataRow[]> {
+  if (!isConnected || !pool) return [];
 
   try {
     const result = await pool.query(
@@ -206,21 +208,21 @@ export async function getTrainingData(limit = 1000) {
        LIMIT $1`,
       [limit]
     );
-    return result.rows;
+    return result.rows as TrainingDataRow[];
   } catch (err) {
-    console.error('Failed to get training data:', err.message);
+    console.error('Failed to get training data:', (err as Error).message);
     return [];
   }
 }
 
-export function isDatabaseConnected() {
+export function isDatabaseConnected(): boolean {
   return isConnected;
 }
 
 /**
  * Gracefully close the database pool. Call on process shutdown.
  */
-export async function closeDatabase() {
+export async function closeDatabase(): Promise<void> {
   if (pool) {
     await pool.end();
     isConnected = false;

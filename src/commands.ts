@@ -1,14 +1,26 @@
-import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } from 'discord.js';
+import {
+  SlashCommandBuilder,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ComponentType,
+  type ChatInputCommandInteraction,
+  type Presence,
+  type Message,
+  type ThreadChannel,
+} from 'discord.js';
 import { queryAI } from './ai.js';
 import { userMemory } from './userMemory.js';
 import { buildHelpPages } from './helpPages.js';
 import { logCommand } from './database.js';
+import type { BattleState, MainCharacter } from './types.js';
 
 // --- Activity description helper ---
-export function getActivityDescription(presence) {
+export function getActivityDescription(presence: Presence | null): string | null {
   if (!presence?.activities || presence.activities.length === 0) return null;
 
-  const parts = [];
+  const parts: string[] = [];
   for (const activity of presence.activities) {
     // ActivityType: 0=Playing, 1=Streaming, 2=Listening, 3=Watching, 4=Custom, 5=Competing
     switch (activity.type) {
@@ -17,7 +29,7 @@ export function getActivityDescription(presence) {
         if (activity.details) desc += ` — ${activity.details}`;
         if (activity.state) desc += ` (${activity.state})`;
         if (activity.timestamps?.start) {
-          const elapsed = Math.floor((Date.now() - activity.timestamps.start) / 60000);
+          const elapsed = Math.floor((Date.now() - activity.timestamps.start.getTime()) / 60000);
           if (elapsed >= 60) desc += ` for ${Math.floor(elapsed / 60)}h ${elapsed % 60}m`;
           else if (elapsed > 0) desc += ` for ${elapsed}m`;
         }
@@ -25,7 +37,7 @@ export function getActivityDescription(presence) {
         break;
       }
       case 1: parts.push(`streaming ${activity.name}${activity.url ? ` on ${activity.url}` : ''}`); break;
-      case 2: parts.push(`listening to ${activity.details || activity.name}${activity.state ? ` by ${activity.state}` : ''}`); break;
+      case 2: parts.push(`listening to ${activity.details ?? activity.name}${activity.state ? ` by ${activity.state}` : ''}`); break;
       case 3: parts.push(`watching ${activity.name}`); break;
       case 4: if (activity.state) parts.push(`custom status: "${activity.state}"`); break;
       case 5: parts.push(`competing in ${activity.name}`); break;
@@ -35,17 +47,17 @@ export function getActivityDescription(presence) {
 }
 
 // --- Main Character tracking ---
-const mainCharacters = new Map(); // guildId -> { name, userId, date }
+const mainCharacters = new Map<string, MainCharacter>(); // guildId -> { name, date }
 
-export function getMainCharacter(guildId) {
+export function getMainCharacter(guildId: string): MainCharacter | null {
   const mc = mainCharacters.get(guildId);
   const today = new Date().toDateString();
   if (mc && mc.date === today) return mc;
 
   // Pick new main character — most active user today (from memory)
   const stats = userMemory.getServerStats();
-  if (!stats || !stats.mostActive) return null;
-  const newMc = { name: stats.mostActive.name, date: today };
+  if (!stats?.mostActive) return null;
+  const newMc: MainCharacter = { name: stats.mostActive.name, date: today };
   mainCharacters.set(guildId, newMc);
   return newMc;
 }
@@ -184,7 +196,7 @@ export const commands = [
 ];
 
 // --- 8ball responses ---
-const EIGHT_BALL = [
+const EIGHT_BALL: string[] = [
   "absolutely not lmao",
   "yeah... no",
   "the stars say you're delusional",
@@ -204,7 +216,7 @@ const EIGHT_BALL = [
 ];
 
 // --- Fortune cookies ---
-const FORTUNES = [
+const FORTUNES: string[] = [
   "your future holds... disappointment. but you're used to that.",
   "a great opportunity approaches. you will absolutely fumble it.",
   "someone is thinking about you right now. it's not flattering.",
@@ -218,7 +230,7 @@ const FORTUNES = [
 ];
 
 // --- Quote authors ---
-const QUOTE_AUTHORS = [
+const QUOTE_AUTHORS: string[] = [
   'Sun Tzu', 'Gandhi', 'Einstein', 'Aristotle', 'Confucius',
   'Socrates', 'Shakespeare', 'Plato', 'Lao Tzu', 'Marcus Aurelius',
   'Nikola Tesla', 'Napoleon', 'Cleopatra', 'Genghis Khan',
@@ -226,7 +238,7 @@ const QUOTE_AUTHORS = [
 
 // --- Command handlers ---
 
-export async function handleCommand(interaction) {
+export async function handleCommand(interaction: ChatInputCommandInteraction): Promise<void> {
   const { commandName } = interaction;
 
   // Log every slash command usage
@@ -235,7 +247,7 @@ export async function handleCommand(interaction) {
     userId: interaction.user.id,
     commandName,
     commandType: 'slash',
-  }).catch(() => {});
+  }).catch((err) => console.error('Failed to log command:', err.message));
 
   switch (commandName) {
     case 'ping': {
@@ -248,34 +260,37 @@ export async function handleCommand(interaction) {
     }
 
     case 'help': {
-      const botAvatar = interaction.client.user.displayAvatarURL({ size: 256 });
+      const botAvatar = interaction.client.user?.displayAvatarURL({ size: 256 }) ?? '';
       const helpPages = buildHelpPages(botAvatar);
-      const helpButtons = new ActionRowBuilder().addComponents(
+      const helpButtons = new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder().setCustomId('help_prev').setLabel('◀').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('help_next').setLabel('▶').setStyle(ButtonStyle.Secondary),
       );
       let helpPage = 0;
-      const helpReply = await interaction.reply({ embeds: [helpPages[0]], components: [helpButtons], fetchReply: true });
+      const firstPage = helpPages[0];
+      if (!firstPage) break;
+      const helpReply = await interaction.reply({ embeds: [firstPage], components: [helpButtons], fetchReply: true });
       const helpCollector = helpReply.createMessageComponentCollector({ componentType: ComponentType.Button, time: 120_000 });
       helpCollector.on('collect', async (btn) => {
         helpPage = btn.customId === 'help_prev'
           ? (helpPage > 0 ? helpPage - 1 : helpPages.length - 1)
           : (helpPage < helpPages.length - 1 ? helpPage + 1 : 0);
-        await btn.update({ embeds: [helpPages[helpPage]], components: [helpButtons] });
+        const currentPage = helpPages[helpPage];
+        if (currentPage) await btn.update({ embeds: [currentPage], components: [helpButtons] });
       });
       helpCollector.on('end', () => {
-        const disabled = new ActionRowBuilder().addComponents(
+        const disabled = new ActionRowBuilder<ButtonBuilder>().addComponents(
           new ButtonBuilder().setCustomId('help_prev').setLabel('◀').setStyle(ButtonStyle.Secondary).setDisabled(true),
           new ButtonBuilder().setCustomId('help_next').setLabel('▶').setStyle(ButtonStyle.Secondary).setDisabled(true),
         );
-        helpReply.edit({ components: [disabled] }).catch(() => {});
+        helpReply.edit({ components: [disabled] }).catch((err) => console.error('Failed to disable help buttons:', err.message));
       });
       break;
     }
 
     case '8ball': {
       await interaction.deferReply();
-      const question = interaction.options.getString('question');
+      const question = interaction.options.getString('question') ?? '';
       try {
         const answer = await queryAI(
           `Someone asked the magic 8 ball: "${question}". Give a sassy, brutal one-sentence answer that actually addresses their specific question. Be mean about it.`,
@@ -283,14 +298,14 @@ export async function handleCommand(interaction) {
         );
         await interaction.editReply(`🎱 **${question}**\n${answer}`);
       } catch {
-        const answer = EIGHT_BALL[Math.floor(Math.random() * EIGHT_BALL.length)];
+        const answer = EIGHT_BALL[Math.floor(Math.random() * EIGHT_BALL.length)] ?? 'no.';
         await interaction.editReply(`🎱 **${question}**\n${answer}`);
       }
       break;
     }
 
     case 'fortune': {
-      const fortune = FORTUNES[Math.floor(Math.random() * FORTUNES.length)];
+      const fortune = FORTUNES[Math.floor(Math.random() * FORTUNES.length)] ?? 'your future is... uncertain.';
       await interaction.reply(`🥠 ${fortune}`);
       break;
     }
@@ -298,12 +313,12 @@ export async function handleCommand(interaction) {
     case 'quote': {
       await interaction.deferReply();
       try {
-        const author = QUOTE_AUTHORS[Math.floor(Math.random() * QUOTE_AUTHORS.length)];
+        const author = QUOTE_AUTHORS[Math.floor(Math.random() * QUOTE_AUTHORS.length)] ?? 'Sun Tzu';
         const response = await queryAI(
           `Generate a fake inspirational quote attributed to ${author}. Make it sound profound at first but actually be either absurd, passive-aggressive, or lowkey insulting. One sentence only. Just the quote, no attribution.`,
           { systemPrompt: 'You generate fake quotes. One sentence. No quotation marks. Lowercase.' }
         );
-        await interaction.editReply(`> *${response.replace(/"/g, '')}*\n> — ${author} (probably)`);
+        await interaction.editReply(`> *${(response ?? '').replace(/"/g, '')}*\n> — ${author} (probably)`);
       } catch {
         await interaction.editReply('> *the only real failure is being too boring to quote*\n> — me, just now');
       }
@@ -329,8 +344,8 @@ export async function handleCommand(interaction) {
 
     case 'ship': {
       await interaction.deferReply();
-      const user1 = interaction.options.getUser('user1');
-      const user2 = interaction.options.getUser('user2');
+      const user1 = interaction.options.getUser('user1', true);
+      const user2 = interaction.options.getUser('user2', true);
       const percent = Math.floor(Math.random() * 101);
       const bar = '❤️'.repeat(Math.round(percent / 10)) + '🖤'.repeat(10 - Math.round(percent / 10));
 
@@ -361,11 +376,11 @@ export async function handleCommand(interaction) {
 
     case 'status': {
       await interaction.deferReply();
-      const targetUser = interaction.options.getUser('user');
+      const targetUser = interaction.options.getUser('user', true);
       try {
-        const member = await interaction.guild.members.fetch(targetUser.id);
-        const presence = member.presence;
-        const onlineStatus = presence?.status || 'offline';
+        const member = await interaction.guild?.members.fetch(targetUser.id);
+        const presence = member?.presence ?? null;
+        const onlineStatus = presence?.status ?? 'offline';
 
         if (!presence || onlineStatus === 'offline') {
           await interaction.editReply(`${targetUser.displayName} is offline. probably for the best.`);
@@ -391,23 +406,24 @@ export async function handleCommand(interaction) {
 
     case 'favorite': {
       const board = userMemory.getLeaderboard(1);
-      if (board.length === 0 || board[0].timesRoasted === 0) {
+      const fav = board[0];
+      if (!fav || fav.timesRoasted === 0) {
         await interaction.reply("i don't have a favorite yet. nobody's earned it. or deserved it.");
         break;
       }
-      const fav = board[0];
       const responses = [
         `my current favorite punching bag is **${fav.name}** with ${fav.timesRoasted} roasts. they keep coming back for more.`,
         `**${fav.name}**. ${fav.timesRoasted} roasts and counting. at this point it's a relationship.`,
         `gotta be **${fav.name}**. they've been roasted ${fav.timesRoasted} times and still haven't learned.`,
       ];
-      await interaction.reply(responses[Math.floor(Math.random() * responses.length)]);
+      const favResponse = responses[Math.floor(Math.random() * responses.length)] ?? '';
+      await interaction.reply(favResponse);
       break;
     }
 
     case 'npc': {
       await interaction.deferReply();
-      const targetUser = interaction.options.getUser('user');
+      const targetUser = interaction.options.getUser('user', true);
       try {
         const response = await queryAI(
           `"${targetUser.displayName}" is now an NPC in an RPG. What class/role are they? Give their title, then 3 dialogue lines a player would hear when interacting with them. The dialogue should subtly roast them. Format EXACTLY like this:\n**Class:** [their class]\n\n💬 "line 1"\n💬 "line 2"\n💬 "line 3"`,
@@ -439,10 +455,10 @@ export async function handleCommand(interaction) {
 
     case 'sass': {
       await interaction.deferReply();
-      const msg = interaction.options.getString('message');
+      const msg = interaction.options.getString('message') ?? '';
       try {
         const response = await queryAI(`${interaction.user.displayName} says: ${msg}`);
-        await interaction.editReply(response);
+        await interaction.editReply(response ?? "my brain broke. congrats, you're that boring.");
       } catch {
         await interaction.editReply("my brain broke. congrats, you're that boring.");
       }
@@ -451,7 +467,7 @@ export async function handleCommand(interaction) {
 
     case 'conspiracy': {
       await interaction.deferReply();
-      const targetUser = interaction.options.getUser('user');
+      const targetUser = interaction.options.getUser('user', true);
       try {
         const response = await queryAI(
           `Create an absurd, funny conspiracy theory about a Discord user named "${targetUser.displayName}". Use their name specifically. Make references to Discord (channels, servers, being online at weird hours). 2-3 sentences. It should sound like a deranged detective presenting evidence.`,
@@ -466,7 +482,7 @@ export async function handleCommand(interaction) {
 
     case 'compliment': {
       await interaction.deferReply();
-      const targetUser = interaction.options.getUser('user');
+      const targetUser = interaction.options.getUser('user', true);
       try {
         const response = await queryAI(
           `Give "${targetUser.displayName}" a backhanded compliment. It should sound genuinely nice at first, then subtly roast them by the end. One or two sentences. The twist should be subtle enough that they have to read it twice.`,
@@ -481,9 +497,9 @@ export async function handleCommand(interaction) {
 
     case 'roastas': {
       await interaction.deferReply();
-      const targetUser = interaction.options.getUser('user');
-      const persona = interaction.options.getString('persona');
-      const personas = {
+      const targetUser = interaction.options.getUser('user', true);
+      const persona = interaction.options.getString('persona') ?? '';
+      const personas: Record<string, string> = {
         'gordon-ramsay': 'You are Gordon Ramsay. Roast them like a failed dish. Use cooking metaphors. Yell. "This is RAW" energy. Uppercase when yelling.',
         'shakespeare': 'You are Shakespeare. Roast them in iambic pentameter or Elizabethan English. Use "thou," "thy," "forsooth." Make it sound like a dramatic monologue from a play.',
         'disappointed-mom': 'You are a deeply disappointed mother. Use guilt and passive aggression. "I\'m not mad, I\'m just disappointed." Reference how you sacrificed everything and this is what you get.',
@@ -498,7 +514,7 @@ export async function handleCommand(interaction) {
           `Roast the Discord user "${targetUser.displayName}". Stay in character completely. 2-3 sentences max.`,
           { systemPrompt: personas[persona] }
         );
-        const labels = {
+        const labels: Record<string, string> = {
           'gordon-ramsay': '👨‍🍳 Gordon Ramsay',
           'shakespeare': '🎭 Shakespeare',
           'disappointed-mom': '👩 Disappointed Mom',
@@ -517,9 +533,9 @@ export async function handleCommand(interaction) {
 
     case 'translate': {
       await interaction.deferReply();
-      const msg = interaction.options.getString('message');
-      const style = interaction.options.getString('style');
-      const styles = {
+      const msg = interaction.options.getString('message') ?? '';
+      const style = interaction.options.getString('style') ?? '';
+      const styles: Record<string, string> = {
         'corporate': 'Rewrite this message as a corporate email. Use "per my last message," "circle back," "synergy," "moving forward," "let\'s take this offline." Sound professional but soulless.',
         'genz': 'Rewrite this message in extreme Gen Z internet slang. Use "no cap," "fr fr," "slay," "its giving," "lowkey," "highkey," "bussin," "ong," "rizz," brainrot language. Excessive abbreviations.',
         'shakespeare': 'Rewrite this message in Shakespearean English. Use "thou," "thy," "hath," "forsooth," "prithee." Make it sound like a dramatic soliloquy.',
@@ -529,7 +545,7 @@ export async function handleCommand(interaction) {
         'noir': 'Rewrite this message as a 1940s noir detective narration. Dark, rainy, cynical. "The dame walked in," "this city never sleeps," "I\'d seen it all — or so I thought." Use period-appropriate slang.',
         'pirate': 'Rewrite this message as a pirate. Use "arr," "ye," "matey," "scallywag," "walk the plank," "shiver me timbers." Reference the sea, treasure, and rum.',
       };
-      const labels = {
+      const labels: Record<string, string> = {
         'corporate': '💼 Corporate', 'genz': '🧠 Gen Z', 'shakespeare': '🎭 Shakespeare',
         'passive-aggressive': '😊 Passive-Aggressive', 'influencer': '✨ Influencer',
         'caveman': '🪨 Caveman', 'noir': '🕵️ Noir Detective', 'pirate': '🏴‍☠️ Pirate',
@@ -548,7 +564,7 @@ export async function handleCommand(interaction) {
 
     case 'horoscope': {
       await interaction.deferReply();
-      const sign = interaction.options.getString('sign');
+      const sign = interaction.options.getString('sign') ?? '';
       try {
         const response = await queryAI(
           `Give a sassy, backhanded daily horoscope for ${sign}. Start with something that sounds positive, then twist it. Include a "lucky" element that's actually an insult. 2-3 sentences. Format:\n[horoscope text]\n\n🍀 lucky item: [something insulting]`,
@@ -562,7 +578,7 @@ export async function handleCommand(interaction) {
     }
 
     case 'roastbattle': {
-      const opponent = interaction.options.getUser('opponent');
+      const opponent = interaction.options.getUser('opponent', true);
       if (opponent.bot) {
         await interaction.reply("i'm not fighting another bot. i have standards. barely, but still.");
         break;
@@ -573,7 +589,12 @@ export async function handleCommand(interaction) {
       }
 
       // Create a thread for the battle
-      const thread = await interaction.channel.threads.create({
+      const channel = interaction.channel;
+      if (!channel || !('threads' in channel)) {
+        await interaction.reply("can't start a battle here. find a text channel.");
+        break;
+      }
+      const thread = await channel.threads.create({
         name: `⚔️ ${interaction.user.displayName} vs ${opponent.displayName}`,
         autoArchiveDuration: 60,
         reason: 'Roast battle',
@@ -622,17 +643,18 @@ export async function handleCommand(interaction) {
         const battle = activeBattles.get(battleId);
         if (battle && battle.phase === 'waiting') {
           activeBattles.delete(battleId);
-          thread.send(`${opponent.displayName} didn't show up. certified coward. archiving this embarrassment.`).catch(() => {});
-          setTimeout(() => thread.setArchived(true).catch(() => {}), 5000);
+          thread.send(`${opponent.displayName} didn't show up. certified coward. archiving this embarrassment.`).catch((err) => console.error('Failed to send timeout message:', err.message));
+          setTimeout(() => thread.setArchived(true).catch((err) => console.error('Failed to archive thread:', err.message)), 5000);
         }
       }, 60000);
-      activeBattles.get(battleId).timeout = timeout;
+      const battle = activeBattles.get(battleId);
+      if (battle) battle.timeout = timeout;
       break;
     }
 
     case 'beef': {
-      const user1 = interaction.options.getUser('user1');
-      const user2 = interaction.options.getUser('user2');
+      const user1 = interaction.options.getUser('user1', true);
+      const user2 = interaction.options.getUser('user2', true);
       const beef = userMemory.getBeef(user1.id, user2.id);
 
       if (!beef || beef.incidents === 0) {
@@ -647,7 +669,7 @@ export async function handleCommand(interaction) {
           { name: 'Incidents', value: `${beef.incidents} recorded disagreements`, inline: true },
           { name: 'Since', value: new Date(beef.firstBeef).toLocaleDateString(), inline: true },
           { name: '\u200b', value: '\u200b', inline: false },
-          { name: 'Latest Beef', value: beef.lastTopic || 'classified', inline: false },
+          { name: 'Latest Beef', value: beef.lastTopic ?? 'classified', inline: false },
         )
         .setFooter({ text: 'sass intelligence agency — beef division' });
       await interaction.reply({ embeds: [embed] });
@@ -655,7 +677,12 @@ export async function handleCommand(interaction) {
     }
 
     case 'maincharacter': {
-      const mc = getMainCharacter(interaction.guild.id);
+      const guildId = interaction.guild?.id;
+      if (!guildId) {
+        await interaction.reply("this only works in a server. try it there.");
+        break;
+      }
+      const mc = getMainCharacter(guildId);
       if (!mc) {
         await interaction.reply("nobody's earned main character status today. the server is full of NPCs.");
         break;
@@ -679,7 +706,7 @@ export async function handleCommand(interaction) {
 
       try {
         const statsText = Object.entries(stats.users)
-          .map(([, data]) => `${data.name}: ${data.messageCount} messages, roasted ${data.timesRoasted || 0} times`)
+          .map(([, data]) => `${data.name}: ${data.messageCount} messages, roasted ${data.timesRoasted ?? 0} times`)
           .join('\n');
 
         const commentary = await queryAI(
@@ -710,39 +737,40 @@ export async function handleCommand(interaction) {
 }
 
 // --- Zodiac emoji helper ---
-function getZodiacEmoji(sign) {
-  const emojis = {
+function getZodiacEmoji(sign: string): string {
+  const emojis: Record<string, string> = {
     aries: '♈', taurus: '♉', gemini: '♊', cancer: '♋', leo: '♌', virgo: '♍',
     libra: '♎', scorpio: '♏', sagittarius: '♐', capricorn: '♑', aquarius: '♒', pisces: '♓',
   };
-  return emojis[sign] || '⭐';
+  return emojis[sign] ?? '⭐';
 }
 
 // --- Roast Battle State ---
-export const activeBattles = new Map();
+export const activeBattles = new Map<string, BattleState>();
 const BATTLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 min max per battle
 
 // Clean up abandoned battles every 5 minutes
 setInterval(() => {
   const now = Date.now();
   for (const [id, battle] of activeBattles) {
-    if (now - (battle.startedAt || 0) > BATTLE_TIMEOUT_MS) {
+    if (now - (battle.startedAt ?? 0) > BATTLE_TIMEOUT_MS) {
       activeBattles.delete(id);
     }
   }
 }, 5 * 60 * 1000);
 
-export async function handleBattleMessage(message) {
+export async function handleBattleMessage(message: Message): Promise<boolean> {
   // Only handle messages in threads that are active battles
   const battle = activeBattles.get(message.channel.id);
   if (!battle) return false;
+  const threadChannel = message.channel as ThreadChannel;
 
   // Ignore messages from non-participants
   if (message.author.id !== battle.challenger.id && message.author.id !== battle.opponent.id) return false;
 
   // Check if someone is accepting a battle
   if (message.content.toLowerCase() === 'accept' && battle.phase === 'waiting' && message.author.id === battle.opponent.id) {
-    clearTimeout(battle.timeout);
+    if (battle.timeout) clearTimeout(battle.timeout);
     battle.phase = 'active';
     battle.round = 1;
     battle.currentTurn = battle.challenger.id;
@@ -751,7 +779,7 @@ export async function handleBattleMessage(message) {
       .setColor(0xFF4D6D)
       .setTitle('⚔️ ROUND 1/3')
       .setDescription(`**${battle.challenger.displayName}**, you challenged — you go first.\n\ndrop your best roast.`);
-    await message.channel.send({ embeds: [roundEmbed] });
+    await threadChannel.send({ embeds: [roundEmbed] });
     return true;
   }
 
@@ -764,12 +792,13 @@ export async function handleBattleMessage(message) {
         { systemPrompt: 'You judge roast battles. Be fair but entertaining. Score genuinely — a weak roast gets a 3-4, a decent one 5-7, a banger 8-10. One sentence reaction.' }
       );
 
-      const scoreLine = scoreResponse.match(/SCORE:(\d+)/);
-      const reactionLine = scoreResponse.match(/REACTION:(.+)/);
-      const score = scoreLine ? Math.min(10, Math.max(1, parseInt(scoreLine[1], 10))) : 5;
-      const reaction = reactionLine ? reactionLine[1].trim() : "interesting.";
+      const scoreLine = scoreResponse?.match(/SCORE:(\d+)/);
+      const reactionLine = scoreResponse?.match(/REACTION:(.+)/);
+      const score = scoreLine?.[1] ? Math.min(10, Math.max(1, parseInt(scoreLine[1], 10))) : 5;
+      const reaction = reactionLine?.[1] ? reactionLine[1].trim() : "interesting.";
 
-      battle.scores[message.author.id].push(score);
+      const authorScores = battle.scores[message.author.id];
+      if (authorScores) authorScores.push(score);
 
       const scoreBar = '🔥'.repeat(score) + '💨'.repeat(10 - score);
       await message.reply(`${scoreBar} **${score}/10**\n*${reaction}*`);
@@ -778,14 +807,17 @@ export async function handleBattleMessage(message) {
       const otherId = message.author.id === battle.challenger.id ? battle.opponent.id : battle.challenger.id;
       const otherName = message.author.id === battle.challenger.id ? battle.opponent.displayName : battle.challenger.displayName;
 
-      if (battle.scores[otherId].length < battle.round) {
+      const otherScores = battle.scores[otherId];
+      if (otherScores && otherScores.length < battle.round) {
         battle.currentTurn = otherId;
-        await message.channel.send(`**${otherName}**, your turn. fire back.`);
+        await threadChannel.send(`**${otherName}**, your turn. fire back.`);
       } else {
         battle.round++;
         if (battle.round > battle.maxRounds) {
-          const score1 = battle.scores[battle.challenger.id].reduce((a, b) => a + b, 0);
-          const score2 = battle.scores[battle.opponent.id].reduce((a, b) => a + b, 0);
+          const challengerScores = battle.scores[battle.challenger.id] ?? [];
+          const opponentScores = battle.scores[battle.opponent.id] ?? [];
+          const score1 = challengerScores.reduce((a, b) => a + b, 0);
+          const score2 = opponentScores.reduce((a, b) => a + b, 0);
           const winner = score1 > score2 ? battle.challenger : score2 > score1 ? battle.opponent : null;
           const loser = winner ? (winner.id === battle.challenger.id ? battle.opponent : battle.challenger) : null;
 
@@ -793,30 +825,31 @@ export async function handleBattleMessage(message) {
             .setColor(0xFFD700)
             .setTitle('⚔️ ROAST BATTLE — FINAL RESULTS')
             .addFields(
-              { name: battle.challenger.displayName, value: `${battle.scores[battle.challenger.id].join(' + ')} = **${score1}**`, inline: true },
+              { name: battle.challenger.displayName, value: `${challengerScores.join(' + ')} = **${score1}**`, inline: true },
               { name: 'vs', value: '⚔️', inline: true },
-              { name: battle.opponent.displayName, value: `${battle.scores[battle.opponent.id].join(' + ')} = **${score2}**`, inline: true },
+              { name: battle.opponent.displayName, value: `${opponentScores.join(' + ')} = **${score2}**`, inline: true },
               { name: '\u200b', value: '\u200b', inline: false },
               { name: '🏆 Winner', value: winner ? `**${winner.displayName}** absolutely cooked.` : "it's a tie. you're both equally mid.", inline: false },
             )
             .setFooter({ text: loser ? `${loser.displayName} needs to sit down for a while` : 'nobody won. everybody lost.' });
 
-          await message.channel.send({ embeds: [embed] });
+          await threadChannel.send({ embeds: [embed] });
           activeBattles.delete(battleId);
           // Archive thread after 10 seconds
-          setTimeout(() => message.channel.setArchived(true).catch(() => {}), 10000);
+          setTimeout(() => threadChannel.setArchived(true).catch((err) => console.error('Failed to archive battle thread:', err.message)), 10000);
         } else {
           const roundEmbed = new EmbedBuilder()
             .setColor(0xFF4D6D)
             .setTitle(`⚔️ ROUND ${battle.round}/${battle.maxRounds}`)
             .setDescription(`**${battle.challenger.displayName}**, you're up.`);
           battle.currentTurn = battle.challenger.id;
-          await message.channel.send({ embeds: [roundEmbed] });
+          await threadChannel.send({ embeds: [roundEmbed] });
         }
       }
     } catch {
       await message.reply("my judging brain broke. i'll give that a 5 out of mercy.");
-      battle.scores[message.author.id].push(5);
+      const authorScores = battle.scores[message.author.id];
+      if (authorScores) authorScores.push(5);
     }
     return true;
   }
