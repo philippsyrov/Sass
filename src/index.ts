@@ -168,12 +168,19 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // 2. Name mention — someone said "sass" in their message
-  //    Don't force a response — let it flow through auto-sass so the AI
-  //    reads the context and decides organically if it's worth responding to.
-  //    The message is already in the buffer from step 0.
+  // 2. Creator says "sass" — always respond to the boss
+  const isCreator = message.author.id === process.env.CREATOR_ID;
+  const lowerContent = message.content.toLowerCase().trim();
+  if (isCreator && /\bsass\b/i.test(lowerContent)) {
+    if (isUserOnCooldown(message.author.id)) return;
+    await handleMention(message, client);
+    return;
+  }
 
-  // 3. Auto-sass — occasionally pop in uninvited
+  // 3. Everyone else mentioning "sass" without @
+  //    Let it flow through auto-sass — AI reads context and decides organically.
+
+  // 4. Auto-sass — occasionally pop in uninvited
   await handleAutoSass(message, client);
 });
 
