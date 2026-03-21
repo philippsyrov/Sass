@@ -288,8 +288,61 @@ const QUOTE_AUTHORS: string[] = [
 
 // --- Command handlers ---
 
+// Global slash command rate limit per user
+const slashCmdTracker = new Map<string, number[]>();
+const SLASH_CMD_LIMIT = 5; // max commands per window
+const SLASH_CMD_WINDOW_MS = 3 * 60 * 1000; // 3 minute window
+const SLASH_CMD_MAX_TRACKED = 500;
+
+const SLASH_RATE_LIMIT_RESPONSES = [
+  "electricity ain't free, chill out with the commands.",
+  "i'm not a vending machine, relax.",
+  "bro you've used like 5 commands in a row. go outside.",
+  "slow down, i'm not getting paid enough for this.",
+  "you're speedrunning my patience rn.",
+];
+
+function isSlashRateLimited(userId: string): boolean {
+  const now = Date.now();
+  if (!slashCmdTracker.has(userId)) {
+    if (slashCmdTracker.size >= SLASH_CMD_MAX_TRACKED) {
+      const oldest = slashCmdTracker.keys().next().value;
+      if (oldest !== undefined) slashCmdTracker.delete(oldest);
+    }
+    slashCmdTracker.set(userId, []);
+  }
+  const timestamps = slashCmdTracker.get(userId);
+  if (!timestamps) return false;
+
+  // Clean old entries
+  const recent = timestamps.filter((ts) => now - ts < SLASH_CMD_WINDOW_MS);
+  recent.push(now);
+  slashCmdTracker.set(userId, recent);
+
+  return recent.length > SLASH_CMD_LIMIT;
+}
+
+// Cleanup slash command tracker
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, timestamps] of slashCmdTracker) {
+    const recent = timestamps.filter((ts) => now - ts < SLASH_CMD_WINDOW_MS);
+    if (recent.length === 0) slashCmdTracker.delete(id);
+    else slashCmdTracker.set(id, recent);
+  }
+}, 5 * 60 * 1000);
+
 export async function handleCommand(interaction: ChatInputCommandInteraction): Promise<void> {
   const { commandName } = interaction;
+
+  // Global slash command rate limit (skip for ping/help)
+  if (commandName !== 'ping' && commandName !== 'help') {
+    if (isSlashRateLimited(interaction.user.id)) {
+      const msg = SLASH_RATE_LIMIT_RESPONSES[Math.floor(Math.random() * SLASH_RATE_LIMIT_RESPONSES.length)] as string;
+      await interaction.reply({ content: msg, ephemeral: true });
+      return;
+    }
+  }
 
   // Log every slash command usage
   logCommand({
