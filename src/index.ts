@@ -158,13 +158,10 @@ client.on('messageCreate', async (message) => {
   // Explicit @Sass in message text — always respond
   const isMentionInText = message.content.includes(`<@${client.user.id}>`)
     || message.content.includes(`<@!${client.user.id}>`);
-  // Reply to a Sass message — only respond 20% of the time, and only if substantive
-  const isReplyToSass = !isMentionInText
-    && message.reference != null
-    && message.mentions.has(client.user)
-    && message.content.length > 10;
-  const shouldRespondToReply = isReplyToSass && Math.random() < 0.20;
-  if (isMentionInText || shouldRespondToReply) {
+  // Reply to a Sass message — let auto-sass handle it naturally via context
+  // Don't force a mention response, just let the message enter the buffer
+  // and the auto-sass system will decide if it's worth responding to
+  if (isMentionInText) {
     if (isUserOnCooldown(message.author.id)) return;
     if (isSpamming(message.author.id, message.content)) return;
     await handleMention(message, client);
