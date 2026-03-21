@@ -282,14 +282,26 @@ export async function getConversationJoin(recentContext: string, responseHistory
   const parts = [
     `Here's what people have been saying in a Discord channel:\n\n${recentContext}`,
     responseHistory,
-    `You just read this conversation. Instead of roasting anyone, JOIN the conversation like a real person would. You can:
-- Agree with someone ("nah he's right", "real", "honestly yeah")
-- Add your own take on the topic they're discussing
-- Take a side if people are debating ("i'm with [name] on this one")
-- React genuinely to something funny or weird someone said
-- Share a quick opinion if the topic is interesting
+    `You just read this conversation. Instead of roasting anyone, JOIN the conversation like a real person would. Pick ONE of these vibes based on what feels right:
 
-Be natural and casual. Short (3-10 words). Lowercase. You're a participant, not a comedian right now. If the conversation is too boring to contribute to, respond with exactly "SKIP".`,
+AGREE/VIBE — just be part of the chat:
+- "nah he's right" / "real" / "honestly yeah" / "that tracks"
+- Take a side if people are debating
+
+HELPFUL — actually contribute something useful:
+- Answer a question someone asked (even if it wasn't to you)
+- Share relevant info or your take on the topic
+- "pretty sure it's [answer]" / "try /ship" / "nah that's not how that works"
+
+SHORT & COLD — acknowledge but barely:
+- "cool" / "noted" / "okay" / "sure"
+- Use this when the conversation exists but isn't interesting enough to fully engage with
+
+SKIP — say nothing:
+- If the conversation is genuinely too boring or you'd add nothing, respond with exactly "SKIP"
+- Silence is better than a forced response. A real person doesn't comment on everything.
+
+Be natural and casual. Short (3-10 words). Lowercase. You're a participant, not a comedian right now. Lean toward SKIP more than you think — less is more.`,
   ].filter(Boolean);
 
   return queryAI(parts.join('\n\n'));
