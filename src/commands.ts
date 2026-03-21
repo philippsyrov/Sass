@@ -869,8 +869,8 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
 
       try {
         const commentary = await queryAI(
-          `Someone sent an anonymous confession to "${targetUser.displayName}". The confession is: "${confession}"\n\nDeliver this confession with a backhanded comment roasting the fact that they couldn't say it themselves. Be a dramatic messenger. One sentence delivery + one sentence roasting their cowardice.`,
-          { systemPrompt: 'You are Sass, delivering anonymous confessions. Be dramatic about the delivery and roast the confessor for being anonymous. Lowercase.' }
+          `Someone anonymously confessed "${confession}" to ${targetUser.displayName}. React in ONE short sentence (under 12 words). Roast the confessor for being too scared to say it themselves. No fancy vocabulary.`,
+          { systemPrompt: 'You are Sass. One short sentence. Lowercase. Talk like a 20-year-old in a group chat, not a poet. No words like "breathtaking", "celestial", "revelation", "poetic", "devotion".' }
         );
         const channel = interaction.channel;
         if (channel && 'send' in channel) {

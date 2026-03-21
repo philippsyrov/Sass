@@ -4,13 +4,14 @@ import {
   type GuildMember,
   type TextChannel,
 } from 'discord.js';
-import { getAutoSassDecision, getReactionDecision, queryAI } from '../ai.js';
+import { getAutoSassDecision, getReactionDecision, getConversationJoin, queryAI } from '../ai.js';
 import { messageBuffer } from '../messageBuffer.js';
 import { userMemory } from '../userMemory.js';
 import { isOnAutoSassCooldown, setAutoSassCooldown } from '../cooldown.js';
 import { getActivityDescription } from '../commands.js';
 import { mood } from '../mood.js';
 import { logInteraction } from '../database.js';
+import { recordResponse, getRecentResponses } from '../responseMemory.js';
 
 // Track message count per channel since last auto-sass
 const messageCounters = new Map<string, number>();
@@ -19,14 +20,22 @@ const MAX_TRACKED_CHANNELS = 500;
 const AUTO_SASS_CHANCE = parseFloat(process.env.AUTO_SASS_CHANCE ?? '0.4') || 0.4;
 const MIN_MESSAGES = parseInt(process.env.AUTO_SASS_MIN_MESSAGES ?? '2', 10) || 2;
 
+// Short reaction texts — no AI call needed, instant and human
+const SHORT_REACTIONS = [
+  'lol', 'real', 'nah', 'honestly fair', 'true', 'valid',
+  'bro what', 'help 💀', 'no comment', 'sure', 'okay lol',
+  'wild', 'relatable', 'that tracks', 'checks out', 'i—',
+];
+
 /**
  * Occasionally Sass reads the room and drops an unsolicited remark or reaction.
  *
- * Flow:
- * 1. Count messages per channel since last auto-sass
- * 2. After MIN_MESSAGES, roll the dice
- * 3. 70% chance of text remark, 30% chance of just a reaction emoji
- * 4. AI decides if it's worth commenting on or SKIPs
+ * Response types (diversified for human feel):
+ * - Roast (35%) — classic sassy remark about what people are saying
+ * - Join conversation (25%) — agree, take sides, add a genuine take
+ * - Emoji react (20%) — just slap a reaction on the message
+ * - Short text react (10%) — "lol", "real", "💀", no AI call
+ * - Lurk react (10%) — react to an older message (3-5 msgs back)
  */
 export async function handleAutoSass(message: Message, _client: Client): Promise<void> {
   // Never auto-sass the creator
@@ -64,7 +73,6 @@ export async function handleAutoSass(message: Message, _client: Client): Promise
   const count = (messageCounters.get(channelId) || 0) + 1;
   messageCounters.set(channelId, count);
   if (messageCounters.size > MAX_TRACKED_CHANNELS) {
-    // Remove oldest entries (first inserted)
     const toDelete = messageCounters.size - MAX_TRACKED_CHANNELS;
     let deleted = 0;
     for (const key of messageCounters.keys()) {
@@ -86,8 +94,8 @@ export async function handleAutoSass(message: Message, _client: Client): Promise
   // Reset counter regardless of outcome
   messageCounters.set(channelId, 0);
 
-  // 15% chance to roast someone's gaming activity instead of conversation
-  if (Math.random() < 0.15) {
+  // 10% chance to roast someone's gaming activity instead of conversation
+  if (Math.random() < 0.10) {
     try {
       const guild = message.guild;
       if (guild) {
@@ -113,6 +121,7 @@ export async function handleAutoSass(message: Message, _client: Client): Promise
             await new Promise((resolve) => setTimeout(resolve, delay));
             const activityRoastMsg = `👀 hey <@${target.user.id}>, ${roast}`;
             await channel.send(activityRoastMsg);
+            recordResponse(channelId, roast);
             userMemory.recordRoast(target.user.id);
             const moodInfo = mood.getStatus();
             logInteraction({
@@ -128,7 +137,6 @@ export async function handleAutoSass(message: Message, _client: Client): Promise
         }
       }
     } catch (err) {
-      // Activity roast failed — fall through to normal auto-sass
       console.error('Activity roast failed:', (err as Error).message);
     }
   }
@@ -140,10 +148,14 @@ export async function handleAutoSass(message: Message, _client: Client): Promise
     (msg) => `${msg.author}${msg.isBot ? ' [BOT]' : ''}: ${msg.content}`
   ).join('\n');
   const peopleContext = userMemory.buildPeopleContext(recentMessages);
+  const responseHistory = getRecentResponses(channelId);
+
+  // Roll for response type
+  const roll = Math.random();
 
   try {
-    // 30% chance of just a reaction emoji instead of a full response
-    if (Math.random() < 0.3) {
+    // 20% — Emoji react on current message
+    if (roll < 0.20) {
       const emoji = await getReactionDecision(recentContext);
       if (emoji) {
         try {
@@ -154,25 +166,100 @@ export async function handleAutoSass(message: Message, _client: Client): Promise
         }
         return;
       }
+      // Emoji failed — fall through to roast
     }
 
-    const contextWithPeople = peopleContext ? `${peopleContext}\n\n${recentContext}` : recentContext;
-    const remark = await getAutoSassDecision(contextWithPeople);
+    // 10% — Lurk mode: react to an older message (3-5 messages back)
+    if (roll >= 0.20 && roll < 0.30) {
+      try {
+        const fetched = await channel.messages.fetch({ limit: 8 });
+        const candidates = fetched
+          .filter((m) => !m.author.bot && m.content.length > 5)
+          .toJSON()
+          .slice(2, 6); // skip the 2 most recent, pick from 3rd-6th
+        if (candidates.length > 0) {
+          const target = candidates[Math.floor(Math.random() * candidates.length)];
+          if (target) {
+            const emoji = await getReactionDecision(`${target.author.displayName}: ${target.content}`);
+            if (emoji) {
+              try {
+                await target.react(emoji);
+                setAutoSassCooldown(channelId);
+              } catch {
+                // Emoji might not be valid
+              }
+              return;
+            }
+          }
+        }
+      } catch {
+        // Lurk mode failed — fall through
+      }
+    }
 
-    // AI decided the conversation wasn't worth commenting on
+    // 10% — Short text reaction (no AI call)
+    if (roll >= 0.30 && roll < 0.40) {
+      const reaction = SHORT_REACTIONS[Math.floor(Math.random() * SHORT_REACTIONS.length)];
+      if (reaction) {
+        setAutoSassCooldown(channelId);
+        const delay = 500 + Math.random() * 1500;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        await message.reply(reaction);
+        recordResponse(channelId, reaction);
+        const moodStatus = mood.getStatus();
+        logInteraction({
+          serverId: message.guild?.id, serverName: message.guild?.name,
+          channelId: channel.id, channelName: channel.name,
+          userId: message.author.id, username: message.author.displayName || message.author.username,
+          triggerType: 'auto-sass-short', commandName: null,
+          userMessage: message.content, sassResponse: reaction,
+          mood: moodStatus.mood, moodIntensity: moodStatus.intensity,
+        }).catch((err) => console.error('DB log failed:', (err as Error).message));
+        return;
+      }
+    }
+
+    // 25% — Join conversation (not a roast)
+    if (roll >= 0.40 && roll < 0.65) {
+      const contextWithPeople = peopleContext ? `${peopleContext}\n\n${recentContext}` : recentContext;
+      const joinRemark = await getConversationJoin(contextWithPeople, responseHistory);
+
+      if (joinRemark && joinRemark.trim().toUpperCase() !== 'SKIP') {
+        setAutoSassCooldown(channelId);
+        await channel.sendTyping();
+        const delay = 1000 + Math.random() * 2000;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        await channel.send(joinRemark);
+        recordResponse(channelId, joinRemark);
+        const moodStatus = mood.getStatus();
+        logInteraction({
+          serverId: message.guild?.id, serverName: message.guild?.name,
+          channelId: channel.id, channelName: channel.name,
+          userId: message.author.id, username: message.author.displayName || message.author.username,
+          triggerType: 'auto-sass-join', commandName: null,
+          userMessage: message.content, sassResponse: joinRemark,
+          mood: moodStatus.mood, moodIntensity: moodStatus.intensity,
+        }).catch((err) => console.error('DB log failed:', (err as Error).message));
+        return;
+      }
+      // AI skipped — fall through to roast
+    }
+
+    // 35% — Classic roast (default / fallthrough)
+    const contextWithPeople = peopleContext ? `${peopleContext}\n\n${recentContext}` : recentContext;
+    const remark = await getAutoSassDecision(contextWithPeople, responseHistory);
+
     if (!remark || remark.trim().toUpperCase() === 'SKIP') return;
 
     setAutoSassCooldown(channelId);
     await channel.sendTyping();
-
-    // Random delay (1-3s) so it feels natural
     const delay = 1000 + Math.random() * 2000;
     await new Promise((resolve) => setTimeout(resolve, delay));
 
     await message.reply(remark);
+    recordResponse(channelId, remark);
     userMemory.recordRoast(message.author.id);
 
-    // Log auto-sass interaction
     const moodStatus = mood.getStatus();
     logInteraction({
       serverId: message.guild?.id, serverName: message.guild?.name,
@@ -183,7 +270,6 @@ export async function handleAutoSass(message: Message, _client: Client): Promise
       mood: moodStatus.mood, moodIntensity: moodStatus.intensity,
     }).catch((err) => console.error('DB log failed:', (err as Error).message));
   } catch (err) {
-    // Auto-sass failures are silent — she just stays quiet
     console.error('Auto-sass failed:', (err as Error).message);
   }
 }

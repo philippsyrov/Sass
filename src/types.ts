@@ -38,6 +38,7 @@ export interface UserData {
   timesRoasted: number;
   facts?: string[];
   coldShoulder?: ColdShoulderState;
+  gender?: 'male' | 'female' | 'nonbinary' | null;
 }
 
 export interface ColdShoulderState {

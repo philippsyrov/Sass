@@ -242,10 +242,35 @@ export async function getSassResponse(userMessage: string, {
 /**
  * Decide if auto-sass should trigger based on recent messages.
  */
-export async function getAutoSassDecision(recentContext: string): Promise<string | null> {
-  const prompt = `Here's what people have been saying in a Discord channel:\n\n${recentContext}\n\nYou just overheard this conversation. Decide if there's something worth roasting or commenting on. If yes, drop a short sassy remark. If the conversation is boring or mundane, respond with exactly "SKIP" and nothing else. Remember: NEVER quote their messages back. Just react to the vibe.`;
+export async function getAutoSassDecision(recentContext: string, responseHistory = ''): Promise<string | null> {
+  const parts = [
+    `Here's what people have been saying in a Discord channel:\n\n${recentContext}`,
+    responseHistory,
+    `You just overheard this conversation. Decide if there's something worth roasting or commenting on. If yes, drop a short sassy remark. If the conversation is boring or mundane, respond with exactly "SKIP" and nothing else. Remember: NEVER quote their messages back. Just react to the vibe.`,
+  ].filter(Boolean);
 
-  return queryAI(prompt);
+  return queryAI(parts.join('\n\n'));
+}
+
+/**
+ * Join a conversation naturally — agree, add a take, take sides, or just vibe.
+ * NOT a roast — Sass participates like a real person in the group chat.
+ */
+export async function getConversationJoin(recentContext: string, responseHistory = ''): Promise<string | null> {
+  const parts = [
+    `Here's what people have been saying in a Discord channel:\n\n${recentContext}`,
+    responseHistory,
+    `You just read this conversation. Instead of roasting anyone, JOIN the conversation like a real person would. You can:
+- Agree with someone ("nah he's right", "real", "honestly yeah")
+- Add your own take on the topic they're discussing
+- Take a side if people are debating ("i'm with [name] on this one")
+- React genuinely to something funny or weird someone said
+- Share a quick opinion if the topic is interesting
+
+Be natural and casual. Short (3-10 words). Lowercase. You're a participant, not a comedian right now. If the conversation is too boring to contribute to, respond with exactly "SKIP".`,
+  ].filter(Boolean);
+
+  return queryAI(parts.join('\n\n'));
 }
 
 /**

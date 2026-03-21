@@ -12,12 +12,13 @@ import {
 import { getSassResponse, extractRoastTopic, analyzeProfile, queryAI } from '../ai.js';
 import { messageBuffer } from '../messageBuffer.js';
 import { userMemory } from '../userMemory.js';
-import { isOnMentionCooldown, setMentionCooldown } from '../cooldown.js';
+import { isOnMentionCooldown, setMentionCooldown, trackMentionEscalation, getEscalationCount } from '../cooldown.js';
 import { storeMemory, searchMemories } from '../vectorMemory.js';
 import { buildHelpPages } from '../helpPages.js';
 import { mood } from '../mood.js';
 import { extractStatement, checkContradiction, generate4kCallout, storeStatement } from '../caughtIn4k.js';
 import { logInteraction, logCommand } from '../database.js';
+import { recordResponse, getRecentResponses } from '../responseMemory.js';
 
 /**
  * Handle direct @Sass mentions and replies to Sass.
@@ -32,6 +33,9 @@ export async function handleMention(message: Message, client: Client): Promise<v
   setMentionCooldown(userId);
 
   if (!client.user) return;
+
+  // Track escalation — how much this user has been tagging Sass recently
+  const escalationLevel = trackMentionEscalation(userId);
 
   // Cast channel — this handler only runs in guild text channels
   const channel = message.channel as TextChannel;
@@ -462,6 +466,19 @@ export async function handleMention(message: Message, client: Client): Promise<v
     } catch { /* vector search is non-critical */ }
   }
 
+  // Escalation context — tell the AI how much this person has been tagging
+  let escalationContext = '';
+  if (!isCreator && escalationLevel !== 'normal') {
+    const tagCount = getEscalationCount(userId);
+    if (escalationLevel === 'annoyed') {
+      escalationContext = `NOTE: ${displayName} has tagged you ${tagCount} times in the last few minutes. You're getting annoyed. Be shorter, more dismissive. Show some irritation.`;
+    } else if (escalationLevel === 'cold') {
+      escalationContext = `NOTE: ${displayName} has tagged you ${tagCount} times in the last few minutes. You're over it. Be cold and dismissive. One-word answers. "what." / "again?" / "you're still here?" energy.`;
+    } else if (escalationLevel === 'petty') {
+      escalationContext = `NOTE: ${displayName} has tagged you ${tagCount} times in the last few minutes. This is excessive. Be petty about it. Call out how much they're tagging you. "bro you've tagged me ${tagCount} times, get a hobby" type energy.`;
+    }
+  }
+
   // Frame the message with the speaker's name
   const framedMessage = `${displayName} says: ${cleanContent}`;
 
@@ -492,7 +509,8 @@ export async function handleMention(message: Message, client: Client): Promise<v
     }
 
     const imageUrl = imageAttachment ? imageAttachment.url : null;
-    const fullUserContext = [userContext, vectorContext].filter(Boolean).join('\n\n');
+    const responseHistory = getRecentResponses(channel.id);
+    const fullUserContext = [userContext, vectorContext, responseHistory, escalationContext].filter(Boolean).join('\n\n');
     const response = await getSassResponse(framedMessage, { recentContext, userContext: fullUserContext, peopleContext, isCreator, mentionsCreator, creatorName, imageUrl });
     if (!response) {
       await message.reply("My brain just short-circuited. Even AI has bad days, okay?");
@@ -503,6 +521,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
     const typingDelay = Math.min(1500 + response.length * 20, 4000);
     await new Promise((resolve) => setTimeout(resolve, typingDelay));
     await message.reply(response);
+    recordResponse(channel.id, response);
 
     // Log to database
     const moodStatus = mood.getStatus();

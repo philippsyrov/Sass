@@ -133,6 +133,11 @@ class UserMemory {
       if (userId === creatorId) {
         parts.push('your creator, friend \u2014 never roast');
       } else if (user) {
+        // Gender — so Sass uses correct pronouns
+        if (user.gender === 'female') parts.push('she/her');
+        else if (user.gender === 'male') parts.push('he/him');
+        else if (user.gender === 'nonbinary') parts.push('they/them');
+
         // Activity level — no exact counts, just vibes
         if (user.messageCount > 50) parts.push('regular, been around a while');
         else if (user.messageCount > 20) parts.push('regular');
@@ -178,7 +183,7 @@ class UserMemory {
 
   /**
    * Store a fact about a user that Sass can weaponize later.
-   * Keeps last 10 facts per user.
+   * Keeps last 10 facts per user. Also detects gender from facts.
    */
   remember(userId: string, fact: string): void {
     const user = this.users[userId];
@@ -188,6 +193,21 @@ class UserMemory {
     if (user.facts.length > 10) {
       user.facts.shift();
     }
+
+    // Auto-detect gender from fact
+    const lower = fact.toLowerCase();
+    const femalePatterns = /\b(i'?m a (girl|woman|female)|i'?m (she|her)|my pronouns are she|call me (she|her)|i'm female)\b/i;
+    const malePatterns = /\b(i'?m a (guy|boy|man|male|dude)|i'?m (he|him)|my pronouns are he|call me (he|him)|i'm male)\b/i;
+    const nbPatterns = /\b(i'?m (nonbinary|non-binary|enby|nb)|my pronouns are they|call me they)\b/i;
+
+    if (femalePatterns.test(lower)) {
+      user.gender = 'female';
+    } else if (malePatterns.test(lower)) {
+      user.gender = 'male';
+    } else if (nbPatterns.test(lower)) {
+      user.gender = 'nonbinary';
+    }
+
     this._save();
   }
 
