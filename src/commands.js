@@ -2,6 +2,7 @@ import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, But
 import { queryAI } from './ai.js';
 import { userMemory } from './userMemory.js';
 import { buildHelpPages } from './helpPages.js';
+import { logCommand } from './database.js';
 
 // --- Activity description helper ---
 export function getActivityDescription(presence) {
@@ -227,6 +228,14 @@ const QUOTE_AUTHORS = [
 
 export async function handleCommand(interaction) {
   const { commandName } = interaction;
+
+  // Log every slash command usage
+  logCommand({
+    serverId: interaction.guild?.id,
+    userId: interaction.user.id,
+    commandName,
+    commandType: 'slash',
+  }).catch(() => {});
 
   switch (commandName) {
     case 'ping': {

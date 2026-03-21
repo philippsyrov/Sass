@@ -5,6 +5,7 @@ import { handleAutoSass } from './handlers/autoSass.js';
 import { handleCommand, handleBattleMessage } from './commands.js';
 import { messageBuffer } from './messageBuffer.js';
 import { userMemory } from './userMemory.js';
+import { initDatabase } from './database.js';
 
 dotenv.config();
 
@@ -19,11 +20,14 @@ const client = new Client({
   partials: [Partials.Message, Partials.Channel, Partials.Reaction],
 });
 
-client.once('ready', () => {
+client.once('ready', async () => {
   console.log(`Sass is online as ${client.user.tag}`);
   console.log(`AI Provider: ${process.env.AI_PROVIDER || 'ollama'}`);
   console.log(`Auto-sass chance: ${(process.env.AUTO_SASS_CHANCE || 0.4) * 100}%`);
   console.log(`Creator ID: ${process.env.CREATOR_ID || 'not set'}`);
+
+  // Initialize database (fails silently if no DATABASE_URL)
+  await initDatabase();
 });
 
 // Send a message to the first available text channel in a guild

@@ -4,6 +4,7 @@ import { userMemory } from '../userMemory.js';
 import { isOnAutoSassCooldown, setAutoSassCooldown } from '../cooldown.js';
 import { getActivityDescription } from '../commands.js';
 import { mood } from '../mood.js';
+import { logInteraction } from '../database.js';
 
 // Track message count per channel since last auto-sass
 const messageCounters = new Map();
@@ -138,6 +139,17 @@ export async function handleAutoSass(message, _client) {
 
     await message.reply(remark);
     userMemory.recordRoast(message.author.id);
+
+    // Log auto-sass interaction
+    const moodStatus = mood.getStatus();
+    logInteraction({
+      serverId: message.guild?.id, serverName: message.guild?.name,
+      channelId: message.channel.id, channelName: message.channel.name,
+      userId: message.author.id, username: message.author.displayName || message.author.username,
+      triggerType: 'auto-sass', commandName: null,
+      userMessage: message.content, sassResponse: remark,
+      mood: moodStatus.mood, moodIntensity: moodStatus.intensity,
+    }).catch(() => {});
   } catch (err) {
     // Auto-sass failures are silent — she just stays quiet
     console.error('Auto-sass failed:', err.message);

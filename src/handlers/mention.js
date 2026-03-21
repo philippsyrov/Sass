@@ -7,6 +7,7 @@ import { storeMemory, searchMemories } from '../vectorMemory.js';
 import { buildHelpPages } from '../helpPages.js';
 import { mood } from '../mood.js';
 import { extractStatement, checkContradiction, generate4kCallout, storeStatement } from '../caughtIn4k.js';
+import { logInteraction, logCommand } from '../database.js';
 
 /**
  * Handle direct @Sass mentions and replies to Sass.
@@ -134,6 +135,7 @@ export async function handleMention(message, client) {
         `*${roast}*`,
       ];
       await message.reply(profile.join('\n'));
+      logCommand({ serverId: message.guild?.id, userId, commandName: 'profile', commandType: 'mention' }).catch(() => {});
     } catch (err) {
       console.error('Profile analysis failed:', err.message);
       await message.reply("my brain crashed trying to analyze this person. that says a lot honestly.");
@@ -157,7 +159,16 @@ export async function handleMention(message, client) {
         `Rate the compatibility between "${name1}" and "${name2}" at ${percent}%. Give a one-sentence brutal, funny verdict.`,
         { systemPrompt: 'You are Sass. One sentence. Lowercase. Brutal and funny.' }
       );
-      await message.reply(`💘 **${name1}** x **${name2}**\nship name: **${shipName}**\n${bar} **${percent}%**\n\n*${verdict}*`);
+      const shipResponse = `💘 **${name1}** x **${name2}**\nship name: **${shipName}**\n${bar} **${percent}%**\n\n*${verdict}*`;
+      await message.reply(shipResponse);
+      logInteraction({
+        serverId: message.guild?.id, serverName: message.guild?.name,
+        channelId: message.channel.id, channelName: message.channel.name,
+        userId, username: displayName,
+        triggerType: 'mention', commandName: 'ship',
+        userMessage: cleanContent, sassResponse: shipResponse,
+        mood: mood.getStatus().mood, moodIntensity: mood.getStatus().intensity,
+      }).catch(() => {});
     } catch { await message.reply("couldn't ship them. maybe they're not meant to be."); }
     return;
   }
@@ -433,6 +444,17 @@ export async function handleMention(message, client) {
     const fullUserContext = [userContext, vectorContext].filter(Boolean).join('\n\n');
     const response = await getSassResponse(framedMessage, { recentContext, userContext: fullUserContext, peopleContext, isCreator, mentionsCreator, creatorName, imageUrl });
     await message.reply(response);
+
+    // Log to database
+    const moodStatus = mood.getStatus();
+    logInteraction({
+      serverId: message.guild?.id, serverName: message.guild?.name,
+      channelId: message.channel.id, channelName: message.channel.name,
+      userId, username: displayName,
+      triggerType: 'mention', commandName: null,
+      userMessage: cleanContent, sassResponse: response,
+      mood: moodStatus.mood, moodIntensity: moodStatus.intensity,
+    }).catch(() => {});
 
     // Don't track roast topics for the creator (we don't roast them)
     if (!isCreator) {
