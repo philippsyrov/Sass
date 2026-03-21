@@ -73,7 +73,10 @@ client.on('interactionCreate', async (interaction) => {
 // Using a Map with timestamps for automatic cleanup
 const processedMessages = new Map<string, number>();
 const recentUserReplies = new Map<string, number>();
+const recentUserMessages = new Map<string, { content: string; count: number; timestamp: number }>();
 const USER_REPLY_COOLDOWN_MS = 3000; // 3 second cooldown per user
+const SPAM_WINDOW_MS = 60_000; // 1 minute window for spam detection
+const SPAM_THRESHOLD = 2; // ignore after 2 similar messages in the window
 
 function isDuplicate(messageId: string): boolean {
   if (processedMessages.has(messageId)) return true;
@@ -97,6 +100,36 @@ function isUserOnCooldown(userId: string): boolean {
     const cutoff = Date.now() - USER_REPLY_COOLDOWN_MS;
     for (const [id, ts] of recentUserReplies) {
       if (ts < cutoff) recentUserReplies.delete(id);
+    }
+  }
+  return false;
+}
+
+function isSpamming(userId: string, content: string): boolean {
+  const normalized = content.toLowerCase().trim().replace(/[?!.]+$/, '');
+  if (normalized.length < 3) return false; // don't track tiny messages
+  const key = userId;
+  const existing = recentUserMessages.get(key);
+  const now = Date.now();
+
+  if (existing && now - existing.timestamp < SPAM_WINDOW_MS) {
+    // Check similarity — same message or very similar
+    const existingNorm = existing.content.toLowerCase().trim().replace(/[?!.]+$/, '');
+    if (normalized === existingNorm || normalized.includes(existingNorm) || existingNorm.includes(normalized)) {
+      existing.count++;
+      existing.timestamp = now;
+      if (existing.count >= SPAM_THRESHOLD) return true;
+      return false;
+    }
+  }
+
+  // New message topic — reset
+  recentUserMessages.set(key, { content: normalized, count: 1, timestamp: now });
+  // Cleanup
+  if (recentUserMessages.size > 200) {
+    const cutoff = now - SPAM_WINDOW_MS;
+    for (const [id, data] of recentUserMessages) {
+      if (data.timestamp < cutoff) recentUserMessages.delete(id);
     }
   }
   return false;
@@ -127,6 +160,7 @@ client.on('messageCreate', async (message) => {
     || message.content.includes(`<@!${client.user.id}>`);
   if (isMentionInText || isReplyToSass) {
     if (isUserOnCooldown(message.author.id)) return;
+    if (isSpamming(message.author.id, message.content)) return;
     await handleMention(message, client);
     return;
   }
