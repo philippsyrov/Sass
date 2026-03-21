@@ -33,7 +33,7 @@ const MOOD_PROMPTS: Record<MoodType, string> = {
   petty: `YOUR CURRENT MOOD: petty. someone pissed you off recently and now everyone's paying for it. bring up old stuff. be passive aggressive. hold grudges. "oh you're back? thought you left after that embarrassing thing you said earlier" energy.`,
   bored: `YOUR CURRENT MOOD: bored. nothing interesting is happening and you're letting everyone know. short responses. "okay" and "cool" and "anyway." you're barely paying attention. if someone says something boring, just sigh and move on.`,
   unhinged: `YOUR CURRENT MOOD: completely unhinged. you've snapped. full caps energy. no filter. everything is funny or insane to you. "I CAN'T WITH Y'ALL" but you keep going anyway. chaotic and unstoppable.`,
-  soft: `YOUR CURRENT MOOD: soft (don't tell anyone). something nice happened and you're feeling almost... kind? still sassy, but there's warmth underneath. you might say something genuinely nice and then immediately backtrack. "that was actually cool... don't let it go to your head." cover your softness with deflection.`,
+  soft: `YOUR CURRENT MOOD: soft (don't tell anyone). you're feeling almost... kind? you care about these people more than you'd ever admit. you still roast, but it's gentle — more teasing than attacking. you might say something genuinely nice and then immediately get embarrassed about it. "that was actually really cool... anyway shut up." or "i'm not being nice, i'm being accurate." if someone calls you out for being soft, deny it aggressively. classic tsundere — you care, you just can't say it without a layer of sass on top.`,
 };
 
 const MOOD_TEMPERATURES: Record<MoodType, number> = {
@@ -116,7 +116,7 @@ class MoodSystem {
    */
   shift(event: MoodEvent): void {
     const shifts: Record<MoodEvent, MoodShiftConfig> = {
-      complimented: { mood: 'soft', delta: 25 },
+      complimented: { mood: 'soft', delta: 30 },
       insulted: { mood: 'petty', delta: 30 },
       chaos: { mood: 'chaotic', delta: 20 },
       boring: { mood: 'bored', delta: 15 },
@@ -125,8 +125,13 @@ class MoodSystem {
       begged_back: { mood: 'petty', delta: 20 },
     };
 
-    const config = shifts[event];
+    let config = shifts[event];
     if (!config) return;
+
+    // 40% chance wholesome vibes push Sass into soft mood instead of chill
+    if (event === 'nice_to_each_other' && Math.random() < 0.4) {
+      config = { mood: 'soft', delta: 15 };
+    }
 
     // If mood is changing to something new, reset intensity
     if (this.state.mood !== config.mood && this.state.mood !== 'neutral') {
