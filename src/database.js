@@ -216,3 +216,14 @@ export async function getTrainingData(limit = 1000) {
 export function isDatabaseConnected() {
   return isConnected;
 }
+
+/**
+ * Gracefully close the database pool. Call on process shutdown.
+ */
+export async function closeDatabase() {
+  if (pool) {
+    await pool.end();
+    isConnected = false;
+    console.log('Database pool closed');
+  }
+}

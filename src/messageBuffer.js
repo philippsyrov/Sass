@@ -4,6 +4,7 @@
  * without fetching full channel history.
  */
 const MAX_MESSAGES_PER_CHANNEL = 10;
+const MAX_TRACKED_CHANNELS = 1000;
 
 class MessageBuffer {
   constructor() {
@@ -15,6 +16,11 @@ class MessageBuffer {
     const channelId = message.channel.id;
 
     if (!this.channels.has(channelId)) {
+      // Evict oldest channels if at capacity
+      if (this.channels.size >= MAX_TRACKED_CHANNELS) {
+        const oldest = this.channels.keys().next().value;
+        this.channels.delete(oldest);
+      }
       this.channels.set(channelId, []);
     }
 

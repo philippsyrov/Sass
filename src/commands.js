@@ -590,6 +590,7 @@ export async function handleCommand(interaction) {
         phase: 'waiting',
         currentTurn: null,
         timeout: null,
+        startedAt: Date.now(),
       });
 
       const embed = new EmbedBuilder()
@@ -719,6 +720,17 @@ function getZodiacEmoji(sign) {
 
 // --- Roast Battle State ---
 export const activeBattles = new Map();
+const BATTLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 min max per battle
+
+// Clean up abandoned battles every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, battle] of activeBattles) {
+    if (now - (battle.startedAt || 0) > BATTLE_TIMEOUT_MS) {
+      activeBattles.delete(id);
+    }
+  }
+}, 5 * 60 * 1000);
 
 export async function handleBattleMessage(message) {
   // Only handle messages in threads that are active battles

@@ -8,6 +8,7 @@ import { logInteraction } from '../database.js';
 
 // Track message count per channel since last auto-sass
 const messageCounters = new Map();
+const MAX_TRACKED_CHANNELS = 500;
 
 const AUTO_SASS_CHANCE = parseFloat(process.env.AUTO_SASS_CHANCE) || 0.4;
 const MIN_MESSAGES = parseInt(process.env.AUTO_SASS_MIN_MESSAGES, 10) || 2;
@@ -51,9 +52,19 @@ export async function handleAutoSass(message, _client) {
 
   const channelId = message.channel.id;
 
-  // Increment counter
+  // Increment counter (cap tracked channels to prevent memory leak)
   const count = (messageCounters.get(channelId) || 0) + 1;
   messageCounters.set(channelId, count);
+  if (messageCounters.size > MAX_TRACKED_CHANNELS) {
+    // Remove oldest entries (first inserted)
+    const toDelete = messageCounters.size - MAX_TRACKED_CHANNELS;
+    let deleted = 0;
+    for (const key of messageCounters.keys()) {
+      if (deleted >= toDelete) break;
+      messageCounters.delete(key);
+      deleted++;
+    }
+  }
 
   // Not enough messages yet
   if (count < MIN_MESSAGES) return;
@@ -90,14 +101,25 @@ export async function handleAutoSass(message, _client) {
             await message.channel.sendTyping();
             const delay = 1000 + Math.random() * 2000;
             await new Promise((resolve) => setTimeout(resolve, delay));
-            await message.channel.send(`👀 hey <@${target.user.id}>, ${roast}`);
+            const activityRoastMsg = `👀 hey <@${target.user.id}>, ${roast}`;
+            await message.channel.send(activityRoastMsg);
             userMemory.recordRoast(target.user.id);
+            const moodInfo = mood.getStatus();
+            logInteraction({
+              serverId: message.guild?.id, serverName: message.guild?.name,
+              channelId: message.channel.id, channelName: message.channel.name,
+              userId: target.user.id, username: target.displayName,
+              triggerType: 'auto-sass-activity', commandName: null,
+              userMessage: activity, sassResponse: roast,
+              mood: moodInfo.mood, moodIntensity: moodInfo.intensity,
+            }).catch((err) => console.error('DB log failed:', err.message));
             return;
           }
         }
       }
-    } catch {
+    } catch (err) {
       // Activity roast failed — fall through to normal auto-sass
+      console.error('Activity roast failed:', err.message);
     }
   }
 
@@ -149,7 +171,7 @@ export async function handleAutoSass(message, _client) {
       triggerType: 'auto-sass', commandName: null,
       userMessage: message.content, sassResponse: remark,
       mood: moodStatus.mood, moodIntensity: moodStatus.intensity,
-    }).catch(() => {});
+    }).catch((err) => console.error('DB log failed:', err.message));
   } catch (err) {
     // Auto-sass failures are silent — she just stays quiet
     console.error('Auto-sass failed:', err.message);

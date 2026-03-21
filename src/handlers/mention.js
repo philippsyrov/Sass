@@ -245,7 +245,7 @@ export async function handleMention(message, client) {
       return;
     }
     userMemory.remember(targetId, fact);
-    storeMemory(targetId, 'fact', fact).catch(() => {});
+    storeMemory(targetId, 'fact', fact).catch((err) => console.error('Vector store failed:', err.message));
     const responses = [
       'noted. i\'ll use that later',
       'filed under "ammo" 📁',
@@ -262,7 +262,7 @@ export async function handleMention(message, client) {
   if (rememberSelfMatch && !rememberSelfMatch[1].startsWith('<@')) {
     const fact = rememberSelfMatch[1].trim();
     userMemory.remember(userId, fact);
-    storeMemory(userId, 'fact', fact).catch(() => {});
+    storeMemory(userId, 'fact', fact).catch((err) => console.error('Vector store failed:', err.message));
     const responses = [
       'noted. you just handed me a weapon',
       'filed. you\'ll regret this',

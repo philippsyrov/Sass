@@ -5,7 +5,7 @@ import { handleAutoSass } from './handlers/autoSass.js';
 import { handleCommand, handleBattleMessage } from './commands.js';
 import { messageBuffer } from './messageBuffer.js';
 import { userMemory } from './userMemory.js';
-import { initDatabase } from './database.js';
+import { initDatabase, closeDatabase } from './database.js';
 
 dotenv.config();
 
@@ -121,5 +121,15 @@ client.on('messageCreate', async (message) => {
   // 3. Auto-sass — occasionally pop in uninvited
   await handleAutoSass(message, client);
 });
+
+// Graceful shutdown — clean up connections
+async function shutdown(signal) {
+  console.log(`\n${signal} received — shutting down gracefully...`);
+  client.destroy();
+  await closeDatabase();
+  process.exit(0);
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 client.login(process.env.DISCORD_TOKEN);

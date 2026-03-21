@@ -214,10 +214,13 @@ class UserMemory {
     const cs = this.users[userId]?.coldShoulder;
     if (!cs || !cs.active) return false;
     cs.attemptsMade++;
-    if (cs.attemptsMade >= cs.attemptsNeeded) {
+    const forgiven = cs.attemptsMade >= cs.attemptsNeeded;
+    if (forgiven) {
       cs.active = false;
     }
     this._save();
+    // Return forgiven directly since getColdShoulder returns false when active=false
+    if (forgiven) return { phase: 'forgiven' };
     return this.getColdShoulder(userId);
   }
 
@@ -317,7 +320,8 @@ class UserMemory {
     const creatorId = process.env.CREATOR_ID;
     if (!creatorId || !this.users[creatorId]) return false;
 
-    const creatorName = this.users[creatorId].name.toLowerCase();
+    const creatorName = this.users[creatorId].name?.toLowerCase();
+    if (!creatorName) return false;
     const lowerText = text.toLowerCase();
 
     // Check for the creator's display name in the text
