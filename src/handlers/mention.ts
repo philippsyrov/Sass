@@ -21,6 +21,27 @@ import { logInteraction, logCommand } from '../database.js';
 import { recordResponse, getRecentResponses } from '../responseMemory.js';
 import { getShipScore, getPairInteractions, warmPairCache } from '../shipScore.js';
 
+// Profile cooldown — prevent spamming profile checks
+const profileCooldowns = new Map<string, number>();
+const PROFILE_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
+const MAX_PROFILE_COOLDOWNS = 500;
+
+// Remember cooldown — prevent spamming remember commands
+const rememberCooldowns = new Map<string, number>();
+const REMEMBER_COOLDOWN_MS = 30 * 1000; // 30 seconds between remembers
+const MAX_REMEMBER_COOLDOWNS = 500;
+
+// Clean up cooldowns every 10 min
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, ts] of profileCooldowns) {
+    if (now - ts > PROFILE_COOLDOWN_MS) profileCooldowns.delete(key);
+  }
+  for (const [key, ts] of rememberCooldowns) {
+    if (now - ts > REMEMBER_COOLDOWN_MS) rememberCooldowns.delete(key);
+  }
+}, 10 * 60 * 1000);
+
 /**
  * Handle direct @Sass mentions and replies to Sass.
  * Grabs recent context + user memory and fires back a sassy response.
@@ -100,6 +121,23 @@ export async function handleMention(message: Message, client: Client): Promise<v
   const profileMatch = lowerClean.match(/^profile\s*(?:<@!?(\d+)>)?$/);
   if (lowerClean === 'profile' || profileMatch) {
     const targetId = profileMatch?.[1] || userId;
+
+    // Profile cooldown — 10 min per target user
+    const profileCooldownKey = `profile:${userId}:${targetId}`;
+    const lastProfiled = profileCooldowns.get(profileCooldownKey);
+    const now = Date.now();
+    if (lastProfiled && now - lastProfiled < PROFILE_COOLDOWN_MS) {
+      const remaining = Math.ceil((PROFILE_COOLDOWN_MS - (now - lastProfiled)) / 60000);
+      const spamResponses = [
+        `you just checked ${remaining} min ago. they haven't gotten less annoying yet.`,
+        `obsessed much? try again in ${remaining} min <:sass_judge:100000000000000902>`,
+        `i already told you. reading it twice won't change the verdict.`,
+        `you're speedrunning this command and it's embarrassing <:sass_stare:100000000000000900>`,
+      ];
+      await message.reply(spamResponses[Math.floor(Math.random() * spamResponses.length)] as string).catch((err) => console.error('Reply failed:', (err as Error).message));
+      return;
+    }
+
     const targetUser = targetId === userId
       ? message.author
       : await message.guild?.members.fetch(targetId).then((m) => m.user).catch(() => null) ?? null;
@@ -164,6 +202,12 @@ export async function handleMention(message: Message, client: Client): Promise<v
         `*${roast}*`,
       ];
       await message.reply(profile.join('\n')).catch((err) => console.error('Reply failed:', (err as Error).message));
+      // Set profile cooldown
+      profileCooldowns.set(profileCooldownKey, Date.now());
+      if (profileCooldowns.size > MAX_PROFILE_COOLDOWNS) {
+        const oldest = profileCooldowns.keys().next().value;
+        if (oldest !== undefined) profileCooldowns.delete(oldest);
+      }
       logCommand({ serverId: message.guild?.id, userId, commandName: 'profile', commandType: 'mention' }).catch((err) => console.error('Log command failed:', (err as Error).message));
     } catch (err) {
       console.error('Profile analysis failed:', (err as Error).message);
@@ -325,6 +369,19 @@ export async function handleMention(message: Message, client: Client): Promise<v
     return;
   }
 
+  // Remember cooldown — prevent spam
+  const lastRemember = rememberCooldowns.get(userId);
+  const rememberNow = Date.now();
+  if (lastRemember && rememberNow - lastRemember < REMEMBER_COOLDOWN_MS && (cleanContent.startsWith('remember'))) {
+    const rememberSpamResponses = [
+      'slow down, my notes app isn\'t that fast <:sass_done:100000000000000901>',
+      'you\'re speed-running the remember command and it shows',
+      'one at a time. i\'m not your diary.',
+    ];
+    await message.reply(rememberSpamResponses[Math.floor(Math.random() * rememberSpamResponses.length)] as string).catch((err) => console.error('Reply failed:', (err as Error).message));
+    return;
+  }
+
   // Remember command — "@Sass remember @User likes pineapple pizza"
   const rememberMatch = cleanContent.match(/^remember\s+<@!?(\d+)>\s+(.+)/i);
   if (rememberMatch) {
@@ -337,6 +394,11 @@ export async function handleMention(message: Message, client: Client): Promise<v
     }
     userMemory.remember(targetId, fact);
     storeMemory(targetId, 'fact', fact).catch((err) => console.error('Vector store failed:', (err as Error).message));
+    rememberCooldowns.set(userId, Date.now());
+    if (rememberCooldowns.size > MAX_REMEMBER_COOLDOWNS) {
+      const oldest = rememberCooldowns.keys().next().value;
+      if (oldest !== undefined) rememberCooldowns.delete(oldest);
+    }
     const responses = [
       'noted. i\'ll use that later',
       'filed under "ammo" 📁',
@@ -387,6 +449,11 @@ export async function handleMention(message: Message, client: Client): Promise<v
     // Actual useful fact — store and respond
     userMemory.remember(userId, fact);
     storeMemory(userId, 'fact', fact).catch((err) => console.error('Vector store failed:', (err as Error).message));
+    rememberCooldowns.set(userId, Date.now());
+    if (rememberCooldowns.size > MAX_REMEMBER_COOLDOWNS) {
+      const oldest = rememberCooldowns.keys().next().value;
+      if (oldest !== undefined) rememberCooldowns.delete(oldest);
+    }
     const responses = [
       'noted. you just handed me a weapon',
       'filed. you\'ll regret this',
