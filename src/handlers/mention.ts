@@ -275,6 +275,15 @@ export async function handleMention(message: Message, client: Client): Promise<v
   if (conspiracyMatch) {
     const conspiracyTargetId = conspiracyMatch[1];
     if (!conspiracyTargetId) return;
+
+    // 30 min cooldown per user per target
+    const conCooldownKey = `con:${userId}:${conspiracyTargetId}`;
+    const lastCon = profileCooldowns.get(conCooldownKey);
+    if (lastCon && Date.now() - lastCon < 30 * 60 * 1000) {
+      await message.reply("i already investigated, the case is closed.").catch((err) => console.error('Reply failed:', (err as Error).message));
+      return;
+    }
+
     try {
       await channel.sendTyping();
       const member = await message.guild?.members.fetch(conspiracyTargetId);
@@ -297,6 +306,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
         { systemPrompt: 'You generate absurd conspiracy theories about people. Be creative and unhinged but not mean-spirited. Lowercase. Weave in any real facts/activity as "evidence." Each conspiracy should be wildly different — never repeat the same format or structure.' }
       );
       await message.reply(`🕵️ **CLASSIFIED INTEL ON ${member.displayName.toUpperCase()}**\n\n${response}`);
+      profileCooldowns.set(conCooldownKey, Date.now());
     } catch (err) {
       console.error('Conspiracy command failed:', (err as Error).message);
       await message.reply("my investigation was compromised. suspicious.").catch((replyErr) => console.error('Reply failed:', (replyErr as Error).message));

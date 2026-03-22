@@ -25,6 +25,19 @@ import { getActivityDescription, getMainCharacter, hasUsedToday, markUsedToday }
 import { EIGHT_BALL, FORTUNES, QUOTE_AUTHORS } from './commandDefinitions.js';
 import { activeBattles } from './roastBattle.js';
 
+// --- Conspiracy cooldown — 30 min per user per target ---
+const conspiracyCooldowns = new Map<string, number>();
+const CONSPIRACY_COOLDOWN_MS = 30 * 60 * 1000;
+const MAX_CONSPIRACY_COOLDOWNS = 500;
+
+// Clean up conspiracy cooldowns every 15 min
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, ts] of conspiracyCooldowns) {
+    if (now - ts > CONSPIRACY_COOLDOWN_MS) conspiracyCooldowns.delete(key);
+  }
+}, 15 * 60 * 1000);
+
 // --- Global slash command rate limit per user with soft ban escalation ---
 const slashCmdTracker = new Map<string, number[]>();
 const slashCmdStrikes = new Map<string, { count: number; bannedUntil: number }>();
@@ -444,8 +457,14 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
     }
 
     case 'conspiracy': {
-      await interaction.deferReply();
       const targetUser = interaction.options.getUser('user', true);
+      const conspiracyKey = `${interaction.user.id}:${targetUser.id}`;
+      const lastConspiracy = conspiracyCooldowns.get(conspiracyKey);
+      if (lastConspiracy && Date.now() - lastConspiracy < CONSPIRACY_COOLDOWN_MS) {
+        await interaction.reply({ content: "i already investigated, the case is closed.", ephemeral: true });
+        break;
+      }
+      await interaction.deferReply();
       const userContext = await userMemory.getContext(guildId, targetUser.id);
       const facts = await userMemory.getFacts(guildId, targetUser.id);
       const member = interaction.guild?.members.cache.get(targetUser.id);
@@ -463,6 +482,11 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           { systemPrompt: 'You generate absurd conspiracy theories about people. Be creative and unhinged but not mean-spirited. Lowercase. Weave in any real facts/activity as "evidence." Each conspiracy should be wildly different — never repeat the same format or structure.' }
         );
         await interaction.editReply(`🕵️ **CLASSIFIED INTEL ON ${targetUser.displayName.toUpperCase()}**\n\n${response}`);
+        conspiracyCooldowns.set(conspiracyKey, Date.now());
+        if (conspiracyCooldowns.size > MAX_CONSPIRACY_COOLDOWNS) {
+          const oldest = conspiracyCooldowns.keys().next().value;
+          if (oldest !== undefined) conspiracyCooldowns.delete(oldest);
+        }
       } catch (err) {
         console.error('Conspiracy command failed:', (err as Error).message);
         await interaction.editReply(`🕵️ i tried to investigate ${targetUser.displayName} but my files were mysteriously deleted. suspicious.`);
