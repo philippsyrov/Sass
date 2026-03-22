@@ -1,6 +1,6 @@
 import type { Presence } from 'discord.js';
 import type { MainCharacter } from '../types.js';
-import { userMemory } from '../userMemory.js';
+import * as userMemory from '../userMemory.js';
 
 // --- Daily rate limiting ---
 const dailyUsage = new Map<string, string>(); // key: "userId:command", value: date string
@@ -68,13 +68,13 @@ export function pickRandom<T>(arr: T[]): T {
 const mainCharacters = new Map<string, MainCharacter>(); // guildId -> { name, date }
 const MAX_TRACKED_GUILDS = 200;
 
-export function getMainCharacter(guildId: string): MainCharacter | null {
+export async function getMainCharacter(guildId: string): Promise<MainCharacter | null> {
   const mc = mainCharacters.get(guildId);
   const today = new Date().toDateString();
   if (mc && mc.date === today) return mc;
 
   // Pick new main character — most active user today (from memory)
-  const stats = userMemory.getServerStats();
+  const stats = await userMemory.getServerStats(guildId);
   if (!stats?.mostActive) return null;
   const newMc: MainCharacter = { name: stats.mostActive.name, date: today };
   mainCharacters.set(guildId, newMc);

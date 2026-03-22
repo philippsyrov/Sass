@@ -26,20 +26,17 @@ Message: "${userMessage}"`;
 
 /**
  * Check if a new statement contradicts any previous statements from this user.
- * Returns the contradiction details or null if no contradiction found.
+ * Guild-scoped — only checks statements made in the same server.
  */
-export async function checkContradiction(userId: string, newStatement: string, newMessage: string): Promise<ContradictionResult | null> {
+export async function checkContradiction(guildId: string, userId: string, newStatement: string, newMessage: string): Promise<ContradictionResult | null> {
   try {
-    // Search for semantically similar past statements
-    const pastMemories = await searchMemories(newStatement, { userId, limit: 5 });
+    const pastMemories = await searchMemories(newStatement, { guildId, userId, limit: 5 });
 
-    // Filter to only 'statement' type memories with decent similarity
     const pastStatements = pastMemories
       .filter((m) => m.type === 'statement' && m.score > 0.4);
 
     if (pastStatements.length === 0) return null;
 
-    // Ask AI to check for contradictions
     const pastList = pastStatements.map((m) => `- "${m.content}"`).join('\n');
 
     const prompt = `A Discord user previously said these things:
@@ -83,8 +80,8 @@ Write a short, brutal callout catching them in this contradiction. You caught th
 }
 
 /**
- * Store a user's statement for future contradiction checking.
+ * Store a user's statement for future contradiction checking. Guild-scoped.
  */
-export async function storeStatement(userId: string, statement: string): Promise<void> {
-  await storeMemory(userId, 'statement', statement);
+export async function storeStatement(guildId: string, userId: string, statement: string): Promise<void> {
+  await storeMemory(guildId, userId, 'statement', statement);
 }

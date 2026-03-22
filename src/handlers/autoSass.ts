@@ -6,7 +6,7 @@ import {
 } from 'discord.js';
 import { getAutoSassDecision, getReactionDecision, getConversationJoin, queryAI, pickCustomReaction } from '../ai.js';
 import { messageBuffer } from '../messageBuffer.js';
-import { userMemory } from '../userMemory.js';
+import * as userMemory from '../userMemory.js';
 import { isOnAutoSassCooldown, setAutoSassCooldown } from '../cooldown.js';
 import { getActivityDescription } from '../shared/commandUtils.js';
 import { mood } from '../mood.js';
@@ -56,6 +56,7 @@ interface AutoSassOptions {
 
 export async function handleAutoSass(message: Message, _client: Client, options: AutoSassOptions = {}): Promise<void> {
   const { heardName = false } = options;
+  const guildId = message.guild?.id ?? '';
 
   // Never auto-sass the creator (unless they said her name)
   if (message.author.id === process.env.CREATOR_ID && !heardName) return;
@@ -79,7 +80,8 @@ export async function handleAutoSass(message: Message, _client: Client, options:
         const hasWeirdClaim = /\b(i (am|was|will|could|should|wanna|need to|have to|might|swear))\b/i.test(text) && hasWildContent;
 
         if (hasWildContent || hasWeirdClaim || isAllCaps) {
-          userMemory.addWildQuote(message.author.id, text);
+          const authorName = message.author.displayName || message.author.username;
+          userMemory.addWildQuote(guildId, message.author.id, authorName, text).catch((err) => console.error('Add wild quote failed:', (err as Error).message));
           mood.shift('chaos');
         }
       }
@@ -99,7 +101,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
         const repliedTo = await message.channel.messages.fetch(message.reference.messageId);
         if (repliedTo?.author && !repliedTo.author.bot && repliedTo.author.id !== message.author.id) {
           const topic = text.slice(0, 50);
-          userMemory.addBeef(message.author.id, repliedTo.author.id, topic);
+          userMemory.addBeef(guildId, message.author.id, repliedTo.author.id, topic).catch((err) => console.error('Add beef failed:', (err as Error).message));
         }
       } catch (_err) { /* message might be deleted */ }
     }
@@ -107,7 +109,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
     const mentionedUsers = message.mentions.users.filter((u) => !u.bot && u.id !== message.author.id && u.id !== _client.user?.id);
     for (const [, mentionedUser] of mentionedUsers) {
       const topic = text.slice(0, 50);
-      userMemory.addBeef(message.author.id, mentionedUser.id, topic);
+      userMemory.addBeef(guildId, message.author.id, mentionedUser.id, topic).catch((err) => console.error('Add beef failed:', (err as Error).message));
     }
   } else if (wholesomePatterns.test(lowerText)) {
     mood.shift('nice_to_each_other');
@@ -195,7 +197,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
             const activityRoastMsg = `👀 hey <@${target.user.id}>, ${roast}`;
             await channel.send(activityRoastMsg);
             recordResponse(channelId, roast);
-            userMemory.recordRoast(target.user.id);
+            userMemory.recordRoast(guildId, target.user.id).catch((err) => console.error('Record roast failed:', (err as Error).message));
             const moodInfo = mood.getStatus();
             logInteraction({
               serverId: message.guild?.id, serverName: message.guild?.name,
@@ -220,7 +222,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
   const recentContext = recentMessages.map(
     (msg) => `${msg.author}${msg.isBot ? ' [BOT]' : ''}: ${msg.content}`
   ).join('\n');
-  const peopleContext = userMemory.buildPeopleContext(recentMessages);
+  const peopleContext = await userMemory.buildPeopleContext(guildId, recentMessages);
   const responseHistory = getRecentResponses(channelId);
 
   // Roll for response type
@@ -341,7 +343,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
 
     await message.reply(remark).catch((err) => console.error('Reply failed:', (err as Error).message));
     recordResponse(channelId, remark);
-    userMemory.recordRoast(message.author.id);
+    userMemory.recordRoast(guildId, message.author.id).catch((err) => console.error('Record roast failed:', (err as Error).message));
 
     const moodStatus = mood.getStatus();
     logInteraction({

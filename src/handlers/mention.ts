@@ -11,7 +11,7 @@ import {
 } from 'discord.js';
 import { getSassResponse, extractRoastTopic, analyzeProfile, queryAI } from '../ai.js';
 import { messageBuffer } from '../messageBuffer.js';
-import { userMemory } from '../userMemory.js';
+import * as userMemory from '../userMemory.js';
 import { isOnMentionCooldown, setMentionCooldown, setAutoSassCooldown, trackMentionEscalation, getEscalationCount } from '../cooldown.js';
 import { storeMemory, searchMemories } from '../vectorMemory.js';
 import { buildHelpPages } from '../helpPages.js';
@@ -49,6 +49,7 @@ setInterval(() => {
 export async function handleMention(message: Message, client: Client): Promise<void> {
   const userId = message.author.id;
   const displayName = message.author.displayName || message.author.username;
+  const guildId = message.guild?.id ?? '';
 
   // Cooldown — don't spam-reply to the same user
   if (isOnMentionCooldown(userId)) return;
@@ -230,8 +231,8 @@ export async function handleMention(message: Message, client: Client): Promise<v
         return;
       }
       const name1 = member1.displayName; const name2 = member2.displayName;
-      await warmPairCache(id1, id2);
-      const percent = getShipScore(id1, id2);
+      await warmPairCache(guildId, id1, id2);
+      const percent = await getShipScore(guildId, id1, id2);
       const bar = '❤️'.repeat(Math.round(percent / 10)) + '🖤'.repeat(10 - Math.round(percent / 10));
       const shipName = name1.slice(0, Math.ceil(name1.length / 2)) + name2.slice(Math.floor(name2.length / 2));
       let verdict = await queryAI(
@@ -243,7 +244,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
         const firstSentence = verdict.split(/[.!?]/)[0];
         verdict = firstSentence ? firstSentence.trim() + '.' : verdict.split(/\s+/).slice(0, 12).join(' ') + '.';
       }
-      const interactions = getPairInteractions(id1, id2);
+      const interactions = getPairInteractions(guildId, id1, id2);
       let hint = '';
       if (percent === 100) {
         hint = '\n\n💯 **100% — PROVEN PAIR.** sass has seen enough. this is real.';
@@ -281,8 +282,8 @@ export async function handleMention(message: Message, client: Client): Promise<v
         await message.reply("my investigation was compromised. suspicious.");
         return;
       }
-      const conUserContext = userMemory.getContext(conspiracyTargetId);
-      const conFacts = userMemory.getFacts(conspiracyTargetId);
+      const conUserContext = await userMemory.getContext(guildId, conspiracyTargetId);
+      const conFacts = await userMemory.getFacts(guildId, conspiracyTargetId);
       const conActivity = member.presence?.activities?.[0];
       const conActivityInfo = conActivity ? `Currently: ${conActivity.type === 0 ? 'Playing' : conActivity.type === 1 ? 'Streaming' : conActivity.type === 2 ? 'Listening to' : conActivity.type === 3 ? 'Watching' : 'Doing'} ${conActivity.name}${conActivity.state ? ` (${conActivity.state})` : ''}` : '';
 
@@ -392,8 +393,8 @@ export async function handleMention(message: Message, client: Client): Promise<v
       await message.reply("i'm not storing dirt on myself, nice try").catch((err) => console.error('Reply failed:', (err as Error).message));
       return;
     }
-    userMemory.remember(targetId, fact);
-    storeMemory(targetId, 'fact', fact).catch((err) => console.error('Vector store failed:', (err as Error).message));
+    userMemory.remember(guildId, targetId, fact).catch((err) => console.error('Remember failed:', (err as Error).message));
+    storeMemory(guildId, targetId, 'fact', fact).catch((err) => console.error('Vector store failed:', (err as Error).message));
     rememberCooldowns.set(userId, Date.now());
     if (rememberCooldowns.size > MAX_REMEMBER_COOLDOWNS) {
       const oldest = rememberCooldowns.keys().next().value;
@@ -447,8 +448,8 @@ export async function handleMention(message: Message, client: Client): Promise<v
     }
 
     // Actual useful fact — store and respond
-    userMemory.remember(userId, fact);
-    storeMemory(userId, 'fact', fact).catch((err) => console.error('Vector store failed:', (err as Error).message));
+    userMemory.remember(guildId, userId, fact).catch((err) => console.error('Remember failed:', (err as Error).message));
+    storeMemory(guildId, userId, 'fact', fact).catch((err) => console.error('Vector store failed:', (err as Error).message));
     rememberCooldowns.set(userId, Date.now());
     if (rememberCooldowns.size > MAX_REMEMBER_COOLDOWNS) {
       const oldest = rememberCooldowns.keys().next().value;
@@ -474,7 +475,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
 
   // Leaderboard / stats command (before cold shoulder so it always works)
   if (lowerClean === 'leaderboard' || lowerClean === 'stats' || lowerClean === 'scoreboard') {
-    const board = userMemory.getLeaderboard(5);
+    const board = await userMemory.getLeaderboard(guildId, 5);
     if (board.length === 0 || board.every((u) => u.timesRoasted === 0)) {
       await message.reply("nobody's been roasted enough to make a list yet. give it time.").catch((err) => console.error('Reply failed:', (err as Error).message));
       return;
@@ -504,7 +505,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
   const snowflakePhrases = /\b(stop roasting|leave me alone|you'?re mean|stop being mean|shut up|go away|i hate you|stop it|too far|that'?s rude|back off)\b/i;
   if (!isCreator && snowflakePhrases.test(lowerClean)) {
     mood.shift('insulted');
-    userMemory.coldShoulder(userId);
+    userMemory.coldShoulder(guildId, userId).catch((err) => console.error('Cold shoulder failed:', (err as Error).message));
     const coldResponses = [
       'fine. you\'re dead to me now',
       'lol okay. don\'t come crawling back',
@@ -518,9 +519,9 @@ export async function handleMention(message: Message, client: Client): Promise<v
 
   // Cold shoulder check — if they're on the list, make them work for it
   if (!isCreator) {
-    const cs = userMemory.getColdShoulder(userId);
+    const cs = await userMemory.getColdShoulder(guildId, userId);
     if (cs) {
-      const status = userMemory.coldShoulderAttempt(userId);
+      const status = await userMemory.coldShoulderAttempt(guildId, userId);
       if (!status) return;
       if (status.phase === 'icy') {
         const icyResponses = [
@@ -584,18 +585,18 @@ export async function handleMention(message: Message, client: Client): Promise<v
   const recentContext = recentMessages.map(
     (msg) => `${msg.author}${msg.isBot ? ' [BOT]' : ''}: ${msg.content}`
   ).join('\n');
-  const userContext = userMemory.getContext(userId);
-  const peopleContext = userMemory.buildPeopleContext(recentMessages);
+  const userContext = await userMemory.getContext(guildId, userId);
+  const peopleContext = await userMemory.buildPeopleContext(guildId, recentMessages);
 
   // Check if someone is talking about the creator — protect them
-  const creatorName = userMemory.getCreatorName();
-  const mentionsCreator = !isCreator && userMemory.isAboutCreator(cleanContent);
+  const creatorName = await userMemory.getCreatorName(guildId);
+  const mentionsCreator = !isCreator && await userMemory.isAboutCreator(guildId, cleanContent);
 
   // Search vector memory for relevant ammo
   let vectorContext = '';
   if (!isCreator && cleanContent) {
     try {
-      const memories = await searchMemories(cleanContent, { userId, limit: 3 });
+      const memories = await searchMemories(cleanContent, { guildId, userId, limit: 3 });
       if (memories.length > 0) {
         vectorContext = 'RELEVANT MEMORIES (use these if they fit):\n' +
           memories.map((m) => `- [${m.type}] ${m.content}`).join('\n');
@@ -627,20 +628,20 @@ export async function handleMention(message: Message, client: Client): Promise<v
       try {
         const statement = await extractStatement(cleanContent);
         if (statement) {
-          const contradiction = await checkContradiction(userId, statement, cleanContent);
+          const contradiction = await checkContradiction(guildId, userId, statement, cleanContent);
           if (contradiction) {
             const callout = await generate4kCallout(displayName, contradiction.oldStatement, contradiction.newStatement);
             if (callout) {
               await message.reply(`📸 **CAUGHT IN 4K** 📸\n\n${callout}`);
               mood.shift('chaos');
-              userMemory.recordRoast(userId);
+              userMemory.recordRoast(guildId, userId).catch((err) => console.error('Record roast failed:', (err as Error).message));
               // Still store the new statement
-              storeStatement(userId, statement).catch((err) => console.error('Store statement failed:', (err as Error).message));
+              storeStatement(guildId, userId, statement).catch((err) => console.error('Store statement failed:', (err as Error).message));
               return;
             }
           }
           // No contradiction — store the statement for future checks
-          storeStatement(userId, statement).catch((err) => console.error('Store statement failed:', (err as Error).message));
+          storeStatement(guildId, userId, statement).catch((err) => console.error('Store statement failed:', (err as Error).message));
         }
       } catch (err) { console.error('4K check failed:', (err as Error).message); }
     }
@@ -676,11 +677,11 @@ export async function handleMention(message: Message, client: Client): Promise<v
 
     // Don't track roast topics for the creator (we don't roast them)
     if (!isCreator) {
-      userMemory.recordRoast(userId);
+      userMemory.recordRoast(guildId, userId).catch((err) => console.error('Record roast failed:', (err as Error).message));
       extractRoastTopic(cleanContent).then((topic) => {
         if (topic) {
-          userMemory.addRoast(userId, topic);
-          storeMemory(userId, 'roast', topic).catch((err) => console.error('Store memory failed:', (err as Error).message));
+          userMemory.addRoast(guildId, userId, topic).catch((err) => console.error('Add roast failed:', (err as Error).message));
+          storeMemory(guildId, userId, 'roast', topic).catch((err) => console.error('Store memory failed:', (err as Error).message));
         }
       }).catch((err) => console.error('Extract roast topic failed:', (err as Error).message));
     }

@@ -1,13 +1,19 @@
 /**
- * database.ts — PostgreSQL logging & persistence layer
+ * database.ts — PostgreSQL persistence & logging layer
  *
- * Logs interactions for analytics and debugging.
- * Uses Railway's internal DATABASE_URL (private network, no egress fees).
+ * ALL persistent data lives in Postgres (Railway private network).
+ * No local files — everything is guild-scoped.
  *
  * Tables:
- *   interactions — every message Sass sends (roasts, commands, auto-sass)
+ *   users — per-guild user data (facts, roasts, stats, cold shoulder)
+ *   wild_quotes — per-guild wild quotes for hall of fame
+ *   beefs — per-guild beef tracking between user pairs
+ *   vector_memories — per-guild vector embeddings for semantic search
+ *   pair_interactions — per-guild interaction counts for ship scores
+ *   interactions — every message Sass sends (logging/analytics)
  *   mood_history — mood shifts with triggers
  *   command_usage — slash/mention command tracking
+ *   reactions — emoji reactions on Sass's messages (quality signals)
  */
 
 import pg from 'pg';
@@ -116,12 +122,63 @@ async function createTables(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_reactions_message ON reactions(message_id);
 
     CREATE TABLE IF NOT EXISTS pair_interactions (
+      server_id TEXT NOT NULL,
       user1_id TEXT NOT NULL,
       user2_id TEXT NOT NULL,
       interaction_count INTEGER DEFAULT 1,
       last_interaction TIMESTAMPTZ DEFAULT NOW(),
-      PRIMARY KEY (user1_id, user2_id)
+      PRIMARY KEY (server_id, user1_id, user2_id)
     );
+
+    CREATE TABLE IF NOT EXISTS users (
+      server_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL DEFAULT '',
+      roasts TEXT[] DEFAULT '{}',
+      last_seen TIMESTAMPTZ DEFAULT NOW(),
+      message_count INTEGER DEFAULT 0,
+      times_roasted INTEGER DEFAULT 0,
+      facts TEXT[] DEFAULT '{}',
+      cold_shoulder_active BOOLEAN DEFAULT FALSE,
+      cold_shoulder_attempts_needed INTEGER DEFAULT 0,
+      cold_shoulder_attempts_made INTEGER DEFAULT 0,
+      gender TEXT,
+      PRIMARY KEY (server_id, user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS wild_quotes (
+      id SERIAL PRIMARY KEY,
+      server_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      quote TEXT NOT NULL,
+      timestamp TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_wild_quotes_server ON wild_quotes(server_id);
+
+    CREATE TABLE IF NOT EXISTS beefs (
+      server_id TEXT NOT NULL,
+      user1_id TEXT NOT NULL,
+      user2_id TEXT NOT NULL,
+      incidents INTEGER DEFAULT 1,
+      first_beef TIMESTAMPTZ DEFAULT NOW(),
+      last_beef TIMESTAMPTZ DEFAULT NOW(),
+      last_topic TEXT,
+      PRIMARY KEY (server_id, user1_id, user2_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS vector_memories (
+      id SERIAL PRIMARY KEY,
+      server_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      content TEXT NOT NULL,
+      embedding REAL[] NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_vector_memories_lookup ON vector_memories(server_id, user_id);
   `);
 }
 
@@ -262,18 +319,18 @@ export async function logReaction({
 /**
  * Record an interaction between two users (for ship score boosts).
  * Uses upsert — increments count if pair exists, inserts if new.
+ * Guild-scoped: same pair in different servers = separate counts.
  */
-export async function recordPairInteractionDB(userId1: string, userId2: string): Promise<void> {
+export async function recordPairInteractionDB(guildId: string, userId1: string, userId2: string): Promise<void> {
   if (!isConnected || !pool) return;
-  // Sort IDs so pair is order-independent
   const [id1, id2] = [userId1, userId2].sort();
   try {
     await pool.query(
-      `INSERT INTO pair_interactions (user1_id, user2_id, interaction_count, last_interaction)
-       VALUES ($1, $2, 1, NOW())
-       ON CONFLICT (user1_id, user2_id)
+      `INSERT INTO pair_interactions (server_id, user1_id, user2_id, interaction_count, last_interaction)
+       VALUES ($1, $2, $3, 1, NOW())
+       ON CONFLICT (server_id, user1_id, user2_id)
        DO UPDATE SET interaction_count = pair_interactions.interaction_count + 1, last_interaction = NOW()`,
-      [id1, id2]
+      [guildId, id1, id2]
     );
   } catch (err) {
     console.error('Failed to record pair interaction:', (err as Error).message);
@@ -281,15 +338,15 @@ export async function recordPairInteractionDB(userId1: string, userId2: string):
 }
 
 /**
- * Get interaction count between two users.
+ * Get interaction count between two users in a specific guild.
  */
-export async function getPairInteractionCountDB(userId1: string, userId2: string): Promise<number> {
+export async function getPairInteractionCountDB(guildId: string, userId1: string, userId2: string): Promise<number> {
   if (!isConnected || !pool) return 0;
   const [id1, id2] = [userId1, userId2].sort();
   try {
     const result = await pool.query(
-      'SELECT interaction_count FROM pair_interactions WHERE user1_id = $1 AND user2_id = $2',
-      [id1, id2]
+      'SELECT interaction_count FROM pair_interactions WHERE server_id = $1 AND user1_id = $2 AND user2_id = $3',
+      [guildId, id1, id2]
     );
     return (result.rows[0]?.interaction_count as number) ?? 0;
   } catch (err) {
@@ -300,6 +357,14 @@ export async function getPairInteractionCountDB(userId1: string, userId2: string
 
 export function isDatabaseConnected(): boolean {
   return isConnected;
+}
+
+/**
+ * Get the connection pool for direct queries from other modules.
+ * Returns null if database is not connected.
+ */
+export function getPool(): InstanceType<typeof Pool> | null {
+  return isConnected ? pool : null;
 }
 
 /**

@@ -4,7 +4,7 @@ import { handleMention } from './handlers/mention.js';
 import { handleAutoSass } from './handlers/autoSass.js';
 import { handleCommand, handleBattleMessage } from './commands.js';
 import { messageBuffer } from './messageBuffer.js';
-import { userMemory } from './userMemory.js';
+import * as userMemory from './userMemory.js';
 import { initDatabase, closeDatabase, logReaction } from './database.js';
 import { isOnSlashCooldown, setSlashCooldown, isOnShipCooldown, setShipCooldown } from './cooldown.js';
 import { recordPairInteraction } from './shipScore.js';
@@ -174,12 +174,14 @@ client.on('messageCreate', async (message) => {
   // Don't process bot messages further
   if (message.author.bot) return;
 
+  const guildId = message.guild?.id ?? '';
+
   // Track pair interactions — if this message is a reply to another user
   if (message.reference?.messageId) {
     try {
       const repliedTo = await message.channel.messages.fetch(message.reference.messageId);
       if (repliedTo?.author && !repliedTo.author.bot && repliedTo.author.id !== message.author.id) {
-        recordPairInteraction(message.author.id, repliedTo.author.id);
+        recordPairInteraction(guildId, message.author.id, repliedTo.author.id);
       }
     } catch (_err) { /* message might be deleted */ }
   }
@@ -189,7 +191,7 @@ client.on('messageCreate', async (message) => {
 
   // Track user
   const displayName = message.author.displayName || message.author.username;
-  userMemory.seen(message.author.id, displayName);
+  userMemory.seen(guildId, message.author.id, displayName);
 
   // 0. Check if this is part of a roast battle
   const isBattle = await handleBattleMessage(message);
@@ -269,9 +271,10 @@ client.on('messageReactionAdd', async (reaction, user) => {
     if (user.bot) return;
 
     // Track pair interactions — user reacting to another user's message
+    const reactionGuildId = reaction.message.guild?.id ?? '';
     const messageAuthor = reaction.message.author;
     if (messageAuthor && !messageAuthor.bot && messageAuthor.id !== user.id) {
-      recordPairInteraction(user.id, messageAuthor.id);
+      recordPairInteraction(reactionGuildId, user.id, messageAuthor.id);
     }
 
     // Only log to DB for reactions on Sass's messages
@@ -302,6 +305,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
 // Graceful shutdown — clean up connections
 async function shutdown(signal: string): Promise<void> {
   console.log(`\n${signal} received — shutting down gracefully...`);
+  await userMemory.shutdownUserMemory();
   await client.destroy();
   await closeDatabase();
   process.exit(0);

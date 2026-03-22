@@ -7,7 +7,7 @@ import {
   type ChatInputCommandInteraction,
 } from 'discord.js';
 import { queryAI } from './ai.js';
-import { userMemory } from './userMemory.js';
+import * as userMemory from './userMemory.js';
 import { buildHelpPages } from './helpPages.js';
 import { logCommand, logInteraction } from './database.js';
 import { mood } from './mood.js';
@@ -121,6 +121,7 @@ setInterval(() => {
 
 export async function handleCommand(interaction: ChatInputCommandInteraction): Promise<void> {
   const { commandName } = interaction;
+  const guildId = interaction.guild?.id ?? '';
 
   // Global slash command rate limit (skip for ping/help)
   if (commandName !== 'ping' && commandName !== 'help') {
@@ -280,8 +281,8 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
       await interaction.deferReply();
       const user1 = interaction.options.getUser('user1', true);
       const user2 = interaction.options.getUser('user2', true);
-      await warmPairCache(user1.id, user2.id);
-      const percent = getShipScore(user1.id, user2.id);
+      await warmPairCache(guildId, user1.id, user2.id);
+      const percent = await getShipScore(guildId, user1.id, user2.id);
       const bar = '❤️'.repeat(Math.round(percent / 10)) + '🖤'.repeat(10 - Math.round(percent / 10));
 
       try {
@@ -300,7 +301,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           user2.displayName.slice(Math.floor(user2.displayName.length / 2));
 
         // Interaction hint — show users their ship is tracked
-        const interactions = getPairInteractions(user1.id, user2.id);
+        const interactions = getPairInteractions(guildId, user1.id, user2.id);
         let hint = '';
         if (percent === 100) {
           hint = '\n\n💯 **100% — PROVEN PAIR.** sass has seen enough. this is real.';
@@ -378,7 +379,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
     }
 
     case 'favorite': {
-      const board = userMemory.getLeaderboard(1);
+      const board = await userMemory.getLeaderboard(guildId, 1);
       const fav = board[0];
       if (!fav || fav.timesRoasted === 0) {
         await interaction.reply("i don't have a favorite yet. nobody's earned it. or deserved it.");
@@ -417,7 +418,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
     }
 
     case 'halloffame': {
-      const quotes = userMemory.getWildQuotes(10);
+      const quotes = await userMemory.getWildQuotes(guildId, 10);
       if (quotes.length === 0) {
         await interaction.reply("nobody's said anything wild enough yet. disappointing but not surprising.");
         break;
@@ -443,8 +444,8 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
     case 'conspiracy': {
       await interaction.deferReply();
       const targetUser = interaction.options.getUser('user', true);
-      const userContext = userMemory.getContext(targetUser.id);
-      const facts = userMemory.getFacts(targetUser.id);
+      const userContext = await userMemory.getContext(guildId, targetUser.id);
+      const facts = await userMemory.getFacts(guildId, targetUser.id);
       const member = interaction.guild?.members.cache.get(targetUser.id);
       const activity = member?.presence?.activities?.[0];
       const activityInfo = activity ? `Currently: ${activity.type === 0 ? 'Playing' : activity.type === 1 ? 'Streaming' : activity.type === 2 ? 'Listening to' : activity.type === 3 ? 'Watching' : 'Doing'} ${activity.name}${activity.state ? ` (${activity.state})` : ''}` : '';
@@ -653,7 +654,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
     case 'beef': {
       const user1 = interaction.options.getUser('user1', true);
       const user2 = interaction.options.getUser('user2', true);
-      const beef = userMemory.getBeef(user1.id, user2.id);
+      const beef = await userMemory.getBeef(guildId, user1.id, user2.id);
 
       if (!beef || beef.incidents === 0) {
         await interaction.reply(`${user1.displayName} and ${user2.displayName} have no beef on record. boring.`);
@@ -680,7 +681,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
         await interaction.reply("this only works in a server. try it there.");
         break;
       }
-      const mc = getMainCharacter(guildId);
+      const mc = await getMainCharacter(guildId);
       if (!mc) {
         await interaction.reply("nobody's earned main character status today. the server is full of NPCs.");
         break;
@@ -700,7 +701,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
         break;
       }
       await interaction.deferReply();
-      const stats = userMemory.getServerStats();
+      const stats = await userMemory.getServerStats(guildId);
       if (!stats || stats.totalMessages === 0) {
         await interaction.editReply("not enough data yet. talk more so i have material to work with.");
         break;
@@ -743,7 +744,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
         break;
       }
       await interaction.deferReply();
-      const userContext = userMemory.getContext(targetUser.id);
+      const userContext = await userMemory.getContext(guildId, targetUser.id);
       try {
         const response = await queryAI(
           `Generate a dare for the Discord user "${targetUser.displayName}". The dare should be something they can do in the Discord server (send a message, change their nickname, post something, etc). Make it funny and slightly unhinged but not harmful. Also rate the difficulty 1-5.\n\n${userContext ? `What you know about them: ${userContext}` : 'You don\'t know much about them yet.'}\n\nRespond in EXACTLY this format:\nDARE: [the dare]\nDIFFICULTY: [1-5]`,
@@ -832,11 +833,11 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
       }
       await interaction.deferReply();
 
-      const userData = userMemory.getContext(targetUser.id);
-      const facts = userMemory.getFacts(targetUser.id);
-      const user = (userMemory as unknown as { users: Record<string, { messageCount?: number; timesRoasted?: number }> }).users[targetUser.id];
-      const messageCount = user?.messageCount ?? 0;
-      const timesRoasted = user?.timesRoasted ?? 0;
+      const userData = await userMemory.getContext(guildId, targetUser.id);
+      const facts = await userMemory.getFacts(guildId, targetUser.id);
+      const userStats = await userMemory.getUserStats(guildId, targetUser.id);
+      const messageCount = userStats?.messageCount ?? 0;
+      const timesRoasted = userStats?.timesRoasted ?? 0;
 
       const dataPrompt = [
         `User: ${targetUser.displayName}`,
