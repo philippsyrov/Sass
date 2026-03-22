@@ -403,10 +403,21 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
     case 'conspiracy': {
       await interaction.deferReply();
       const targetUser = interaction.options.getUser('user', true);
+      const userContext = userMemory.getContext(targetUser.id);
+      const facts = userMemory.getFacts(targetUser.id);
+      const member = interaction.guild?.members.cache.get(targetUser.id);
+      const activity = member?.presence?.activities?.[0];
+      const activityInfo = activity ? `Currently: ${activity.type === 0 ? 'Playing' : activity.type === 1 ? 'Streaming' : activity.type === 2 ? 'Listening to' : activity.type === 3 ? 'Watching' : 'Doing'} ${activity.name}${activity.state ? ` (${activity.state})` : ''}` : '';
+
+      const evidence: string[] = [];
+      if (facts.length > 0) evidence.push(`Known facts: ${facts.slice(0, 3).join(', ')}`);
+      if (activityInfo) evidence.push(activityInfo);
+      if (userContext) evidence.push(userContext);
+
       try {
         const response = await queryAI(
-          `Create an absurd, funny conspiracy theory about a Discord user named "${targetUser.displayName}". Use their name specifically. Make references to Discord (channels, servers, being online at weird hours). 2-3 sentences. It should sound like a deranged detective presenting evidence.`,
-          { systemPrompt: 'You generate absurd conspiracy theories about people. Be creative and unhinged but not mean-spirited. Lowercase. Include fake "evidence" like timestamps and suspicious behavior.' }
+          `Create an absurd, funny conspiracy theory about a Discord user named "${targetUser.displayName}". Use their name specifically. 2-3 sentences max. Sound like a deranged detective presenting evidence.\n\n${evidence.length > 0 ? `USE THIS REAL INTEL to make the conspiracy personal and specific:\n${evidence.join('\n')}` : 'You have no intel on them yet — make it about how suspiciously clean their record is.'}`,
+          { systemPrompt: 'You generate absurd conspiracy theories about people. Be creative and unhinged but not mean-spirited. Lowercase. Weave in any real facts/activity as "evidence." Each conspiracy should be wildly different — never repeat the same format or structure.' }
         );
         await interaction.editReply(`🕵️ **CLASSIFIED INTEL ON ${targetUser.displayName.toUpperCase()}**\n\n${response}`);
       } catch (err) {

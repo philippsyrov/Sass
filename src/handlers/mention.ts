@@ -221,9 +221,19 @@ export async function handleMention(message: Message, client: Client): Promise<v
         await message.reply("my investigation was compromised. suspicious.");
         return;
       }
+      const conUserContext = userMemory.getContext(conspiracyTargetId);
+      const conFacts = userMemory.getFacts(conspiracyTargetId);
+      const conActivity = member.presence?.activities?.[0];
+      const conActivityInfo = conActivity ? `Currently: ${conActivity.type === 0 ? 'Playing' : conActivity.type === 1 ? 'Streaming' : conActivity.type === 2 ? 'Listening to' : conActivity.type === 3 ? 'Watching' : 'Doing'} ${conActivity.name}${conActivity.state ? ` (${conActivity.state})` : ''}` : '';
+
+      const conEvidence: string[] = [];
+      if (conFacts.length > 0) conEvidence.push(`Known facts: ${conFacts.slice(0, 3).join(', ')}`);
+      if (conActivityInfo) conEvidence.push(conActivityInfo);
+      if (conUserContext) conEvidence.push(conUserContext);
+
       const response = await queryAI(
-        `Create an absurd conspiracy theory about "${member.displayName}". Use their name. Reference Discord behavior (online at weird hours, suspicious channel activity). 2-3 sentences. Sound like a deranged detective.`,
-        { systemPrompt: 'You generate absurd conspiracy theories. Creative and unhinged but not mean-spirited. Lowercase. Include fake evidence.' }
+        `Create an absurd, funny conspiracy theory about a Discord user named "${member.displayName}". Use their name specifically. 2-3 sentences max. Sound like a deranged detective presenting evidence.\n\n${conEvidence.length > 0 ? `USE THIS REAL INTEL to make the conspiracy personal and specific:\n${conEvidence.join('\n')}` : 'You have no intel on them yet — make it about how suspiciously clean their record is.'}`,
+        { systemPrompt: 'You generate absurd conspiracy theories about people. Be creative and unhinged but not mean-spirited. Lowercase. Weave in any real facts/activity as "evidence." Each conspiracy should be wildly different — never repeat the same format or structure.' }
       );
       await message.reply(`🕵️ **CLASSIFIED INTEL ON ${member.displayName.toUpperCase()}**\n\n${response}`);
     } catch (err) {
