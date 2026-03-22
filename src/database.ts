@@ -11,7 +11,7 @@
  */
 
 import pg from 'pg';
-import type { InteractionLog, MoodLog, CommandLog, StatsResult, TrainingDataRow } from './types.js';
+import type { InteractionLog, MoodLog, CommandLog, StatsResult, TrainingDataRow, ReactionLog } from './types.js';
 
 const { Pool } = pg;
 
@@ -99,6 +99,21 @@ async function createTables(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_interactions_timestamp ON interactions(timestamp);
     CREATE INDEX IF NOT EXISTS idx_interactions_trigger ON interactions(trigger_type);
     CREATE INDEX IF NOT EXISTS idx_command_usage_command ON command_usage(command_name);
+
+    CREATE TABLE IF NOT EXISTS reactions (
+      id SERIAL PRIMARY KEY,
+      timestamp TIMESTAMPTZ DEFAULT NOW(),
+      server_id TEXT,
+      channel_id TEXT,
+      message_id TEXT,
+      sass_response TEXT,
+      reactor_id TEXT,
+      reactor_name TEXT,
+      emoji TEXT,
+      is_positive BOOLEAN
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_reactions_message ON reactions(message_id);
   `);
 }
 
@@ -212,6 +227,27 @@ export async function getTrainingData(limit = 1000): Promise<TrainingDataRow[]> 
   } catch (err) {
     console.error('Failed to get training data:', (err as Error).message);
     return [];
+  }
+}
+
+/**
+ * Log a reaction on a Sass message.
+ */
+export async function logReaction({
+  serverId, channelId, messageId, sassResponse,
+  reactorId, reactorName, emoji, isPositive,
+}: ReactionLog): Promise<void> {
+  if (!isConnected || !pool) return;
+
+  try {
+    await pool.query(
+      `INSERT INTO reactions
+        (server_id, channel_id, message_id, sass_response, reactor_id, reactor_name, emoji, is_positive)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [serverId, channelId, messageId, sassResponse, reactorId, reactorName, emoji, isPositive]
+    );
+  } catch (err) {
+    console.error('Failed to log reaction:', (err as Error).message);
   }
 }
 

@@ -159,6 +159,17 @@ export interface TrainingDataRow {
   mood: string;
 }
 
+export interface ReactionLog {
+  serverId?: string;
+  channelId: string;
+  messageId: string;
+  sassResponse: string;
+  reactorId: string;
+  reactorName: string;
+  emoji: string;
+  isPositive: boolean;
+}
+
 // --- Vector Memory ---
 export type MemoryType = 'roast' | 'fact' | 'statement' | 'quote';
 

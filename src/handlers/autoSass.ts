@@ -47,16 +47,25 @@ export async function handleAutoSass(message: Message, _client: Client, options:
   // Never auto-sass the creator (unless they said her name)
   if (message.author.id === process.env.CREATOR_ID && !heardName) return;
 
-  // Wild quote detection — store the craziest stuff people say
+  // Wild quote detection — store genuinely unhinged statements, not reactions
   const text = message.content;
-  if (text.length > 10 && text.length < 200) {
-    const caps = (text.match(/[A-Z]/g) || []).length;
-    const capsRatio = caps / text.length;
-    const hasExcitement = /[!?]{2,}|lmao|wtf|bruh|bro what|no way|i can't/i.test(text);
-    const isWild = capsRatio > 0.5 || hasExcitement;
-    if (isWild) {
-      userMemory.addWildQuote(message.author.id, text);
-      mood.shift('chaos');
+  if (text.length > 15 && text.length < 200) {
+    // Must contain actual sentence content (at least 3 words), not just reactions
+    const wordCount = text.split(/\s+/).length;
+    if (wordCount >= 4) {
+      // Wild = actual unhinged claims, threats, confessions, weird takes
+      const hasWildContent = /\b(kill|die|fight|marry|eat|destroy|worship|sacrifice|ban|arrest|haunted|cursed|pregnant|kidnap|steal|illegal|commit)\b/i.test(text);
+      const hasWeirdClaim = /\b(i (am|was|will|could|should|wanna|need to|have to)|they (are|should)|we (should|need))\b/i.test(text) && /[!?]{2,}/i.test(text);
+      const isAllCaps = text.length > 20 && (text.match(/[A-Z]/g) || []).length / text.length > 0.7;
+
+      if (hasWildContent || hasWeirdClaim || isAllCaps) {
+        // Exclude common reactions that aren't actually wild
+        const isJustReaction = /^(lmao|lol|bruh|bro|wtf|no way|i can't|help|dead|crying|oof|rip|yikes|same|real|true|valid|fr|nah)\b/i.test(text.trim());
+        if (!isJustReaction) {
+          userMemory.addWildQuote(message.author.id, text);
+          mood.shift('chaos');
+        }
+      }
     }
   }
 

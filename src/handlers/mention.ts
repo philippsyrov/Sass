@@ -12,7 +12,7 @@ import {
 import { getSassResponse, extractRoastTopic, analyzeProfile, queryAI } from '../ai.js';
 import { messageBuffer } from '../messageBuffer.js';
 import { userMemory } from '../userMemory.js';
-import { isOnMentionCooldown, setMentionCooldown, trackMentionEscalation, getEscalationCount } from '../cooldown.js';
+import { isOnMentionCooldown, setMentionCooldown, setAutoSassCooldown, trackMentionEscalation, getEscalationCount } from '../cooldown.js';
 import { storeMemory, searchMemories } from '../vectorMemory.js';
 import { buildHelpPages } from '../helpPages.js';
 import { mood } from '../mood.js';
@@ -544,6 +544,9 @@ export async function handleMention(message: Message, client: Client): Promise<v
     await new Promise((resolve) => setTimeout(resolve, typingDelay));
     await message.reply(response);
     recordResponse(channel.id, response);
+
+    // Set auto-sass cooldown so she doesn't double-respond in this channel
+    setAutoSassCooldown(channel.id);
 
     // Log to database
     const moodStatus = mood.getStatus();

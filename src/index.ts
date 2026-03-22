@@ -5,7 +5,7 @@ import { handleAutoSass } from './handlers/autoSass.js';
 import { handleCommand, handleBattleMessage } from './commands.js';
 import { messageBuffer } from './messageBuffer.js';
 import { userMemory } from './userMemory.js';
-import { initDatabase, closeDatabase } from './database.js';
+import { initDatabase, closeDatabase, logReaction } from './database.js';
 import { isOnSlashCooldown, setSlashCooldown } from './cooldown.js';
 
 dotenv.config();
@@ -200,6 +200,47 @@ client.on('messageCreate', async (message) => {
 
   // 3. Auto-sass — occasionally pop in uninvited
   await handleAutoSass(message, client);
+});
+
+// Reaction tracking — log reactions on Sass's messages as quality signals
+const POSITIVE_EMOJI = new Set(['💀', '😂', '🤣', '❤️', '🔥', '💯', '😭', '⬆️', '👍', '🫡', '💀', '☠️', '🤯', '😈', '👑']);
+const NEGATIVE_EMOJI = new Set(['👎', '😐', '🤡', '❌']);
+
+client.on('messageReactionAdd', async (reaction, user) => {
+  try {
+    // Fetch partial reactions/messages
+    if (reaction.partial) {
+      try { await reaction.fetch(); } catch { return; }
+    }
+    if (reaction.message.partial) {
+      try { await reaction.message.fetch(); } catch { return; }
+    }
+
+    // Only track reactions on Sass's messages
+    if (reaction.message.author?.id !== client.user?.id) return;
+    // Ignore bot reactions
+    if (user.bot) return;
+
+    const emoji = reaction.emoji.name || reaction.emoji.toString();
+    const isPositive = POSITIVE_EMOJI.has(emoji);
+    const isNegative = NEGATIVE_EMOJI.has(emoji);
+
+    // Only log known sentiment emoji
+    if (!isPositive && !isNegative) return;
+
+    logReaction({
+      serverId: reaction.message.guild?.id,
+      channelId: reaction.message.channel.id,
+      messageId: reaction.message.id,
+      sassResponse: reaction.message.content || '',
+      reactorId: user.id,
+      reactorName: ('displayName' in user ? user.displayName : null) || user.username || 'unknown',
+      emoji,
+      isPositive,
+    }).catch((err) => console.error('Reaction log failed:', (err as Error).message));
+  } catch (err) {
+    console.error('Reaction handler error:', (err as Error).message);
+  }
 });
 
 // Graceful shutdown — clean up connections
