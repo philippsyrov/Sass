@@ -12,6 +12,8 @@ import { buildHelpPages } from './helpPages.js';
 import { logCommand, logInteraction } from './database.js';
 import { mood } from './mood.js';
 import { getShipScore, getPairInteractions, warmPairCache } from './shipScore.js';
+import { generateShipImage } from './shipImage.js';
+import { AttachmentBuilder } from 'discord.js';
 
 // Re-export from extracted modules so existing imports don't break
 export { commands } from './commandDefinitions.js';
@@ -308,12 +310,31 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           hint = `\n\n📈 *sass has seen ${interactions} interactions between you two*`;
         }
 
-        await interaction.editReply(
-          `💘 **${user1.displayName}** x **${user2.displayName}**\n` +
-          `ship name: **${shipName}**\n` +
-          `${bar} **${percent}%**\n\n` +
-          `*${verdict}*${hint}`
-        );
+        // Generate merged avatar image
+        const avatar1 = user1.displayAvatarURL({ extension: 'png', size: 128 });
+        const avatar2 = user2.displayAvatarURL({ extension: 'png', size: 128 });
+        let files: AttachmentBuilder[] = [];
+        try {
+          const shipBuffer = await generateShipImage(avatar1, avatar2);
+          files = [new AttachmentBuilder(shipBuffer, { name: 'ship.png' })];
+        } catch (imgErr) {
+          console.error('Ship image generation failed:', (imgErr as Error).message);
+        }
+
+        const embed = new EmbedBuilder()
+          .setColor(0xFF4D6D)
+          .setDescription(
+            `💘 **${user1.displayName}** x **${user2.displayName}**\n` +
+            `ship name: **${shipName}**\n` +
+            `${bar} **${percent}%**\n\n` +
+            `*${verdict}*${hint}`
+          );
+
+        if (files.length > 0) {
+          embed.setThumbnail('attachment://ship.png');
+        }
+
+        await interaction.editReply({ embeds: [embed], files });
       } catch (err) {
         console.error('Ship command failed:', (err as Error).message);
         await interaction.editReply(
