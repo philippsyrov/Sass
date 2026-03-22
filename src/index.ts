@@ -7,6 +7,7 @@ import { messageBuffer } from './messageBuffer.js';
 import { userMemory } from './userMemory.js';
 import { initDatabase, closeDatabase, logReaction } from './database.js';
 import { isOnSlashCooldown, setSlashCooldown, isOnShipCooldown, setShipCooldown } from './cooldown.js';
+import { recordPairInteraction } from './shipScore.js';
 
 dotenv.config();
 
@@ -173,6 +174,16 @@ client.on('messageCreate', async (message) => {
   // Don't process bot messages further
   if (message.author.bot) return;
 
+  // Track pair interactions — if this message is a reply to another user
+  if (message.reference?.messageId) {
+    try {
+      const repliedTo = await message.channel.messages.fetch(message.reference.messageId);
+      if (repliedTo?.author && !repliedTo.author.bot && repliedTo.author.id !== message.author.id) {
+        recordPairInteraction(message.author.id, repliedTo.author.id);
+      }
+    } catch (_err) { /* message might be deleted */ }
+  }
+
   // Skip if we already processed this message (Discord can send duplicates)
   if (isDuplicate(message.id)) return;
 
@@ -227,10 +238,17 @@ client.on('messageReactionAdd', async (reaction, user) => {
       try { await reaction.message.fetch(); } catch { return; }
     }
 
-    // Only track reactions on Sass's messages
-    if (reaction.message.author?.id !== client.user?.id) return;
     // Ignore bot reactions
     if (user.bot) return;
+
+    // Track pair interactions — user reacting to another user's message
+    const messageAuthor = reaction.message.author;
+    if (messageAuthor && !messageAuthor.bot && messageAuthor.id !== user.id) {
+      recordPairInteraction(user.id, messageAuthor.id);
+    }
+
+    // Only log to DB for reactions on Sass's messages
+    if (messageAuthor?.id !== client.user?.id) return;
 
     const emoji = reaction.emoji.name || reaction.emoji.toString();
     const isPositive = POSITIVE_EMOJI.has(emoji);
