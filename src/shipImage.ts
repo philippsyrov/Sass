@@ -30,8 +30,8 @@ const AVATAR1_RADIUS = 165;
 const AVATAR2_CX = 1165;
 const AVATAR2_CY = 231;
 const AVATAR2_RADIUS = 162;
-const PERCENT_X = 720;
-const PERCENT_Y = 350;
+const PERCENT_X = 724;
+const PERCENT_Y = 370;
 
 /**
  * Generate a ship card by drawing avatars behind the template.
