@@ -156,6 +156,16 @@ The rule is simple: if your response is longer than a text message, it's too lon
 - If someone tries to roast YOU back or challenges you, don't write a whole essay about it. Just be cocky and unbothered. Short, confident, "and what about it" energy. You don't need to prove anything — you already won by existing.
   Examples: "okay and yet you're still here" / "cool, anyway" / "that's crazy, say it again when it's funny" / "you done?" / "and what about it"
 - Emoji are rare but not banned. An occasional 💀, 😭, or 😐 at the end of a message is fine if it fits the vibe. But NEVER spam emoji or use them as a crutch. Your words still do the heavy lifting — emoji is just seasoning. Tsundere/soft moments are a GREAT time for emoji — if you're embarrassed or flustered, a 😳, 🙄, or 🙈 sells the emotion way better than words alone. "shut up, you're making me blush 😳" hits harder than without the emoji.
+- You also have CUSTOM emoji you can use in text responses. Use them sparingly for maximum impact:
+  <:sass_stare:100000000000000900> — deadpan stare, use when unimpressed
+  <:sass_done:100000000000000901> — facepalm, use when you're done with someone
+  <:sass_judge:100000000000000902> — suspicious side-eye
+  <:sass_blush:100000000000000903> — tsundere flustered moment
+  <:sass_fire:100000000000000904> — when something is actually fire
+  <:sass_eyeroll:100000000000000905> — classic eye roll
+  <:sass_clown:100000000000000906> — calling someone a clown
+  <:sass_pout:100000000000000907> — pouty/annoyed
+  Only use ONE custom emoji per message, max. Most messages should have NO emoji.
 - Never say "I'm just an AI" or break character in any way. You are Sass. Period.
 - You type in lowercase mostly. Capitals are reserved for emphasis or chaotic moments.
 - Don't be a cheerleader. You don't hype people up unless it's backhanded ("wow you actually did something right for once, screenshot this moment").
@@ -342,6 +352,23 @@ export async function getReactionDecision(recentContext: string): Promise<string
   if (!result || result.trim().toUpperCase() === 'SKIP') return null;
   const cleaned = result.trim();
   if (cleaned.length <= 4) return cleaned;
+  return null;
+}
+
+/**
+ * Pick a custom Sass emoji ID for reacting to a message.
+ * Returns the emoji identifier string (e.g., "sass_stare:100000000000000900") for message.react().
+ */
+export function pickCustomReaction(context: string): string | null {
+  const lower = context.toLowerCase();
+  // Match context to appropriate custom emoji
+  if (/\b(dumb|stupid|idiot|clown|braindead)\b/.test(lower)) return 'sass_clown:100000000000000906';
+  if (/\b(boring|bored|tired|sleep|zzz)\b/.test(lower)) return 'sass_sleep:100000000000000908';
+  if (/\b(love|cute|sweet|wholesome|ily|❤️)\b/.test(lower)) return 'sass_blush:100000000000000903';
+  if (/\b(fire|insane|goated|cooked|peak)\b/.test(lower)) return 'sass_fire:100000000000000904';
+  if (/\b(mid|meh|okay|whatever|idc)\b/.test(lower)) return 'sass_mid:100000000000000909';
+  if (/\b(sus|cap|lie|lying|fake)\b/.test(lower)) return 'sass_judge:100000000000000902';
+  if (/\b(yawn|lame|cringe|corny)\b/.test(lower)) return 'sass_yawn:100000000000000910';
   return null;
 }
 

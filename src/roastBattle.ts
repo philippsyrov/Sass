@@ -4,6 +4,7 @@ import {
   type ThreadChannel,
 } from 'discord.js';
 import { queryAI } from './ai.js';
+import { getScoreBar } from './emoji.js';
 import type { BattleState } from './types.js';
 
 // --- Roast Battle State ---
@@ -171,7 +172,7 @@ export async function handleBattleMessage(message: Message): Promise<boolean> {
     const authorScores = battle.scores[message.author.id];
     if (authorScores) authorScores.push(score);
 
-    const scoreBar = '🔥'.repeat(score) + '💨'.repeat(10 - score);
+    const scoreBar = getScoreBar(score);
     await message.reply(`${scoreBar} **${score}/10**\n*${reaction}*`);
 
     // Switch turns or advance round — always runs even if scoring fell back

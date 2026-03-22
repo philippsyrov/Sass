@@ -4,7 +4,7 @@ import {
   type GuildMember,
   type TextChannel,
 } from 'discord.js';
-import { getAutoSassDecision, getReactionDecision, getConversationJoin, queryAI } from '../ai.js';
+import { getAutoSassDecision, getReactionDecision, getConversationJoin, queryAI, pickCustomReaction } from '../ai.js';
 import { messageBuffer } from '../messageBuffer.js';
 import { userMemory } from '../userMemory.js';
 import { isOnAutoSassCooldown, setAutoSassCooldown } from '../cooldown.js';
@@ -227,8 +227,18 @@ export async function handleAutoSass(message: Message, _client: Client, options:
   const roll = Math.random();
 
   try {
-    // 20% — Emoji react on current message
+    // 20% — Emoji react on current message (try custom emoji first, then standard)
     if (roll < 0.20) {
+      const customEmoji = pickCustomReaction(message.content);
+      if (customEmoji) {
+        try {
+          await message.react(customEmoji);
+          setAutoSassCooldown(channelId);
+          return;
+        } catch (err) {
+          console.error('Custom emoji react failed:', (err as Error).message);
+        }
+      }
       const emoji = await getReactionDecision(recentContext);
       if (emoji) {
         try {
