@@ -261,10 +261,10 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
       const topic = interaction.options.getString('topic');
       try {
         const prompt = topic
-          ? `Generate a controversial, spicy hot take about "${topic}". Be bold, funny, and a little unhinged. One or two sentences max.`
-          : 'Generate a random controversial, spicy hot take about anything. Be bold, funny, and a little unhinged. One or two sentences max.';
+          ? `Spicy hot take about "${topic}". ONE sentence, max 15 words. Be bold and unhinged.`
+          : 'Random spicy hot take about anything. ONE sentence, max 15 words. Be bold and unhinged.';
         const response = await queryAI(prompt, {
-          systemPrompt: 'You generate hot takes. Be controversial but not bigoted. Funny and bold. Lowercase.',
+          systemPrompt: 'You generate hot takes. ONE sentence max. Under 15 words. Controversial but not bigoted. Lowercase. No essays.',
         });
         await interaction.editReply(`🔥 **hot take:**\n${response}`);
       } catch (err) {

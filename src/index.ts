@@ -200,14 +200,33 @@ client.on('messageCreate', async (message) => {
   // Explicit @Sass in message text — always respond
   const isMentionInText = message.content.includes(`<@${client.user.id}>`)
     || message.content.includes(`<@!${client.user.id}>`);
-  // Reply to a Sass message — let auto-sass handle it naturally via context
-  // Don't force a mention response, just let the message enter the buffer
-  // and the auto-sass system will decide if it's worth responding to
   if (isMentionInText) {
     if (isUserOnCooldown(message.author.id)) return;
     if (isSpamming(message.author.id, message.content)) return;
     await handleMention(message, client);
     return;
+  }
+
+  // 1b. Reply to a Sass message — treat as conversation, let AI decide
+  if (message.reference?.messageId) {
+    try {
+      const repliedTo = await message.channel.messages.fetch(message.reference.messageId);
+      if (repliedTo?.author?.id === client.user.id) {
+        // Skip short reactions — "lol", "💀", "lmao" don't need a response
+        const wordCount = message.content.trim().split(/\s+/).length;
+        if (wordCount < 3) {
+          // Still let it flow to auto-sass for possible pickup
+        } else {
+          // 70% chance she responds to replies to her messages
+          if (Math.random() < 0.7) {
+            if (isUserOnCooldown(message.author.id)) return;
+            if (isSpamming(message.author.id, message.content)) return;
+            await handleAutoSass(message, client, { heardName: true });
+            return;
+          }
+        }
+      }
+    } catch { /* replied message might be deleted */ }
   }
 
   // 2. Someone said "sass" without @ — she heard her name
