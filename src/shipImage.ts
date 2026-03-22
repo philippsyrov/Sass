@@ -30,8 +30,8 @@ const AVATAR1_RADIUS = 165;
 const AVATAR2_CX = 1165;
 const AVATAR2_CY = 231;
 const AVATAR2_RADIUS = 162;
-const PERCENT_X = CANVAS_WIDTH / 2;
-const PERCENT_Y = 340;
+const PERCENT_X = 720;
+const PERCENT_Y = 350;
 
 /**
  * Generate a ship card by drawing avatars behind the template.
@@ -59,7 +59,7 @@ export async function generateShipImage(avatarUrl1: string, avatarUrl2: string, 
 
   // Step 3: Percentage text below the heart
   ctx.fillStyle = '#C44078';
-  ctx.font = 'bold 48px ShipFont';
+  ctx.font = 'bold 64px ShipFont';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(`${percent}%`, PERCENT_X, PERCENT_Y);
