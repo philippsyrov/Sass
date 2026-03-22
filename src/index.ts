@@ -235,6 +235,14 @@ client.on('messageCreate', async (message) => {
   //    it's not worth responding to. She reads the room, not a coin flip.
   const lowerContent = message.content.toLowerCase().trim();
   if (/\bsass\b/i.test(lowerContent) && !lowerContent.includes('sassy')) {
+    // If the message is basically just her name (1-2 words), don't send to AI — just acknowledge
+    const nameWordCount = lowerContent.split(/\s+/).length;
+    if (nameWordCount <= 2) {
+      const acks = ['what', 'you rang?', 'hm?', '?', 'what do you want'];
+      const ack = acks[Math.floor(Math.random() * acks.length)] as string;
+      await message.reply(ack).catch((err) => console.error('Reply failed:', (err as Error).message));
+      return;
+    }
     await handleAutoSass(message, client, { heardName: true });
     return;
   }
