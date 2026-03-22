@@ -19,6 +19,7 @@ import { mood } from '../mood.js';
 import { extractStatement, checkContradiction, generate4kCallout, storeStatement } from '../caughtIn4k.js';
 import { logInteraction, logCommand } from '../database.js';
 import { recordResponse, getRecentResponses } from '../responseMemory.js';
+import { getShipScore } from '../shipScore.js';
 
 /**
  * Handle direct @Sass mentions and replies to Sass.
@@ -185,7 +186,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
         return;
       }
       const name1 = member1.displayName; const name2 = member2.displayName;
-      const percent = Math.floor(Math.random() * 99);
+      const percent = getShipScore(id1, id2);
       const bar = '❤️'.repeat(Math.round(percent / 10)) + '🖤'.repeat(10 - Math.round(percent / 10));
       const shipName = name1.slice(0, Math.ceil(name1.length / 2)) + name2.slice(Math.floor(name2.length / 2));
       const verdict = await queryAI(
