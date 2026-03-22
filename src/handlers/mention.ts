@@ -253,7 +253,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
       } else if (interactions >= 10) {
         hint = `\n\n📈 *sass has seen ${interactions} interactions between you two*`;
       }
-      const shipResponse = `💘 **${name1}** x **${name2}**\nship name: **${shipName}**\n${bar} **${percent}%**\n\n*${verdict}*${hint}`;
+      const shipResponse = `🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸\n\n💘 **${name1}** x **${name2}**\nship name: **${shipName}**\n${bar} **${percent}%**\n\n*${verdict}*${hint}\n\n🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸`;
       await message.reply(shipResponse);
       logInteraction({
         serverId: message.guild?.id, serverName: message.guild?.name,

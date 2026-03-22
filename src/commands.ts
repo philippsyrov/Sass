@@ -325,10 +325,12 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
         const embed = new EmbedBuilder()
           .setColor(0xFF4D6D)
           .setDescription(
+            `🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸\n\n` +
             `💘 **${user1.displayName}** x **${user2.displayName}**\n` +
             `ship name: **${shipName}**\n` +
             `${bar} **${percent}%**\n\n` +
-            `*${verdict}*${hint}`
+            `*${verdict}*${hint}\n\n` +
+            `🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸`
           );
 
         if (files.length > 0) {
