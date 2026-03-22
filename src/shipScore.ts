@@ -6,11 +6,13 @@
  *   - Beefs lower the score
  *   - Positive interactions (replies, reactions) boost it
  *   - 100% only unlocks with 50+ interactions (proven pair)
+ *
+ * Pair interactions are stored in PostgreSQL (survives deploys)
+ * with an in-memory cache for fast lookups.
  */
 
-import { readFileSync, writeFileSync, mkdirSync } from 'fs';
-import { join } from 'path';
 import { userMemory } from './userMemory.js';
+import { recordPairInteractionDB, getPairInteractionCountDB, isDatabaseConnected } from './database.js';
 
 const BEEF_PENALTY_PER_INCIDENT = 3;  // each beef lowers score by 3%
 const MAX_BEEF_PENALTY = 30;          // cap so beefs don't zero out the score
@@ -18,12 +20,9 @@ const INTERACTION_BOOST_PER = 0.5;    // each interaction boosts score by 0.5%
 const MAX_INTERACTION_BOOST = 40;     // cap boost at +40%
 const UNLOCK_100_THRESHOLD = 50;      // 50+ interactions needed to unlock 100%
 
-const DATA_DIR = join(process.cwd(), 'data');
-const INTERACTIONS_FILE = join(DATA_DIR, 'pair-interactions.json');
-
-// In-memory store of user pair interaction counts
-const pairInteractions = new Map<string, number>();
-let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+// In-memory cache of pair interaction counts (populated from DB on first access)
+const pairCache = new Map<string, number>();
+const MAX_CACHE_SIZE = 5000;
 
 /**
  * Get a sorted key for a user pair (order-independent).
@@ -34,70 +33,64 @@ function pairKey(id1: string, id2: string): string {
 }
 
 /**
- * Load pair interactions from disk.
- */
-function loadInteractions(): void {
-  try {
-    const raw = readFileSync(INTERACTIONS_FILE, 'utf-8');
-    const data = JSON.parse(raw) as Record<string, number>;
-    for (const [key, count] of Object.entries(data)) {
-      pairInteractions.set(key, count);
-    }
-    console.log(`Loaded ${pairInteractions.size} pair interactions`);
-  } catch (_err) {
-    // File doesn't exist yet — that's fine
-  }
-}
-
-/**
- * Save pair interactions to disk (debounced).
- */
-function saveInteractions(): void {
-  if (saveTimeout) clearTimeout(saveTimeout);
-  saveTimeout = setTimeout(() => {
-    try {
-      mkdirSync(DATA_DIR, { recursive: true });
-      const data: Record<string, number> = {};
-      for (const [key, count] of pairInteractions) {
-        data[key] = count;
-      }
-      writeFileSync(INTERACTIONS_FILE, JSON.stringify(data, null, 2));
-    } catch (err) {
-      console.error('Failed to save pair interactions:', (err as Error).message);
-    }
-  }, 10000); // save 10s after last change
-}
-
-// Load on startup
-loadInteractions();
-
-// Cap the map size to prevent unbounded growth
-const MAX_TRACKED_PAIRS = 5000;
-
-/**
  * Record an interaction between two users (reply, reaction, etc.).
- * Call this whenever user A engages with user B's content.
+ * Writes to both cache and DB.
  */
 export function recordPairInteraction(userId1: string, userId2: string): void {
   if (userId1 === userId2) return; // no self-shipping boost
   const key = pairKey(userId1, userId2);
-  const current = pairInteractions.get(key) || 0;
-  pairInteractions.set(key, current + 1);
+  const current = pairCache.get(key) || 0;
+  pairCache.set(key, current + 1);
 
   // Evict oldest if over cap
-  if (pairInteractions.size > MAX_TRACKED_PAIRS) {
-    const oldest = pairInteractions.keys().next().value;
-    if (oldest !== undefined) pairInteractions.delete(oldest);
+  if (pairCache.size > MAX_CACHE_SIZE) {
+    const oldest = pairCache.keys().next().value;
+    if (oldest !== undefined) pairCache.delete(oldest);
   }
 
-  saveInteractions();
+  // Persist to DB (fire and forget)
+  recordPairInteractionDB(userId1, userId2).catch((err) =>
+    console.error('DB pair interaction failed:', (err as Error).message)
+  );
 }
 
 /**
  * Get interaction count for a pair.
+ * Checks cache first, falls back to DB.
+ */
+export async function getPairInteractionsAsync(userId1: string, userId2: string): Promise<number> {
+  const key = pairKey(userId1, userId2);
+  const cached = pairCache.get(key);
+  if (cached !== undefined) return cached;
+
+  // Try DB
+  if (isDatabaseConnected()) {
+    const count = await getPairInteractionCountDB(userId1, userId2);
+    pairCache.set(key, count);
+    return count;
+  }
+
+  return 0;
+}
+
+/**
+ * Sync version — returns cached value only (0 if not cached).
+ * Use getPairInteractionsAsync for DB-backed lookups.
  */
 export function getPairInteractions(userId1: string, userId2: string): number {
-  return pairInteractions.get(pairKey(userId1, userId2)) || 0;
+  return pairCache.get(pairKey(userId1, userId2)) || 0;
+}
+
+/**
+ * Warm the cache for a pair from DB. Call before getShipScore.
+ */
+export async function warmPairCache(userId1: string, userId2: string): Promise<void> {
+  const key = pairKey(userId1, userId2);
+  if (pairCache.has(key)) return;
+  if (isDatabaseConnected()) {
+    const count = await getPairInteractionCountDB(userId1, userId2);
+    pairCache.set(key, count);
+  }
 }
 
 /**
@@ -120,6 +113,7 @@ function hashPair(id1: string, id2: string): number {
  * Get the ship score for a pair of users.
  * Base hash + interaction boost - beef penalty.
  * 100% only unlocks with 50+ interactions.
+ * Call warmPairCache() before this for DB-backed counts.
  */
 export function getShipScore(userId1: string, userId2: string): number {
   // Base score from hash — deterministic, range 5-75

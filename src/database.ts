@@ -114,6 +114,14 @@ async function createTables(): Promise<void> {
     );
 
     CREATE INDEX IF NOT EXISTS idx_reactions_message ON reactions(message_id);
+
+    CREATE TABLE IF NOT EXISTS pair_interactions (
+      user1_id TEXT NOT NULL,
+      user2_id TEXT NOT NULL,
+      interaction_count INTEGER DEFAULT 1,
+      last_interaction TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (user1_id, user2_id)
+    );
   `);
 }
 
@@ -248,6 +256,45 @@ export async function logReaction({
     );
   } catch (err) {
     console.error('Failed to log reaction:', (err as Error).message);
+  }
+}
+
+/**
+ * Record an interaction between two users (for ship score boosts).
+ * Uses upsert — increments count if pair exists, inserts if new.
+ */
+export async function recordPairInteractionDB(userId1: string, userId2: string): Promise<void> {
+  if (!isConnected || !pool) return;
+  // Sort IDs so pair is order-independent
+  const [id1, id2] = [userId1, userId2].sort();
+  try {
+    await pool.query(
+      `INSERT INTO pair_interactions (user1_id, user2_id, interaction_count, last_interaction)
+       VALUES ($1, $2, 1, NOW())
+       ON CONFLICT (user1_id, user2_id)
+       DO UPDATE SET interaction_count = pair_interactions.interaction_count + 1, last_interaction = NOW()`,
+      [id1, id2]
+    );
+  } catch (err) {
+    console.error('Failed to record pair interaction:', (err as Error).message);
+  }
+}
+
+/**
+ * Get interaction count between two users.
+ */
+export async function getPairInteractionCountDB(userId1: string, userId2: string): Promise<number> {
+  if (!isConnected || !pool) return 0;
+  const [id1, id2] = [userId1, userId2].sort();
+  try {
+    const result = await pool.query(
+      'SELECT interaction_count FROM pair_interactions WHERE user1_id = $1 AND user2_id = $2',
+      [id1, id2]
+    );
+    return (result.rows[0]?.interaction_count as number) ?? 0;
+  } catch (err) {
+    console.error('Failed to get pair interactions:', (err as Error).message);
+    return 0;
   }
 }
 

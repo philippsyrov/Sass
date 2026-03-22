@@ -11,7 +11,7 @@ import { userMemory } from './userMemory.js';
 import { buildHelpPages } from './helpPages.js';
 import { logCommand, logInteraction } from './database.js';
 import { mood } from './mood.js';
-import { getShipScore, getPairInteractions } from './shipScore.js';
+import { getShipScore, getPairInteractions, warmPairCache } from './shipScore.js';
 
 // Re-export from extracted modules so existing imports don't break
 export { commands } from './commandDefinitions.js';
@@ -278,6 +278,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
       await interaction.deferReply();
       const user1 = interaction.options.getUser('user1', true);
       const user2 = interaction.options.getUser('user2', true);
+      await warmPairCache(user1.id, user2.id);
       const percent = getShipScore(user1.id, user2.id);
       const bar = '❤️'.repeat(Math.round(percent / 10)) + '🖤'.repeat(10 - Math.round(percent / 10));
 
