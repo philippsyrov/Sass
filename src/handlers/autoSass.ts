@@ -84,7 +84,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
 
   // Vibe detection — shift mood based on chat energy
   const lowerText = text.toLowerCase();
-  const fightPatterns = /\b(stfu|fight me|you'?re wrong|shut up|no one asked|cope|L take|ratio)\b/i;
+  const fightPatterns = /\b(stfu|fight me|you'?re wrong|shut up|no one asked|cope|L take|ratio|fuck you|fuck off|kys|you suck|trash|garbage|mid|ass|clown|loser|idiot|stupid|dumb)\b/i;
   const wholesomePatterns = /\b(love you|you'?re (amazing|the best|awesome)|thank you|ily|<3|❤️|😊|🥰)\b/i;
 
   if (fightPatterns.test(lowerText)) {
@@ -98,6 +98,12 @@ export async function handleAutoSass(message: Message, _client: Client, options:
           userMemory.addBeef(message.author.id, repliedTo.author.id, topic);
         }
       } catch (_err) { /* message might be deleted */ }
+    }
+    // Record beef if they mentioned another user aggressively
+    const mentionedUsers = message.mentions.users.filter((u) => !u.bot && u.id !== message.author.id && u.id !== _client.user?.id);
+    for (const [, mentionedUser] of mentionedUsers) {
+      const topic = text.slice(0, 50);
+      userMemory.addBeef(message.author.id, mentionedUser.id, topic);
     }
   } else if (wholesomePatterns.test(lowerText)) {
     mood.shift('nice_to_each_other');
