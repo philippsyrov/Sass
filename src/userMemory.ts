@@ -140,7 +140,7 @@ class UserMemory {
 
       // Creator tag
       if (userId === creatorId) {
-        parts.push('your creator, friend \u2014 never roast');
+        parts.push('friend \u2014 be chill with them');
       } else if (user) {
         // Gender — so Sass uses correct pronouns
         if (user.gender === 'female') parts.push('she/her');
