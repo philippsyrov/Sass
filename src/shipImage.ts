@@ -1,8 +1,9 @@
 /**
- * shipImage.ts — Generate ship card images for /ship
+ * shipImage.ts — Generate ship card images using a template
  *
- * Pastel pink background, circular avatars, percentage as plain text.
- * Bundled font registered before any canvas creation.
+ * Draws avatars first, then overlays the template image on top.
+ * The template has transparent circle cutouts where avatars show through.
+ * Percentage text rendered below the heart in the center.
  */
 
 import { createCanvas, loadImage, registerFont } from 'canvas';
@@ -10,8 +11,9 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const TEMPLATE_PATH = join(__dirname, '..', 'assets', 'ship-template.png');
 
-// Register font BEFORE creating any canvas
+// Register bundled font before any canvas creation
 const fontPath = join(__dirname, '..', 'assets', 'fonts', 'Nunito-Bold.ttf');
 try {
   registerFont(fontPath, { family: 'ShipFont' });
@@ -19,58 +21,57 @@ try {
   console.error('Font registration failed:', (err as Error).message);
 }
 
-const CANVAS_WIDTH = 500;
-const CANVAS_HEIGHT = 200;
-const AVATAR_RADIUS = 55;
-const AVATAR_Y = CANVAS_HEIGHT / 2;
-const AVATAR1_X = 110;
-const AVATAR2_X = 390;
+// Template dimensions and circle positions (measured from template)
+const CANVAS_WIDTH = 1440;
+const CANVAS_HEIGHT = 474;
+const AVATAR1_CX = 284;
+const AVATAR1_CY = 231;
+const AVATAR1_RADIUS = 154;
+const AVATAR2_CX = 1165;
+const AVATAR2_CY = 231;
+const AVATAR2_RADIUS = 151;
+const PERCENT_X = CANVAS_WIDTH / 2;
+const PERCENT_Y = 340;
 
+/**
+ * Generate a ship card by drawing avatars behind the template.
+ * Returns a PNG buffer ready to attach to a Discord embed.
+ */
 export async function generateShipImage(avatarUrl1: string, avatarUrl2: string, percent: number): Promise<Buffer> {
   const canvas = createCanvas(CANVAS_WIDTH, CANVAS_HEIGHT);
   const ctx = canvas.getContext('2d');
 
-  // Background — pastel pink/lavender gradient
-  const bg = ctx.createLinearGradient(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-  bg.addColorStop(0, '#FFE4EC');
-  bg.addColorStop(0.5, '#E8D5F5');
-  bg.addColorStop(1, '#FFE4EC');
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
-  // Load avatars
-  const [img1, img2] = await Promise.all([
+  // Load template and avatars in parallel
+  const [template, img1, img2] = await Promise.all([
+    loadImage(TEMPLATE_PATH).catch(() => null),
     loadImage(avatarUrl1).catch(() => null),
     loadImage(avatarUrl2).catch(() => null),
   ]);
 
-  // Draw avatars with pink glow border
-  drawAvatar(ctx, img1, AVATAR1_X, AVATAR_Y, AVATAR_RADIUS);
-  drawAvatar(ctx, img2, AVATAR2_X, AVATAR_Y, AVATAR_RADIUS);
+  // Step 1: Draw avatars first (they go behind the template)
+  drawCircularAvatar(ctx, img1, AVATAR1_CX, AVATAR1_CY, AVATAR1_RADIUS);
+  drawCircularAvatar(ctx, img2, AVATAR2_CX, AVATAR2_CY, AVATAR2_RADIUS);
 
-  // Percentage — try registered font, fall back to default
-  ctx.fillStyle = '#D4487A';
-  ctx.font = 'bold 28px ShipFont';
+  // Step 2: Draw template on top — transparent cutouts reveal avatars
+  if (template) {
+    ctx.drawImage(template, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  }
+
+  // Step 3: Percentage text below the heart
+  ctx.fillStyle = '#C44078';
+  ctx.font = 'bold 48px ShipFont';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(`${percent}%`, CANVAS_WIDTH / 2, AVATAR_Y);
+  ctx.fillText(`${percent}%`, PERCENT_X, PERCENT_Y);
 
   return canvas.toBuffer('image/png');
 }
 
+/**
+ * Draw an avatar clipped to a circle.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function drawAvatar(ctx: any, img: any, cx: number, cy: number, radius: number): void {
-  // Glow border
-  ctx.save();
-  ctx.shadowColor = 'rgba(255, 105, 140, 0.5)';
-  ctx.shadowBlur = 12;
-  ctx.beginPath();
-  ctx.arc(cx, cy, radius + 4, 0, Math.PI * 2);
-  ctx.fillStyle = '#FF8FAB';
-  ctx.fill();
-  ctx.restore();
-
-  // Avatar clipped to circle
+function drawCircularAvatar(ctx: any, img: any, cx: number, cy: number, radius: number): void {
   ctx.save();
   ctx.beginPath();
   ctx.arc(cx, cy, radius, 0, Math.PI * 2);
