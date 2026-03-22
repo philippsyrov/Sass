@@ -5,7 +5,7 @@
  * Periodic cleanup prevents unbounded Map growth.
  */
 const MENTION_COOLDOWN_MS = 3000;   // 3s between replies to same user
-const AUTO_SASS_COOLDOWN_MS = 90000; // 90s between auto-sass in same channel
+const AUTO_SASS_COOLDOWN_MS = 30000; // 30s between auto-sass in same channel
 const SLASH_COOLDOWN_MS = 5000;     // 5s between slash commands per user
 const SHIP_COOLDOWN_MS = 15000;    // 15s between /ship per user (AI call each time)
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // clean up every 5 min

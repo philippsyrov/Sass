@@ -17,7 +17,20 @@ import { recordResponse, getRecentResponses } from '../responseMemory.js';
 const messageCounters = new Map<string, number>();
 const MAX_TRACKED_CHANNELS = 500;
 
-const AUTO_SASS_CHANCE = parseFloat(process.env.AUTO_SASS_CHANCE ?? '0.4') || 0.4;
+// Track activity roasts per user — max once per 24h
+const activityRoastCooldowns = new Map<string, number>();
+const ACTIVITY_ROAST_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
+const MAX_ACTIVITY_COOLDOWNS = 500;
+
+// Clean up expired activity roast cooldowns every 30 min
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, ts] of activityRoastCooldowns) {
+    if (now - ts > ACTIVITY_ROAST_COOLDOWN_MS) activityRoastCooldowns.delete(id);
+  }
+}, 30 * 60 * 1000);
+
+const AUTO_SASS_CHANCE = parseFloat(process.env.AUTO_SASS_CHANCE ?? '0.55') || 0.55;
 const MIN_MESSAGES = parseInt(process.env.AUTO_SASS_MIN_MESSAGES ?? '2', 10) || 2;
 
 // Short reaction texts — no AI call needed, instant and human
@@ -128,8 +141,12 @@ export async function handleAutoSass(message: Message, _client: Client, options:
       const guild = message.guild;
       if (guild) {
         const members = guild.members.cache;
+        const now = Date.now();
         const gamers = members.filter((m: GuildMember) => {
           if (m.user.bot || m.user.id === process.env.CREATOR_ID) return false;
+          // Skip users already activity-roasted in last 24h
+          const lastRoasted = activityRoastCooldowns.get(m.user.id);
+          if (lastRoasted && now - lastRoasted < ACTIVITY_ROAST_COOLDOWN_MS) return false;
           const activity = getActivityDescription(m.presence);
           return activity != null && !activity.startsWith('custom status');
         });
@@ -144,6 +161,12 @@ export async function handleAutoSass(message: Message, _client: Client, options:
           );
           if (roast && roast.trim().toUpperCase() !== 'SKIP') {
             setAutoSassCooldown(channelId);
+            // Track this user so they don't get activity-roasted again for 24h
+            activityRoastCooldowns.set(target.user.id, Date.now());
+            if (activityRoastCooldowns.size > MAX_ACTIVITY_COOLDOWNS) {
+              const oldest = activityRoastCooldowns.keys().next().value;
+              if (oldest) activityRoastCooldowns.delete(oldest);
+            }
             await channel.sendTyping();
             const delay = 1000 + Math.random() * 2000;
             await new Promise((resolve) => setTimeout(resolve, delay));
