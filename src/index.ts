@@ -6,7 +6,7 @@ import { handleCommand, handleBattleMessage } from './commands.js';
 import { messageBuffer } from './messageBuffer.js';
 import { userMemory } from './userMemory.js';
 import { initDatabase, closeDatabase, logReaction } from './database.js';
-import { isOnSlashCooldown, setSlashCooldown } from './cooldown.js';
+import { isOnSlashCooldown, setSlashCooldown, isOnShipCooldown, setShipCooldown } from './cooldown.js';
 
 dotenv.config();
 
@@ -75,6 +75,17 @@ client.on('interactionCreate', async (interaction) => {
     return;
   }
   setSlashCooldown(userId);
+
+  // Extra cooldown for /ship — 15s to prevent spam (AI call each time)
+  const commandName = interaction.commandName;
+  if (commandName === 'ship' && userId !== process.env.CREATOR_ID && isOnShipCooldown(userId)) {
+    await interaction.reply({
+      content: "you just shipped someone. give the matchmaking gods a moment.",
+      ephemeral: true,
+    });
+    return;
+  }
+  if (commandName === 'ship') setShipCooldown(userId);
 
   try {
     await handleCommand(interaction);

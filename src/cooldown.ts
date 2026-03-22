@@ -7,6 +7,7 @@
 const MENTION_COOLDOWN_MS = 3000;   // 3s between replies to same user
 const AUTO_SASS_COOLDOWN_MS = 90000; // 90s between auto-sass in same channel
 const SLASH_COOLDOWN_MS = 5000;     // 5s between slash commands per user
+const SHIP_COOLDOWN_MS = 15000;    // 15s between /ship per user (AI call each time)
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // clean up every 5 min
 
 // Escalation window — track tags within this window
@@ -23,6 +24,7 @@ interface EscalationEntry {
 const userCooldowns = new Map<string, number>();
 const channelCooldowns = new Map<string, number>();
 const slashCooldowns = new Map<string, number>();
+const shipCooldowns = new Map<string, number>();
 const escalationTracker = new Map<string, EscalationEntry>();
 
 export function isOnMentionCooldown(userId: string): boolean {
@@ -50,6 +52,15 @@ export function isOnSlashCooldown(userId: string): boolean {
 
 export function setSlashCooldown(userId: string): void {
   slashCooldowns.set(userId, Date.now());
+}
+
+export function isOnShipCooldown(userId: string): boolean {
+  const last = shipCooldowns.get(userId) || 0;
+  return Date.now() - last < SHIP_COOLDOWN_MS;
+}
+
+export function setShipCooldown(userId: string): void {
+  shipCooldowns.set(userId, Date.now());
 }
 
 /**
@@ -117,6 +128,9 @@ setInterval(() => {
   }
   for (const [id, ts] of slashCooldowns) {
     if (now - ts > SLASH_COOLDOWN_MS) slashCooldowns.delete(id);
+  }
+  for (const [id, ts] of shipCooldowns) {
+    if (now - ts > SHIP_COOLDOWN_MS) shipCooldowns.delete(id);
   }
   for (const [id, entry] of escalationTracker) {
     entry.tags = entry.tags.filter((ts) => now - ts < ESCALATION_WINDOW_MS);
