@@ -200,6 +200,12 @@ const UTILITY_SYSTEM_PROMPT = `You are a utility function. Follow the instructio
 
 type UserContent = string | OpenAI.ChatCompletionContentPart[];
 
+let openaiClient: OpenAI | null = null;
+function getOpenAI(): OpenAI {
+  if (!openaiClient) openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  return openaiClient;
+}
+
 /**
  * Send a prompt to the configured AI provider and get a response.
  */
@@ -376,7 +382,7 @@ async function queryCreatorMode(userMessage: string, recentContext: string, peop
       { role: 'user', content: userContent },
     ];
 
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const openai = getOpenAI();
     const response = await openai.chat.completions.create({
       model: process.env.OPENAI_MODEL || 'gpt-5.4-mini',
       messages,
@@ -417,7 +423,13 @@ async function queryOllama(prompt: string, systemPrompt: string): Promise<string
 }
 
 async function queryOpenAI(prompt: string, systemPrompt: string, imageUrl: string | null = null): Promise<string | null> {
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  // Guard against empty user content — API rejects empty messages
+  if (!prompt?.trim() && !imageUrl) {
+    console.error('queryOpenAI called with empty prompt and no image');
+    return null;
+  }
+
+  const openai = getOpenAI();
 
   // Build user content — text only or text + image
   let userContent: UserContent;
@@ -474,7 +486,7 @@ export async function analyzeProfile(userName: string, messages: string): Promis
   const provider = process.env.AI_PROVIDER || 'ollama';
 
   if (provider === 'openai') {
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const openai = getOpenAI();
     const response = await openai.chat.completions.create({
       model: process.env.OPENAI_MODEL || 'gpt-5.4-mini',
       messages: [

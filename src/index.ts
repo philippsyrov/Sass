@@ -6,6 +6,7 @@ import { handleCommand, handleBattleMessage } from './commands.js';
 import { messageBuffer } from './messageBuffer.js';
 import { userMemory } from './userMemory.js';
 import { initDatabase, closeDatabase } from './database.js';
+import { isOnSlashCooldown, setSlashCooldown } from './cooldown.js';
 
 dotenv.config();
 
@@ -56,6 +57,25 @@ client.on('guildCreate', (guild: Guild) => {
 // Slash commands
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
+
+  // Per-user slash command cooldown — 5s between commands
+  const userId = interaction.user.id;
+  if (userId !== process.env.CREATOR_ID && isOnSlashCooldown(userId)) {
+    const cooldownResponses = [
+      "slow down, i can only judge you so fast.",
+      "bro chill, i'm still recovering from your last one.",
+      "you're speedrunning my patience rn.",
+      "one at a time, i'm not a vending machine.",
+      "give me a sec, even i need to breathe.",
+    ];
+    await interaction.reply({
+      content: cooldownResponses[Math.floor(Math.random() * cooldownResponses.length)] as string,
+      ephemeral: true,
+    });
+    return;
+  }
+  setSlashCooldown(userId);
+
   try {
     await handleCommand(interaction);
   } catch (err) {

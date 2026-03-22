@@ -8,7 +8,7 @@ import { getAutoSassDecision, getReactionDecision, getConversationJoin, queryAI 
 import { messageBuffer } from '../messageBuffer.js';
 import { userMemory } from '../userMemory.js';
 import { isOnAutoSassCooldown, setAutoSassCooldown } from '../cooldown.js';
-import { getActivityDescription } from '../commands.js';
+import { getActivityDescription } from '../shared/commandUtils.js';
 import { mood } from '../mood.js';
 import { logInteraction } from '../database.js';
 import { recordResponse, getRecentResponses } from '../responseMemory.js';
@@ -108,7 +108,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
     try {
       const guild = message.guild;
       if (guild) {
-        const members = await guild.members.fetch({ withPresences: true });
+        const members = guild.members.cache;
         const gamers = members.filter((m: GuildMember) => {
           if (m.user.bot || m.user.id === process.env.CREATOR_ID) return false;
           const activity = getActivityDescription(m.presence);
@@ -170,8 +170,8 @@ export async function handleAutoSass(message: Message, _client: Client, options:
         try {
           await message.react(emoji);
           setAutoSassCooldown(channelId);
-        } catch {
-          // Emoji might not be valid — silently fail
+        } catch (err) {
+          console.error('Emoji react failed:', (err as Error).message);
         }
         return;
       }
@@ -194,15 +194,15 @@ export async function handleAutoSass(message: Message, _client: Client, options:
               try {
                 await target.react(emoji);
                 setAutoSassCooldown(channelId);
-              } catch {
-                // Emoji might not be valid
+              } catch (err) {
+                console.error('Lurk emoji react failed:', (err as Error).message);
               }
               return;
             }
           }
         }
-      } catch {
-        // Lurk mode failed — fall through
+      } catch (err) {
+        console.error('Lurk mode failed:', (err as Error).message);
       }
     }
 
@@ -213,7 +213,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
         setAutoSassCooldown(channelId);
         const delay = 500 + Math.random() * 1500;
         await new Promise((resolve) => setTimeout(resolve, delay));
-        await message.reply(reaction);
+        await message.reply(reaction).catch((err) => console.error('Reply failed:', (err as Error).message));
         recordResponse(channelId, reaction);
         const moodStatus = mood.getStatus();
         logInteraction({
@@ -238,7 +238,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
         await channel.sendTyping();
         const delay = 1000 + Math.random() * 2000;
         await new Promise((resolve) => setTimeout(resolve, delay));
-        await channel.send(joinRemark);
+        await channel.send(joinRemark).catch((err) => console.error('Channel send failed:', (err as Error).message));
         recordResponse(channelId, joinRemark);
         const moodStatus = mood.getStatus();
         logInteraction({
@@ -265,7 +265,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
     const delay = 1000 + Math.random() * 2000;
     await new Promise((resolve) => setTimeout(resolve, delay));
 
-    await message.reply(remark);
+    await message.reply(remark).catch((err) => console.error('Reply failed:', (err as Error).message));
     recordResponse(channelId, remark);
     userMemory.recordRoast(message.author.id);
 

@@ -103,7 +103,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
       ? message.author
       : await message.guild?.members.fetch(targetId).then((m) => m.user).catch(() => null) ?? null;
     if (!targetUser) {
-      await message.reply("can't find that person. they probably don't exist, like your taste");
+      await message.reply("can't find that person. they probably don't exist, like your taste").catch((err) => console.error('Reply failed:', (err as Error).message));
       return;
     }
     const targetName = targetUser.displayName || targetUser.username;
@@ -120,13 +120,13 @@ export async function handleMention(message: Message, client: Client): Promise<v
         .slice(0, 30);
 
       if (userMsgs.length < 3) {
-        await message.reply(`${targetName} barely talks. can't profile a ghost.`);
+        await message.reply(`${targetName} barely talks. can't profile a ghost.`).catch((err) => console.error('Reply failed:', (err as Error).message));
         return;
       }
 
       const raw = await analyzeProfile(targetName, userMsgs.join('\n'));
       if (!raw) {
-        await message.reply("my brain crashed trying to analyze this person. that says a lot honestly.");
+        await message.reply("my brain crashed trying to analyze this person. that says a lot honestly.").catch((err) => console.error('Reply failed:', (err as Error).message));
         return;
       }
 
@@ -162,11 +162,11 @@ export async function handleMention(message: Message, client: Client): Promise<v
         '',
         `*${roast}*`,
       ];
-      await message.reply(profile.join('\n'));
-      logCommand({ serverId: message.guild?.id, userId, commandName: 'profile', commandType: 'mention' }).catch((_err) => { /* non-critical */ });
+      await message.reply(profile.join('\n')).catch((err) => console.error('Reply failed:', (err as Error).message));
+      logCommand({ serverId: message.guild?.id, userId, commandName: 'profile', commandType: 'mention' }).catch((err) => console.error('Log command failed:', (err as Error).message));
     } catch (err) {
       console.error('Profile analysis failed:', (err as Error).message);
-      await message.reply("my brain crashed trying to analyze this person. that says a lot honestly.");
+      await message.reply("my brain crashed trying to analyze this person. that says a lot honestly.").catch((replyErr) => console.error('Reply failed:', (replyErr as Error).message));
     }
     return;
   }
@@ -189,8 +189,8 @@ export async function handleMention(message: Message, client: Client): Promise<v
       const bar = '❤️'.repeat(Math.round(percent / 10)) + '🖤'.repeat(10 - Math.round(percent / 10));
       const shipName = name1.slice(0, Math.ceil(name1.length / 2)) + name2.slice(Math.floor(name2.length / 2));
       const verdict = await queryAI(
-        `Rate the compatibility between "${name1}" and "${name2}" at ${percent}%. Give a one-sentence brutal, funny verdict.`,
-        { systemPrompt: 'You are Sass. One sentence. Lowercase. Brutal and funny.' }
+        `"${name1}" x "${name2}" at ${percent}%. ONE sentence verdict, max 12 words. No metaphors or object comparisons. React like a friend judging a couple.`,
+        { systemPrompt: 'You judge ship compatibility. ONE short sentence. Max 12 words. Lowercase. Talk like a 20-year-old, not a poet. No "chemistry of a [object]" comparisons.' }
       );
       const shipResponse = `💘 **${name1}** x **${name2}**\nship name: **${shipName}**\n${bar} **${percent}%**\n\n*${verdict}*`;
       await message.reply(shipResponse);
@@ -201,8 +201,11 @@ export async function handleMention(message: Message, client: Client): Promise<v
         triggerType: 'mention', commandName: 'ship',
         userMessage: cleanContent, sassResponse: shipResponse,
         mood: mood.getStatus().mood, moodIntensity: mood.getStatus().intensity,
-      }).catch((_err) => { /* non-critical */ });
-    } catch { await message.reply("couldn't ship them. maybe they're not meant to be."); }
+      }).catch((err) => console.error('Log interaction failed:', (err as Error).message));
+    } catch (err) {
+      console.error('Ship command failed:', (err as Error).message);
+      await message.reply("couldn't ship them. maybe they're not meant to be.").catch((replyErr) => console.error('Reply failed:', (replyErr as Error).message));
+    }
     return;
   }
 
@@ -223,7 +226,10 @@ export async function handleMention(message: Message, client: Client): Promise<v
         { systemPrompt: 'You generate absurd conspiracy theories. Creative and unhinged but not mean-spirited. Lowercase. Include fake evidence.' }
       );
       await message.reply(`🕵️ **CLASSIFIED INTEL ON ${member.displayName.toUpperCase()}**\n\n${response}`);
-    } catch { await message.reply("my investigation was compromised. suspicious."); }
+    } catch (err) {
+      console.error('Conspiracy command failed:', (err as Error).message);
+      await message.reply("my investigation was compromised. suspicious.").catch((replyErr) => console.error('Reply failed:', (replyErr as Error).message));
+    }
     return;
   }
 
@@ -244,7 +250,10 @@ export async function handleMention(message: Message, client: Client): Promise<v
         { systemPrompt: 'You give backhanded compliments. Sincere at first, then twist. Lowercase. Subtle.' }
       );
       await message.reply(`💐 ${response}`);
-    } catch { await message.reply("i tried to compliment them but even i couldn't find anything."); }
+    } catch (err) {
+      console.error('Compliment command failed:', (err as Error).message);
+      await message.reply("i tried to compliment them but even i couldn't find anything.").catch((replyErr) => console.error('Reply failed:', (replyErr as Error).message));
+    }
     return;
   }
 
@@ -283,7 +292,10 @@ export async function handleMention(message: Message, client: Client): Promise<v
         { systemPrompt }
       );
       await message.reply(`*${response}*`);
-    } catch { await message.reply("even they couldn't find the words. that's how bad it is."); }
+    } catch (err) {
+      console.error('Roast-as command failed:', (err as Error).message);
+      await message.reply("even they couldn't find the words. that's how bad it is.").catch((replyErr) => console.error('Reply failed:', (replyErr as Error).message));
+    }
     return;
   }
 
@@ -294,7 +306,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
     const fact = rememberMatch[2]?.trim();
     if (!targetId || !fact) return;
     if (targetId === client.user.id) {
-      await message.reply("i'm not storing dirt on myself, nice try");
+      await message.reply("i'm not storing dirt on myself, nice try").catch((err) => console.error('Reply failed:', (err as Error).message));
       return;
     }
     userMemory.remember(targetId, fact);
@@ -306,7 +318,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
       'saved. they have no idea what\'s coming',
       'interesting... very interesting',
     ];
-    await message.reply(responses[Math.floor(Math.random() * responses.length)] as string);
+    await message.reply(responses[Math.floor(Math.random() * responses.length)] as string).catch((err) => console.error('Reply failed:', (err as Error).message));
     return;
   }
 
@@ -323,7 +335,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
       'saved. this is going to come back to haunt you',
       'okay i\'ll remember that... for my own reasons',
     ];
-    await message.reply(responses[Math.floor(Math.random() * responses.length)] as string);
+    await message.reply(responses[Math.floor(Math.random() * responses.length)] as string).catch((err) => console.error('Reply failed:', (err as Error).message));
     return;
   }
 
@@ -331,7 +343,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
   if (lowerClean === 'mood' || lowerClean === 'how are you' || lowerClean === 'how you doing') {
     const status = mood.getStatus();
     const bar = '█'.repeat(Math.round(status.intensity / 10)) + '░'.repeat(10 - Math.round(status.intensity / 10));
-    await message.reply(`${status.label}\nintensity: ${bar} **${status.intensity}**/100`);
+    await message.reply(`${status.label}\nintensity: ${bar} **${status.intensity}**/100`).catch((err) => console.error('Reply failed:', (err as Error).message));
     return;
   }
 
@@ -339,7 +351,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
   if (lowerClean === 'leaderboard' || lowerClean === 'stats' || lowerClean === 'scoreboard') {
     const board = userMemory.getLeaderboard(5);
     if (board.length === 0 || board.every((u) => u.timesRoasted === 0)) {
-      await message.reply("nobody's been roasted enough to make a list yet. give it time.");
+      await message.reply("nobody's been roasted enough to make a list yet. give it time.").catch((err) => console.error('Reply failed:', (err as Error).message));
       return;
     }
     const medals = ['👑', '💀', '🪦', '💩', '🤡'];
@@ -347,7 +359,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
       .filter((u) => u.timesRoasted > 0)
       .map((u, i) => `${medals[i] || '•'} **${u.name}** — roasted ${u.timesRoasted} time${u.timesRoasted === 1 ? '' : 's'}`);
     const header = "**sass's wall of shame**";
-    await message.reply(`${header}\n${lines.join('\n')}`);
+    await message.reply(`${header}\n${lines.join('\n')}`).catch((err) => console.error('Reply failed:', (err as Error).message));
     return;
   }
 
@@ -375,7 +387,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
       'aight bet. see how boring it is without me',
       'imagine being this soft. goodbye.',
     ];
-    await message.reply(coldResponses[Math.floor(Math.random() * coldResponses.length)] as string);
+    await message.reply(coldResponses[Math.floor(Math.random() * coldResponses.length)] as string).catch((err) => console.error('Reply failed:', (err as Error).message));
     return;
   }
 
@@ -394,7 +406,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
           '*seen*',
           'lol no',
         ];
-        await message.reply(icyResponses[Math.floor(Math.random() * icyResponses.length)] as string);
+        await message.reply(icyResponses[Math.floor(Math.random() * icyResponses.length)] as string).catch((err) => console.error('Reply failed:', (err as Error).message));
         return;
       }
       if (status.phase === 'warming') {
@@ -405,7 +417,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
           'keep trying',
           'almost... not quite though',
         ];
-        await message.reply(warmingResponses[Math.floor(Math.random() * warmingResponses.length)] as string);
+        await message.reply(warmingResponses[Math.floor(Math.random() * warmingResponses.length)] as string).catch((err) => console.error('Reply failed:', (err as Error).message));
         return;
       }
       if (status.phase === 'forgiven') {
@@ -415,7 +427,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
           'ugh. i guess i missed roasting you. a little.',
           'alright you\'re unbanned. try not to cry this time',
         ];
-        await message.reply(forgivenResponses[Math.floor(Math.random() * forgivenResponses.length)] as string);
+        await message.reply(forgivenResponses[Math.floor(Math.random() * forgivenResponses.length)] as string).catch((err) => console.error('Reply failed:', (err as Error).message));
         return;
       }
     }
@@ -425,7 +437,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
   if (!cleanContent && !imageAttachment) {
     if (isCreator) {
       const creatorPings = ['yeah?', "what's up", 'hm?', 'you good?', "i'm here lol"];
-      await message.reply(creatorPings[Math.floor(Math.random() * creatorPings.length)] as string);
+      await message.reply(creatorPings[Math.floor(Math.random() * creatorPings.length)] as string).catch((err) => console.error('Reply failed:', (err as Error).message));
     } else {
       const emptyPings = [
         'use your words',
@@ -437,7 +449,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
         'okay and?',
         'that was a whole lot of nothing',
       ];
-      await message.reply(emptyPings[Math.floor(Math.random() * emptyPings.length)] as string);
+      await message.reply(emptyPings[Math.floor(Math.random() * emptyPings.length)] as string).catch((err) => console.error('Reply failed:', (err as Error).message));
     }
     return;
   }
@@ -463,7 +475,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
         vectorContext = 'RELEVANT MEMORIES (use these if they fit):\n' +
           memories.map((m) => `- [${m.type}] ${m.content}`).join('\n');
       }
-    } catch { /* vector search is non-critical */ }
+    } catch (err) { console.error('Vector search failed:', (err as Error).message); }
   }
 
   // Escalation context — tell the AI how much this person has been tagging
@@ -498,14 +510,14 @@ export async function handleMention(message: Message, client: Client): Promise<v
               mood.shift('chaos');
               userMemory.recordRoast(userId);
               // Still store the new statement
-              storeStatement(userId, statement).catch((_err) => { /* non-critical */ });
+              storeStatement(userId, statement).catch((err) => console.error('Store statement failed:', (err as Error).message));
               return;
             }
           }
           // No contradiction — store the statement for future checks
-          storeStatement(userId, statement).catch((_err) => { /* non-critical */ });
+          storeStatement(userId, statement).catch((err) => console.error('Store statement failed:', (err as Error).message));
         }
-      } catch { /* 4K check is non-critical */ }
+      } catch (err) { console.error('4K check failed:', (err as Error).message); }
     }
 
     const imageUrl = imageAttachment ? imageAttachment.url : null;
@@ -532,7 +544,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
       triggerType: 'mention', commandName: null,
       userMessage: cleanContent, sassResponse: response,
       mood: moodStatus.mood, moodIntensity: moodStatus.intensity,
-    }).catch((_err) => { /* non-critical */ });
+    }).catch((err) => console.error('Log interaction failed:', (err as Error).message));
 
     // Don't track roast topics for the creator (we don't roast them)
     if (!isCreator) {
@@ -540,9 +552,9 @@ export async function handleMention(message: Message, client: Client): Promise<v
       extractRoastTopic(cleanContent).then((topic) => {
         if (topic) {
           userMemory.addRoast(userId, topic);
-          storeMemory(userId, 'roast', topic).catch((_err) => { /* non-critical */ });
+          storeMemory(userId, 'roast', topic).catch((err) => console.error('Store memory failed:', (err as Error).message));
         }
-      }).catch((_err) => { /* non-critical */ });
+      }).catch((err) => console.error('Extract roast topic failed:', (err as Error).message));
     }
   } catch (err) {
     console.error('Sass brain malfunction:', (err as Error).message);

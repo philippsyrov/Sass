@@ -18,11 +18,20 @@ class UserMemory {
   users: Record<string, UserData>;
   _wildQuotes: WildQuote[] | null;
   _beefs: Record<string, BeefRecord> | null;
+  private _dirty = false;
 
   constructor() {
     this.users = this._load();
     this._wildQuotes = null;
     this._beefs = null;
+
+    // Debounced save — flush dirty state every 30 seconds instead of on every message
+    setInterval(() => {
+      if (this._dirty) {
+        this._save();
+        this._dirty = false;
+      }
+    }, 30_000);
   }
 
   _load(): Record<string, UserData> {
@@ -42,8 +51,8 @@ class UserMemory {
         mkdirSync(MEMORY_DIR, { recursive: true });
       }
       writeFileSync(MEMORY_FILE, JSON.stringify(this.users, null, 2));
-    } catch (_err) {
-      console.error('Failed to save user memory');
+    } catch (err) {
+      console.error('Failed to save user memory:', (err as Error).message);
     }
   }
 
@@ -60,7 +69,7 @@ class UserMemory {
     user.name = displayName;
     user.lastSeen = Date.now();
     user.messageCount++;
-    this._save();
+    this._dirty = true;
   }
 
   /**
@@ -281,7 +290,7 @@ class UserMemory {
     try {
       const path = join(MEMORY_DIR, 'wild-quotes.json');
       if (existsSync(path)) return JSON.parse(readFileSync(path, 'utf-8')) as WildQuote[];
-    } catch (_err) { /* non-critical */ }
+    } catch (err) { console.error('Failed to load wild quotes:', (err as Error).message); }
     return [];
   }
 
@@ -289,7 +298,7 @@ class UserMemory {
     try {
       if (!existsSync(MEMORY_DIR)) mkdirSync(MEMORY_DIR, { recursive: true });
       writeFileSync(join(MEMORY_DIR, 'wild-quotes.json'), JSON.stringify(this._wildQuotes, null, 2));
-    } catch (_err) { /* non-critical */ }
+    } catch (err) { console.error('Failed to save wild quotes:', (err as Error).message); }
   }
 
   /**
@@ -320,7 +329,7 @@ class UserMemory {
     try {
       const path = join(MEMORY_DIR, 'beefs.json');
       if (existsSync(path)) return JSON.parse(readFileSync(path, 'utf-8')) as Record<string, BeefRecord>;
-    } catch (_err) { /* non-critical */ }
+    } catch (err) { console.error('Failed to load beefs:', (err as Error).message); }
     return {};
   }
 
@@ -328,7 +337,7 @@ class UserMemory {
     try {
       if (!existsSync(MEMORY_DIR)) mkdirSync(MEMORY_DIR, { recursive: true });
       writeFileSync(join(MEMORY_DIR, 'beefs.json'), JSON.stringify(this._beefs, null, 2));
-    } catch (_err) { /* non-critical */ }
+    } catch (err) { console.error('Failed to save beefs:', (err as Error).message); }
   }
 
   /**

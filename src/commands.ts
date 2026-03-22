@@ -1,294 +1,28 @@
 import {
-  SlashCommandBuilder,
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
   ComponentType,
   type ChatInputCommandInteraction,
-  type Presence,
-  type Message,
-  type ThreadChannel,
 } from 'discord.js';
 import { queryAI } from './ai.js';
 import { userMemory } from './userMemory.js';
 import { buildHelpPages } from './helpPages.js';
 import { logCommand, logInteraction } from './database.js';
 import { mood } from './mood.js';
-import type { BattleState, MainCharacter } from './types.js';
 
-// --- Daily rate limiting ---
-const dailyUsage = new Map<string, string>(); // key: "userId:command", value: date string
-const MAX_DAILY_TRACKED = 5000;
+// Re-export from extracted modules so existing imports don't break
+export { commands } from './commandDefinitions.js';
+export { EIGHT_BALL, FORTUNES, QUOTE_AUTHORS } from './commandDefinitions.js';
+export { activeBattles, handleBattleMessage } from './roastBattle.js';
+export { getActivityDescription, getMainCharacter, hasUsedToday, markUsedToday, pickRandom } from './shared/commandUtils.js';
 
-function hasUsedToday(userId: string, command: string): boolean {
-  const key = `${userId}:${command}`;
-  const today = new Date().toDateString();
-  return dailyUsage.get(key) === today;
-}
+import { getActivityDescription, getMainCharacter, hasUsedToday, markUsedToday } from './shared/commandUtils.js';
+import { EIGHT_BALL, FORTUNES, QUOTE_AUTHORS } from './commandDefinitions.js';
+import { activeBattles } from './roastBattle.js';
 
-function markUsedToday(userId: string, command: string): void {
-  const key = `${userId}:${command}`;
-  dailyUsage.set(key, new Date().toDateString());
-  if (dailyUsage.size > MAX_DAILY_TRACKED) {
-    const oldest = dailyUsage.keys().next().value;
-    if (oldest) dailyUsage.delete(oldest);
-  }
-}
-
-// Clean up stale daily entries every hour
-setInterval(() => {
-  const today = new Date().toDateString();
-  for (const [key, date] of dailyUsage) {
-    if (date !== today) dailyUsage.delete(key);
-  }
-}, 60 * 60 * 1000);
-
-// --- Activity description helper ---
-export function getActivityDescription(presence: Presence | null): string | null {
-  if (!presence?.activities || presence.activities.length === 0) return null;
-
-  const parts: string[] = [];
-  for (const activity of presence.activities) {
-    // ActivityType: 0=Playing, 1=Streaming, 2=Listening, 3=Watching, 4=Custom, 5=Competing
-    switch (activity.type) {
-      case 0: { // Playing
-        let desc = `playing ${activity.name}`;
-        if (activity.details) desc += ` — ${activity.details}`;
-        if (activity.state) desc += ` (${activity.state})`;
-        if (activity.timestamps?.start) {
-          const elapsed = Math.floor((Date.now() - activity.timestamps.start.getTime()) / 60000);
-          if (elapsed >= 60) desc += ` for ${Math.floor(elapsed / 60)}h ${elapsed % 60}m`;
-          else if (elapsed > 0) desc += ` for ${elapsed}m`;
-        }
-        parts.push(desc);
-        break;
-      }
-      case 1: parts.push(`streaming ${activity.name}${activity.url ? ` on ${activity.url}` : ''}`); break;
-      case 2: parts.push(`listening to ${activity.details ?? activity.name}${activity.state ? ` by ${activity.state}` : ''}`); break;
-      case 3: parts.push(`watching ${activity.name}`); break;
-      case 4: if (activity.state) parts.push(`custom status: "${activity.state}"`); break;
-      case 5: parts.push(`competing in ${activity.name}`); break;
-    }
-  }
-  return parts.length > 0 ? parts.join(', ') : null;
-}
-
-// --- Main Character tracking ---
-const mainCharacters = new Map<string, MainCharacter>(); // guildId -> { name, date }
-
-export function getMainCharacter(guildId: string): MainCharacter | null {
-  const mc = mainCharacters.get(guildId);
-  const today = new Date().toDateString();
-  if (mc && mc.date === today) return mc;
-
-  // Pick new main character — most active user today (from memory)
-  const stats = userMemory.getServerStats();
-  if (!stats?.mostActive) return null;
-  const newMc: MainCharacter = { name: stats.mostActive.name, date: today };
-  mainCharacters.set(guildId, newMc);
-  return newMc;
-}
-
-// --- Command definitions ---
-
-export const commands = [
-  new SlashCommandBuilder()
-    .setName('8ball')
-    .setDescription('Ask the magic 8 ball a question (with sass)')
-    .addStringOption((opt) => opt.setName('question').setDescription('Your question').setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName('ship')
-    .setDescription('Test compatibility between two users')
-    .addUserOption((opt) => opt.setName('user1').setDescription('First person').setRequired(true))
-    .addUserOption((opt) => opt.setName('user2').setDescription('Second person').setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName('hottake')
-    .setDescription('Generate a controversial hot take')
-    .addStringOption((opt) => opt.setName('topic').setDescription('Optional topic').setRequired(false)),
-
-  new SlashCommandBuilder()
-    .setName('fortune')
-    .setDescription('Get a fortune cookie message (but unhinged)'),
-
-  new SlashCommandBuilder()
-    .setName('quote')
-    .setDescription('Get a fake inspirational quote'),
-
-  new SlashCommandBuilder()
-    .setName('status')
-    .setDescription("Roast someone's Discord status")
-    .addUserOption((opt) => opt.setName('user').setDescription('Who to roast').setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName('favorite')
-    .setDescription('Check who is the current favorite user'),
-
-  new SlashCommandBuilder()
-    .setName('npc')
-    .setDescription('Generate NPC dialogue for a user')
-    .addUserOption((opt) => opt.setName('user').setDescription('Who to NPC-ify').setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName('ping')
-    .setDescription('Check if the bot is alive and responding'),
-
-  new SlashCommandBuilder()
-    .setName('sass')
-    .setDescription('Get a sassy response from the bot')
-    .addStringOption((opt) => opt.setName('message').setDescription('What to say to Sass').setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName('halloffame')
-    .setDescription('The wildest things people have said in this server'),
-
-  new SlashCommandBuilder()
-    .setName('help')
-    .setDescription('Show help information about SassyBot'),
-
-  new SlashCommandBuilder()
-    .setName('conspiracy')
-    .setDescription('Generate an absurd conspiracy theory about someone')
-    .addUserOption((opt) => opt.setName('user').setDescription('The suspect').setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName('compliment')
-    .setDescription('Give someone a backhanded compliment')
-    .addUserOption((opt) => opt.setName('user').setDescription('The lucky recipient').setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName('roastas')
-    .setDescription('Roast someone as a specific persona')
-    .addUserOption((opt) => opt.setName('user').setDescription('Who to roast').setRequired(true))
-    .addStringOption((opt) => opt.setName('persona').setDescription('Who to roast as').setRequired(true)
-      .addChoices(
-        { name: 'Gordon Ramsay', value: 'gordon-ramsay' },
-        { name: 'Shakespeare', value: 'shakespeare' },
-        { name: 'Disappointed Mom', value: 'disappointed-mom' },
-        { name: 'Drill Sergeant', value: 'drill-sergeant' },
-        { name: 'Therapist', value: 'therapist' },
-        { name: 'David Attenborough', value: 'david-attenborough' },
-        { name: 'Anime Villain', value: 'anime-villain' },
-        { name: 'Passive-Aggressive Coworker', value: 'passive-aggressive-coworker' },
-      )),
-
-  new SlashCommandBuilder()
-    .setName('translate')
-    .setDescription('Translate a message into a different vibe')
-    .addStringOption((opt) => opt.setName('message').setDescription('The message to translate').setRequired(true))
-    .addStringOption((opt) => opt.setName('style').setDescription('Translation style').setRequired(true)
-      .addChoices(
-        { name: 'Corporate Email', value: 'corporate' },
-        { name: 'Gen Z Brainrot', value: 'genz' },
-        { name: 'Shakespeare', value: 'shakespeare' },
-        { name: 'Passive-Aggressive', value: 'passive-aggressive' },
-        { name: 'Overenthusiastic Influencer', value: 'influencer' },
-        { name: 'Caveman', value: 'caveman' },
-        { name: 'Noir Detective', value: 'noir' },
-        { name: 'Pirate', value: 'pirate' },
-      )),
-
-  new SlashCommandBuilder()
-    .setName('horoscope')
-    .setDescription('Get your sassy daily horoscope')
-    .addStringOption((opt) => opt.setName('sign').setDescription('Your zodiac sign').setRequired(true)
-      .addChoices(
-        { name: 'Aries', value: 'aries' }, { name: 'Taurus', value: 'taurus' },
-        { name: 'Gemini', value: 'gemini' }, { name: 'Cancer', value: 'cancer' },
-        { name: 'Leo', value: 'leo' }, { name: 'Virgo', value: 'virgo' },
-        { name: 'Libra', value: 'libra' }, { name: 'Scorpio', value: 'scorpio' },
-        { name: 'Sagittarius', value: 'sagittarius' }, { name: 'Capricorn', value: 'capricorn' },
-        { name: 'Aquarius', value: 'aquarius' }, { name: 'Pisces', value: 'pisces' },
-      )),
-
-  new SlashCommandBuilder()
-    .setName('roastbattle')
-    .setDescription('Challenge someone to a roast battle')
-    .addUserOption((opt) => opt.setName('opponent').setDescription('Who to battle').setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName('beef')
-    .setDescription('Check the beef between two users')
-    .addUserOption((opt) => opt.setName('user1').setDescription('First person').setRequired(true))
-    .addUserOption((opt) => opt.setName('user2').setDescription('Second person').setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName('maincharacter')
-    .setDescription('See who the main character of the day is'),
-
-  new SlashCommandBuilder()
-    .setName('wrapped')
-    .setDescription('Get the server roast recap'),
-
-  new SlashCommandBuilder()
-    .setName('dare')
-    .setDescription('Dare someone to do something unhinged')
-    .addUserOption((opt) => opt.setName('user').setDescription('Who to dare').setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName('tierlist')
-    .setDescription('Generate a tier list for any topic')
-    .addStringOption((opt) => opt.setName('topic').setDescription('What to rank').setRequired(true))
-    .addStringOption((opt) => opt.setName('items').setDescription('Comma-separated items (optional, AI generates if empty)').setRequired(false)),
-
-  new SlashCommandBuilder()
-    .setName('confess')
-    .setDescription('Send an anonymous confession to someone')
-    .addUserOption((opt) => opt.setName('user').setDescription('Who to confess to').setRequired(true))
-    .addStringOption((opt) => opt.setName('confession').setDescription('Your anonymous confession').setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName('predict')
-    .setDescription('Predict someone\'s future based on their Discord behavior')
-    .addUserOption((opt) => opt.setName('user').setDescription('Whose future to predict (defaults to you)').setRequired(false)),
-];
-
-// --- 8ball responses ---
-const EIGHT_BALL: string[] = [
-  "absolutely not lmao",
-  "yeah... no",
-  "the stars say you're delusional",
-  "ask again when you're less annoying",
-  "signs point to you being a clown",
-  "unfortunately for everyone involved, yes",
-  "i'd say yes but i don't wanna give you hope",
-  "100% — and that's the problem",
-  "my sources say you should sit down",
-  "outlook: bleak, just like your chances",
-  "hard yes but you didn't hear it from me",
-  "the universe says maybe. i say no.",
-  "yes, and you should be worried about that",
-  "genuinely cannot believe you had to ask",
-  "no. next question.",
-  "bold of you to think fate cares about you",
-];
-
-// --- Fortune cookies ---
-const FORTUNES: string[] = [
-  "your future holds... disappointment. but you're used to that.",
-  "a great opportunity approaches. you will absolutely fumble it.",
-  "someone is thinking about you right now. it's not flattering.",
-  "today is a good day to reconsider all your life choices.",
-  "love is around the corner. it saw you and kept walking.",
-  "you will find success. just not in this lifetime.",
-  "a stranger will change your life. probably by cutting you off in traffic.",
-  "the stars align for you today. too bad you can't read a star chart.",
-  "wealth is coming your way. it's a penny on the ground.",
-  "trust your instincts. actually, maybe don't.",
-];
-
-// --- Quote authors ---
-const QUOTE_AUTHORS: string[] = [
-  'Sun Tzu', 'Gandhi', 'Einstein', 'Aristotle', 'Confucius',
-  'Socrates', 'Shakespeare', 'Plato', 'Lao Tzu', 'Marcus Aurelius',
-  'Nikola Tesla', 'Napoleon', 'Cleopatra', 'Genghis Khan',
-];
-
-// --- Command handlers ---
-
-// Global slash command rate limit per user with soft ban escalation
+// --- Global slash command rate limit per user with soft ban escalation ---
 const slashCmdTracker = new Map<string, number[]>();
 const slashCmdStrikes = new Map<string, { count: number; bannedUntil: number }>();
 const SLASH_CMD_LIMIT = 5; // max commands per window
@@ -491,7 +225,8 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           { systemPrompt: 'You are a sassy magic 8 ball. Answer the question directly but make them feel dumb for asking. One short sentence. Lowercase.' }
         );
         await interaction.editReply(`🎱 **${question}**\n${answer}`);
-      } catch {
+      } catch (err) {
+        console.error('8ball command failed:', (err as Error).message);
         const answer = EIGHT_BALL[Math.floor(Math.random() * EIGHT_BALL.length)] ?? 'no.';
         await interaction.editReply(`🎱 **${question}**\n${answer}`);
       }
@@ -513,7 +248,8 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           { systemPrompt: 'You generate fake quotes. One sentence. No quotation marks. Lowercase.' }
         );
         await interaction.editReply(`> *${(response ?? '').replace(/"/g, '')}*\n> — ${author} (probably)`);
-      } catch {
+      } catch (err) {
+        console.error('Quote command failed:', (err as Error).message);
         await interaction.editReply('> *the only real failure is being too boring to quote*\n> — me, just now');
       }
       break;
@@ -530,7 +266,8 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           systemPrompt: 'You generate hot takes. Be controversial but not bigoted. Funny and bold. Lowercase.',
         });
         await interaction.editReply(`🔥 **hot take:**\n${response}`);
-      } catch {
+      } catch (err) {
+        console.error('Hottake command failed:', (err as Error).message);
         await interaction.editReply("🔥 **hot take:**\nthis command failing is still more interesting than your personality");
       }
       break;
@@ -544,9 +281,9 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
       const bar = '❤️'.repeat(Math.round(percent / 10)) + '🖤'.repeat(10 - Math.round(percent / 10));
 
       try {
-        const prompt = `Rate the compatibility between "${user1.displayName}" and "${user2.displayName}" at ${percent}%. Give a one-sentence brutal, funny verdict. Be creative — if it's low, roast them. If it's high, make it backhanded.`;
+        const prompt = `"${user1.displayName}" x "${user2.displayName}" at ${percent}%. ONE sentence verdict, max 12 words. No metaphors or object comparisons. React like a friend judging a couple.`;
         const verdict = await queryAI(prompt, {
-          systemPrompt: 'You are Sass, a sassy Discord bot. One sentence only. Lowercase. Brutal and funny.',
+          systemPrompt: 'You judge ship compatibility. ONE short sentence. Max 12 words. Lowercase. Talk like a 20-year-old, not a poet. No "chemistry of a [object]" comparisons.',
         });
 
         const shipName = user1.displayName.slice(0, Math.ceil(user1.displayName.length / 2)) +
@@ -558,7 +295,8 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           `${bar} **${percent}%**\n\n` +
           `*${verdict}*`
         );
-      } catch {
+      } catch (err) {
+        console.error('Ship command failed:', (err as Error).message);
         await interaction.editReply(
           `💘 **${user1.displayName}** x **${user2.displayName}**\n` +
           `${bar} **${percent}%**\n\n` +
@@ -588,11 +326,12 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
         }
 
         const response = await queryAI(
-          `Roast this person's Discord activity. Their name is "${targetUser.displayName}" and they are: ${activityInfo}. Be specific about the activity. One or two brutal sentences.`,
-          { systemPrompt: 'You are Sass, a sassy Discord bot. Roast their activity/status. Lowercase. Brutal and funny. Reference the specific game/app/activity.' }
+          `Roast "${targetUser.displayName}" for this Discord activity: ${activityInfo}. ONE sentence, max 15 words. Be specific about the game/app. No metaphors, no essays.`,
+          { systemPrompt: 'You roast Discord statuses. ONE short sentence. Lowercase. Max 15 words. Talk like a 20-year-old texting, not writing a blog post. No generic comparisons or fancy vocabulary.' }
         );
         await interaction.editReply(`**${targetUser.displayName}**: *${activityInfo}*\n\n${response}`);
-      } catch {
+      } catch (err) {
+        console.error('Status command failed:', (err as Error).message);
         await interaction.editReply("couldn't read their status. they're probably hiding from me. smart.");
       }
       break;
@@ -624,7 +363,8 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           { systemPrompt: 'You generate RPG NPC cards. Follow the format exactly. Be funny and roast-y. Lowercase dialogue.' }
         );
         await interaction.editReply(`⚔️ **${targetUser.displayName}** — NPC\n${response}`);
-      } catch {
+      } catch (err) {
+        console.error('NPC command failed:', (err as Error).message);
         await interaction.editReply(
           `⚔️ **${targetUser.displayName}** — NPC\n` +
           `**Class:** Village Idiot\n\n` +
@@ -653,7 +393,8 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
       try {
         const response = await queryAI(`${interaction.user.displayName} says: ${msg}`);
         await interaction.editReply(response ?? "my brain broke. congrats, you're that boring.");
-      } catch {
+      } catch (err) {
+        console.error('Sass command failed:', (err as Error).message);
         await interaction.editReply("my brain broke. congrats, you're that boring.");
       }
       break;
@@ -668,7 +409,8 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           { systemPrompt: 'You generate absurd conspiracy theories about people. Be creative and unhinged but not mean-spirited. Lowercase. Include fake "evidence" like timestamps and suspicious behavior.' }
         );
         await interaction.editReply(`🕵️ **CLASSIFIED INTEL ON ${targetUser.displayName.toUpperCase()}**\n\n${response}`);
-      } catch {
+      } catch (err) {
+        console.error('Conspiracy command failed:', (err as Error).message);
         await interaction.editReply(`🕵️ i tried to investigate ${targetUser.displayName} but my files were mysteriously deleted. suspicious.`);
       }
       break;
@@ -683,7 +425,8 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           { systemPrompt: 'You give backhanded compliments. Sound sincere at first, then twist. Lowercase. Subtle is key — the best ones take a second to register.' }
         );
         await interaction.editReply(`💐 ${response}`);
-      } catch {
+      } catch (err) {
+        console.error('Compliment command failed:', (err as Error).message);
         await interaction.editReply(`💐 ${targetUser.displayName}, you're really brave for being yourself when literally any other option exists.`);
       }
       break;
@@ -719,7 +462,8 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           'passive-aggressive-coworker': '💼 Passive-Aggressive Coworker',
         };
         await interaction.editReply(`${labels[persona]} on **${targetUser.displayName}**:\n\n*${response}*`);
-      } catch {
+      } catch (err) {
+        console.error('Roastas command failed:', (err as Error).message);
         await interaction.editReply(`even ${persona} couldn't find the words. that's how bad it is.`);
       }
       break;
@@ -750,7 +494,8 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           { systemPrompt: styles[style] }
         );
         await interaction.editReply(`${labels[style]} **translation:**\n\n> original: *"${msg}"*\n\n${response}`);
-      } catch {
+      } catch (err) {
+        console.error('Translate command failed:', (err as Error).message);
         await interaction.editReply("translation failed. some things are beyond even my abilities.");
       }
       break;
@@ -771,7 +516,8 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
         if (!response) throw new Error('Empty response');
         markUsedToday(interaction.user.id, 'horoscope');
         await interaction.editReply(`${getZodiacEmoji(sign)} **${sign}** — daily reading\n\n${response}`);
-      } catch {
+      } catch (err) {
+        console.error('Horoscope command failed:', (err as Error).message);
         await interaction.editReply(`${getZodiacEmoji(sign)} **${sign}**: the stars tried to read your future but fell asleep. that's the reading.`);
       }
       break;
@@ -930,7 +676,8 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           .setTimestamp();
         markUsedToday(interaction.user.id, 'wrapped');
         await interaction.editReply({ embeds: [embed] });
-      } catch {
+      } catch (err) {
+        console.error('Wrapped command failed:', (err as Error).message);
         await interaction.editReply("my analytics department is on strike. try again later.");
       }
       break;
@@ -960,7 +707,8 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           )
           .setFooter({ text: 'sass dares you. do it or be a coward.' });
         await interaction.editReply({ embeds: [embed] });
-      } catch {
+      } catch (err) {
+        console.error('Dare command failed:', (err as Error).message);
         await interaction.editReply(`i dare ${targetUser.displayName} to do literally anything interesting for once.`);
       }
       break;
@@ -985,7 +733,8 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           .setDescription(response)
           .setFooter({ text: 'my rankings are objectively correct. don\'t @ me.' });
         await interaction.editReply({ embeds: [embed] });
-      } catch {
+      } catch (err) {
+        console.error('Tierlist command failed:', (err as Error).message);
         await interaction.editReply(`i tried to rank "${topic}" but everything was F tier. including this question.`);
       }
       break;
@@ -1079,7 +828,8 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           .setFooter({ text: 'sass sees all. sass knows all. sass judges all.' })
           .setTimestamp();
         await interaction.editReply({ embeds: [embed] });
-      } catch {
+      } catch (err) {
+        console.error('Predict command failed:', (err as Error).message);
         await interaction.editReply(`the crystal ball showed me ${targetUser.displayName}'s future and honestly? it cracked. that's the prediction.`);
       }
       break;
@@ -1097,116 +847,4 @@ function getZodiacEmoji(sign: string): string {
     libra: '♎', scorpio: '♏', sagittarius: '♐', capricorn: '♑', aquarius: '♒', pisces: '♓',
   };
   return emojis[sign] ?? '⭐';
-}
-
-// --- Roast Battle State ---
-export const activeBattles = new Map<string, BattleState>();
-const BATTLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 min max per battle
-
-// Clean up abandoned battles every 5 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [id, battle] of activeBattles) {
-    if (now - (battle.startedAt ?? 0) > BATTLE_TIMEOUT_MS) {
-      activeBattles.delete(id);
-    }
-  }
-}, 5 * 60 * 1000);
-
-export async function handleBattleMessage(message: Message): Promise<boolean> {
-  // Only handle messages in threads that are active battles
-  const battle = activeBattles.get(message.channel.id);
-  if (!battle) return false;
-  const threadChannel = message.channel as ThreadChannel;
-
-  // Ignore messages from non-participants
-  if (message.author.id !== battle.challenger.id && message.author.id !== battle.opponent.id) return false;
-
-  // Check if someone is accepting a battle
-  if (message.content.toLowerCase() === 'accept' && battle.phase === 'waiting' && message.author.id === battle.opponent.id) {
-    if (battle.timeout) clearTimeout(battle.timeout);
-    battle.phase = 'active';
-    battle.round = 1;
-    battle.currentTurn = battle.challenger.id;
-
-    const roundEmbed = new EmbedBuilder()
-      .setColor(0xFF4D6D)
-      .setTitle('⚔️ ROUND 1/3')
-      .setDescription(`**${battle.challenger.displayName}**, you challenged — you go first.\n\ndrop your best roast.`);
-    await threadChannel.send({ embeds: [roundEmbed] });
-    return true;
-  }
-
-  // Check if this is a roast in an active battle
-  if (battle.phase === 'active' && message.author.id === battle.currentTurn) {
-    const battleId = message.channel.id;
-    try {
-      const scoreResponse = await queryAI(
-        `You are judging a roast battle. Score this roast from 1-10 and give a one-sentence reaction.\n\nRoast: "${message.content}"\n\nRespond in EXACTLY this format:\nSCORE:N\nREACTION:your reaction`,
-        { systemPrompt: 'You judge roast battles. Be fair but entertaining. Score genuinely — a weak roast gets a 3-4, a decent one 5-7, a banger 8-10. One sentence reaction.' }
-      );
-
-      const scoreLine = scoreResponse?.match(/SCORE:(\d+)/);
-      const reactionLine = scoreResponse?.match(/REACTION:(.+)/);
-      const score = scoreLine?.[1] ? Math.min(10, Math.max(1, parseInt(scoreLine[1], 10))) : 5;
-      const reaction = reactionLine?.[1] ? reactionLine[1].trim() : "interesting.";
-
-      const authorScores = battle.scores[message.author.id];
-      if (authorScores) authorScores.push(score);
-
-      const scoreBar = '🔥'.repeat(score) + '💨'.repeat(10 - score);
-      await message.reply(`${scoreBar} **${score}/10**\n*${reaction}*`);
-
-      // Switch turns or advance round
-      const otherId = message.author.id === battle.challenger.id ? battle.opponent.id : battle.challenger.id;
-      const otherName = message.author.id === battle.challenger.id ? battle.opponent.displayName : battle.challenger.displayName;
-
-      const otherScores = battle.scores[otherId];
-      if (otherScores && otherScores.length < battle.round) {
-        battle.currentTurn = otherId;
-        await threadChannel.send(`**${otherName}**, your turn. fire back.`);
-      } else {
-        battle.round++;
-        if (battle.round > battle.maxRounds) {
-          const challengerScores = battle.scores[battle.challenger.id] ?? [];
-          const opponentScores = battle.scores[battle.opponent.id] ?? [];
-          const score1 = challengerScores.reduce((a, b) => a + b, 0);
-          const score2 = opponentScores.reduce((a, b) => a + b, 0);
-          const winner = score1 > score2 ? battle.challenger : score2 > score1 ? battle.opponent : null;
-          const loser = winner ? (winner.id === battle.challenger.id ? battle.opponent : battle.challenger) : null;
-
-          const embed = new EmbedBuilder()
-            .setColor(0xFFD700)
-            .setTitle('⚔️ ROAST BATTLE — FINAL RESULTS')
-            .addFields(
-              { name: battle.challenger.displayName, value: `${challengerScores.join(' + ')} = **${score1}**`, inline: true },
-              { name: 'vs', value: '⚔️', inline: true },
-              { name: battle.opponent.displayName, value: `${opponentScores.join(' + ')} = **${score2}**`, inline: true },
-              { name: '\u200b', value: '\u200b', inline: false },
-              { name: '🏆 Winner', value: winner ? `**${winner.displayName}** absolutely cooked.` : "it's a tie. you're both equally mid.", inline: false },
-            )
-            .setFooter({ text: loser ? `${loser.displayName} needs to sit down for a while` : 'nobody won. everybody lost.' });
-
-          await threadChannel.send({ embeds: [embed] });
-          activeBattles.delete(battleId);
-          // Archive thread after 10 seconds
-          setTimeout(() => threadChannel.setArchived(true).catch((err) => console.error('Failed to archive battle thread:', err.message)), 10000);
-        } else {
-          const roundEmbed = new EmbedBuilder()
-            .setColor(0xFF4D6D)
-            .setTitle(`⚔️ ROUND ${battle.round}/${battle.maxRounds}`)
-            .setDescription(`**${battle.challenger.displayName}**, you're up.`);
-          battle.currentTurn = battle.challenger.id;
-          await threadChannel.send({ embeds: [roundEmbed] });
-        }
-      }
-    } catch {
-      await message.reply("my judging brain broke. i'll give that a 5 out of mercy.");
-      const authorScores = battle.scores[message.author.id];
-      if (authorScores) authorScores.push(5);
-    }
-    return true;
-  }
-
-  return false;
 }

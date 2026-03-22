@@ -60,7 +60,9 @@ function cosineSimilarity(a: number[], b: number[]): number {
     magA += ai * ai;
     magB += bi * bi;
   }
-  return dot / (Math.sqrt(magA) * Math.sqrt(magB));
+  const magnitude = Math.sqrt(magA) * Math.sqrt(magB);
+  if (magnitude === 0) return 0;
+  return dot / magnitude;
 }
 
 /**
@@ -122,7 +124,8 @@ export function getUserMemories(userId: string): MemoryRow[] {
   try {
     const database = getDb();
     return database.prepare('SELECT content, type FROM memories WHERE userId = ? ORDER BY createdAt DESC LIMIT 20').all(userId) as MemoryRow[];
-  } catch (_err) {
+  } catch (err) {
+    console.error('getUserMemories failed:', (err as Error).message);
     return [];
   }
 }
