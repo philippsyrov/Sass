@@ -60,8 +60,53 @@ export async function initDatabase(): Promise<boolean> {
   }
 }
 
+async function migratePairInteractions(): Promise<void> {
+  if (!pool) return;
+  // Check if pair_interactions has server_id in the PK (new schema)
+  // If not, migrate from old schema to new
+  try {
+    const colCheck = await pool.query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_name = 'pair_interactions' AND column_name = 'server_id'`
+    );
+    if (colCheck.rows.length === 0) {
+      console.log('Migrating pair_interactions to guild-scoped schema...');
+      const oldData = await pool.query('SELECT user1_id, user2_id, interaction_count, last_interaction FROM pair_interactions');
+      await pool.query('DROP TABLE pair_interactions');
+      await pool.query(`
+        CREATE TABLE pair_interactions (
+          server_id TEXT NOT NULL,
+          user1_id TEXT NOT NULL,
+          user2_id TEXT NOT NULL,
+          interaction_count INTEGER DEFAULT 1,
+          last_interaction TIMESTAMPTZ DEFAULT NOW(),
+          PRIMARY KEY (server_id, user1_id, user2_id)
+        )
+      `);
+      // Find the most active server to assign old data to
+      const serverResult = await pool.query(
+        `SELECT server_id, COUNT(*) as cnt FROM interactions
+         WHERE server_id IS NOT NULL GROUP BY server_id ORDER BY cnt DESC LIMIT 1`
+      );
+      const fallbackServer = (serverResult.rows[0]?.server_id as string) || 'unknown';
+      for (const row of oldData.rows) {
+        await pool.query(
+          `INSERT INTO pair_interactions (server_id, user1_id, user2_id, interaction_count, last_interaction)
+           VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING`,
+          [fallbackServer, row.user1_id, row.user2_id, row.interaction_count, row.last_interaction]
+        );
+      }
+      console.log(`Migrated ${oldData.rows.length} pair_interactions rows to server ${fallbackServer}`);
+    }
+  } catch (err) {
+    console.error('pair_interactions migration check failed:', (err as Error).message);
+  }
+}
+
 async function createTables(): Promise<void> {
   if (!pool) return;
+  // Migrate old pair_interactions if needed (before CREATE TABLE IF NOT EXISTS)
+  await migratePairInteractions();
   await pool.query(`
     CREATE TABLE IF NOT EXISTS interactions (
       id SERIAL PRIMARY KEY,
