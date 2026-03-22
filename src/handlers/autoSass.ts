@@ -76,6 +76,16 @@ export async function handleAutoSass(message: Message, _client: Client, options:
 
   if (fightPatterns.test(lowerText)) {
     mood.shift('fighting');
+    // Record beef if this is a reply to another user
+    if (message.reference?.messageId) {
+      try {
+        const repliedTo = await message.channel.messages.fetch(message.reference.messageId);
+        if (repliedTo?.author && !repliedTo.author.bot && repliedTo.author.id !== message.author.id) {
+          const topic = text.slice(0, 50);
+          userMemory.addBeef(message.author.id, repliedTo.author.id, topic);
+        }
+      } catch (_err) { /* message might be deleted */ }
+    }
   } else if (wholesomePatterns.test(lowerText)) {
     mood.shift('nice_to_each_other');
   }
