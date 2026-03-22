@@ -10,7 +10,7 @@ import { queryAI } from './ai.js';
 import * as userMemory from './userMemory.js';
 import { buildHelpPages } from './helpPages.js';
 import { logCommand, logInteraction } from './database.js';
-import { mood } from './mood.js';
+import * as mood from './mood.js';
 import { getShipScore, getPairInteractions, warmPairCache } from './shipScore.js';
 import { generateShipImage } from './shipImage.js';
 import { AttachmentBuilder } from 'discord.js';
@@ -458,7 +458,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
 
     case 'conspiracy': {
       const targetUser = interaction.options.getUser('user', true);
-      const conspiracyKey = `${interaction.user.id}:${targetUser.id}`;
+      const conspiracyKey = `${guildId}:${interaction.user.id}:${targetUser.id}`;
       const lastConspiracy = conspiracyCooldowns.get(conspiracyKey);
       if (lastConspiracy && Date.now() - lastConspiracy < CONSPIRACY_COOLDOWN_MS) {
         await interaction.reply({ content: "i already investigated, the case is closed.", ephemeral: true });
@@ -580,7 +580,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
     }
 
     case 'horoscope': {
-      if (hasUsedToday(interaction.user.id, 'horoscope')) {
+      if (hasUsedToday(guildId, interaction.user.id, 'horoscope')) {
         await interaction.reply("you already got your daily reading. the stars don't refresh on demand.");
         break;
       }
@@ -592,7 +592,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           { systemPrompt: 'You write sassy horoscopes. Sound mystical at first, then roast. Lowercase. Include zodiac personality stereotypes as ammunition.' }
         );
         if (!response) throw new Error('Empty response');
-        markUsedToday(interaction.user.id, 'horoscope');
+        markUsedToday(guildId, interaction.user.id, 'horoscope');
         await interaction.editReply(`${getZodiacEmoji(sign)} **${sign}** — daily reading\n\n${response}`);
       } catch (err) {
         console.error('Horoscope command failed:', (err as Error).message);
@@ -722,7 +722,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
     }
 
     case 'wrapped': {
-      if (hasUsedToday(interaction.user.id, 'wrapped')) {
+      if (hasUsedToday(guildId, interaction.user.id, 'wrapped')) {
         await interaction.reply("you already got today's recap. it hasn't gotten any less embarrassing.");
         break;
       }
@@ -753,7 +753,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           )
           .setFooter({ text: "sass analytics department" })
           .setTimestamp();
-        markUsedToday(interaction.user.id, 'wrapped');
+        markUsedToday(guildId, interaction.user.id, 'wrapped');
         await interaction.editReply({ embeds: [embed] });
       } catch (err) {
         console.error('Wrapped command failed:', (err as Error).message);
@@ -765,7 +765,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
     case 'dare': {
       const targetUser = interaction.options.getUser('user', true);
       const dareKey = `${interaction.user.id}:dare`;
-      if (hasUsedToday(interaction.user.id, dareKey)) {
+      if (hasUsedToday(guildId, interaction.user.id, dareKey)) {
         await interaction.reply({ content: "you already dared someone today. one chaos event per day is enough.", ephemeral: true });
         break;
       }
@@ -790,7 +790,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
             { name: 'Difficulty', value: skulls, inline: true },
           )
           .setFooter({ text: 'sass dares you. do it or be a coward.' });
-        markUsedToday(interaction.user.id, dareKey);
+        markUsedToday(guildId, interaction.user.id, dareKey);
         await interaction.editReply({ embeds: [embed] });
       } catch (err) {
         console.error('Dare command failed:', (err as Error).message);
@@ -811,7 +811,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
         await interaction.reply({ content: "confessing to a bot? down bad doesn't even begin to cover it.", ephemeral: true });
         break;
       }
-      if (hasUsedToday(interaction.user.id, 'confess')) {
+      if (hasUsedToday(guildId, interaction.user.id, 'confess')) {
         await interaction.reply({ content: "one confession per day. you're not a priest.", ephemeral: true });
         break;
       }
@@ -827,7 +827,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
         const channel = interaction.channel;
         if (channel && 'send' in channel) {
           await channel.send(`📩 **ANONYMOUS CONFESSION** for <@${targetUser.id}>:\n\n> *"${confession}"*\n\n${commentary ?? "someone couldn't find the guts to say this themselves. shocking."}`);
-          markUsedToday(interaction.user.id, 'confess');
+          markUsedToday(guildId, interaction.user.id, 'confess');
           logInteraction({
             serverId: interaction.guild?.id ?? '',
             serverName: interaction.guild?.name ?? '',
@@ -839,8 +839,8 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
             commandName: 'confess',
             userMessage: confession,
             sassResponse: commentary ?? '',
-            mood: mood.getStatus().mood,
-            moodIntensity: mood.getStatus().intensity,
+            mood: (await mood.getStatus(guildId)).mood,
+            moodIntensity: (await mood.getStatus(guildId)).intensity,
           }).catch((err) => console.error('DB log failed:', err.message));
         }
       } catch (err) {
@@ -853,7 +853,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
     case 'predict': {
       const targetUser = interaction.options.getUser('user') ?? interaction.user;
       const targetKey = `${targetUser.id}:predict`;
-      if (hasUsedToday(interaction.user.id, targetKey)) {
+      if (hasUsedToday(guildId, interaction.user.id, targetKey)) {
         await interaction.reply(`you already got ${targetUser.id === interaction.user.id ? 'your' : 'their'} prediction today. the future hasn't changed in the last 5 minutes.`);
         break;
       }
@@ -879,7 +879,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           { systemPrompt: 'You are a sassy fortune teller. Use the provided Discord data to make specific predictions. Lowercase. Short sentences. Mystical but devastating. Never repeat the same prediction twice — each one must be unique to the user.', maxTokens: 200 }
         );
         if (!response) throw new Error('Empty response from AI');
-        markUsedToday(interaction.user.id, targetKey);
+        markUsedToday(guildId, interaction.user.id, targetKey);
         const embed = new EmbedBuilder()
           .setColor(0x9B59B6)
           .setTitle(`🔮 PREDICTION — ${targetUser.displayName.toUpperCase()}`)

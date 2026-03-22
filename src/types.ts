@@ -102,9 +102,11 @@ export interface QueryAIOptions {
   systemPrompt?: string;
   imageUrl?: string | null;
   maxTokens?: number;
+  temperature?: number;
 }
 
 export interface GetSassResponseOptions {
+  guildId?: string;
   recentContext?: string;
   userContext?: string;
   peopleContext?: string;

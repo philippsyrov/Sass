@@ -261,10 +261,10 @@ client.on('messageReactionAdd', async (reaction, user) => {
   try {
     // Fetch partial reactions/messages
     if (reaction.partial) {
-      try { await reaction.fetch(); } catch { return; }
+      try { await reaction.fetch(); } catch (_err) { return; }
     }
     if (reaction.message.partial) {
-      try { await reaction.message.fetch(); } catch { return; }
+      try { await reaction.message.fetch(); } catch (_err) { return; }
     }
 
     // Ignore bot reactions

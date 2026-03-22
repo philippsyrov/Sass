@@ -6,14 +6,14 @@ import * as userMemory from '../userMemory.js';
 const dailyUsage = new Map<string, string>(); // key: "userId:command", value: date string
 const MAX_DAILY_TRACKED = 5000;
 
-export function hasUsedToday(userId: string, command: string): boolean {
-  const key = `${userId}:${command}`;
+export function hasUsedToday(guildId: string, userId: string, command: string): boolean {
+  const key = `${guildId}:${userId}:${command}`;
   const today = new Date().toDateString();
   return dailyUsage.get(key) === today;
 }
 
-export function markUsedToday(userId: string, command: string): void {
-  const key = `${userId}:${command}`;
+export function markUsedToday(guildId: string, userId: string, command: string): void {
+  const key = `${guildId}:${userId}:${command}`;
   dailyUsage.set(key, new Date().toDateString());
   if (dailyUsage.size > MAX_DAILY_TRACKED) {
     const oldest = dailyUsage.keys().next().value;

@@ -9,7 +9,7 @@ import { messageBuffer } from '../messageBuffer.js';
 import * as userMemory from '../userMemory.js';
 import { isOnAutoSassCooldown, setAutoSassCooldown } from '../cooldown.js';
 import { getActivityDescription } from '../shared/commandUtils.js';
-import { mood } from '../mood.js';
+import * as mood from '../mood.js';
 import { logInteraction } from '../database.js';
 import { recordResponse, getRecentResponses } from '../responseMemory.js';
 
@@ -82,7 +82,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
         if (hasWildContent || hasWeirdClaim || isAllCaps) {
           const authorName = message.author.displayName || message.author.username;
           userMemory.addWildQuote(guildId, message.author.id, authorName, text).catch((err) => console.error('Add wild quote failed:', (err as Error).message));
-          mood.shift('chaos');
+          mood.shift(guildId, 'chaos').catch((err) => console.error('Mood shift failed:', (err as Error).message));
         }
       }
     }
@@ -94,7 +94,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
   const wholesomePatterns = /\b(love you|you'?re (amazing|the best|awesome)|thank you|ily|<3|❤️|😊|🥰)\b/i;
 
   if (fightPatterns.test(lowerText)) {
-    mood.shift('fighting');
+    mood.shift(guildId, 'fighting').catch((err) => console.error('Mood shift failed:', (err as Error).message));
     // Record beef if this is a reply to another user
     if (message.reference?.messageId) {
       try {
@@ -112,7 +112,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
       userMemory.addBeef(guildId, message.author.id, mentionedUser.id, topic).catch((err) => console.error('Add beef failed:', (err as Error).message));
     }
   } else if (wholesomePatterns.test(lowerText)) {
-    mood.shift('nice_to_each_other');
+    mood.shift(guildId, 'nice_to_each_other').catch((err) => console.error('Mood shift failed:', (err as Error).message));
   }
 
   // Cast channel — this handler only runs in guild text channels
@@ -162,7 +162,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
         const gamers = members.filter((m: GuildMember) => {
           if (m.user.bot || m.user.id === process.env.CREATOR_ID) return false;
           // Skip users already activity-roasted in last 24h
-          const lastRoasted = activityRoastCooldowns.get(m.user.id);
+          const lastRoasted = activityRoastCooldowns.get(`${guildId}:${m.user.id}`);
           if (lastRoasted && now - lastRoasted < ACTIVITY_ROAST_COOLDOWN_MS) return false;
           const activity = getActivityDescription(m.presence);
           if (!activity || activity.startsWith('custom status')) return false;
@@ -186,7 +186,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
           if (roast && roast.trim().toUpperCase() !== 'SKIP') {
             setAutoSassCooldown(channelId);
             // Track this user so they don't get activity-roasted again for 24h
-            activityRoastCooldowns.set(target.user.id, Date.now());
+            activityRoastCooldowns.set(`${guildId}:${target.user.id}`, Date.now());
             if (activityRoastCooldowns.size > MAX_ACTIVITY_COOLDOWNS) {
               const oldest = activityRoastCooldowns.keys().next().value;
               if (oldest) activityRoastCooldowns.delete(oldest);
@@ -198,7 +198,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
             await channel.send(activityRoastMsg);
             recordResponse(channelId, roast);
             userMemory.recordRoast(guildId, target.user.id).catch((err) => console.error('Record roast failed:', (err as Error).message));
-            const moodInfo = mood.getStatus();
+            const moodInfo = await mood.getStatus(guildId);
             logInteraction({
               serverId: message.guild?.id, serverName: message.guild?.name,
               channelId: channel.id, channelName: channel.name,
@@ -291,7 +291,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
         await new Promise((resolve) => setTimeout(resolve, delay));
         await message.reply(reaction).catch((err) => console.error('Reply failed:', (err as Error).message));
         recordResponse(channelId, reaction);
-        const moodStatus = mood.getStatus();
+        const moodStatus = await mood.getStatus(guildId);
         logInteraction({
           serverId: message.guild?.id, serverName: message.guild?.name,
           channelId: channel.id, channelName: channel.name,
@@ -316,7 +316,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
         await new Promise((resolve) => setTimeout(resolve, delay));
         await channel.send(joinRemark).catch((err) => console.error('Channel send failed:', (err as Error).message));
         recordResponse(channelId, joinRemark);
-        const moodStatus = mood.getStatus();
+        const moodStatus = await mood.getStatus(guildId);
         logInteraction({
           serverId: message.guild?.id, serverName: message.guild?.name,
           channelId: channel.id, channelName: channel.name,
@@ -345,7 +345,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
     recordResponse(channelId, remark);
     userMemory.recordRoast(guildId, message.author.id).catch((err) => console.error('Record roast failed:', (err as Error).message));
 
-    const moodStatus = mood.getStatus();
+    const moodStatus = await mood.getStatus(guildId);
     logInteraction({
       serverId: message.guild?.id, serverName: message.guild?.name,
       channelId: channel.id, channelName: channel.name,

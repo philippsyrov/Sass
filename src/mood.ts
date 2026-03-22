@@ -1,30 +1,16 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-import type { MoodType, MoodEvent, MoodState, MoodStatus } from './types.js';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const MOOD_FILE = join(__dirname, '..', 'data', 'mood.json');
-const DATA_DIR = join(__dirname, '..', 'data');
-
 /**
- * Dynamic mood system for Sass.
+ * mood.ts — Guild-scoped mood system backed by PostgreSQL
  *
- * Sass has a global mood that shifts based on how the server treats her.
- * Mood affects her tone, temperature, and system prompt additions.
- *
- * Moods:
- * - neutral   — default, standard sass
- * - chaotic   — unhinged, more caps, wilder responses
- * - chill     — playful, lighter roasts, almost friendly
- * - petty     — extra callbacks, brings up old stuff, holds grudges
- * - bored     — dismissive, short, "anyway" energy
- * - unhinged  — full chaos, no filter
- * - soft      — rare, tiny cracks of niceness (still sassy tho)
+ * Each server has its own independent mood state.
+ * Mood affects Sass's tone, temperature, and system prompt.
+ * Decays over time toward neutral.
  */
 
+import { getPool, isDatabaseConnected } from './database.js';
+import type { MoodType, MoodEvent, MoodState, MoodStatus } from './types.js';
+
 const MOOD_DECAY_MS = 30 * 60 * 1000; // mood decays every 30 min
-const DECAY_AMOUNT = 15; // how much intensity drops per decay tick
+const DECAY_AMOUNT = 15;
 
 const MOOD_PROMPTS: Record<MoodType, string> = {
   neutral: '',
@@ -46,144 +32,161 @@ const MOOD_TEMPERATURES: Record<MoodType, number> = {
   soft: 1.0,
 };
 
+const MOOD_LABELS: Record<MoodType, string> = {
+  neutral: '\u{1F610} neutral \u2014 just vibing',
+  chaotic: '\u{1F92A} chaotic \u2014 gremlin mode activated',
+  chill: '\u{1F60E} chill \u2014 almost friendly (don\'t get used to it)',
+  petty: '\u{1F485} petty \u2014 holding grudges and names',
+  bored: '\u{1F611} bored \u2014 couldn\'t care less',
+  unhinged: '\u{1F525} UNHINGED \u2014 no filter, no mercy',
+  soft: '\u{1F97A} soft \u2014 (don\'t tell anyone)',
+};
+
 interface MoodShiftConfig {
   mood: MoodType;
   delta: number;
 }
 
-class MoodSystem {
-  state: MoodState;
+// --- Helper to get mood state from DB ---
+async function getMoodState(guildId: string): Promise<MoodState> {
+  const pool = getPool();
+  if (!pool) return { mood: 'neutral', intensity: 0, lastShift: Date.now(), lastDecay: Date.now() };
 
-  constructor() {
-    this.state = this._load();
-  }
-
-  _load(): MoodState {
-    try {
-      if (existsSync(MOOD_FILE)) {
-        return JSON.parse(readFileSync(MOOD_FILE, 'utf-8')) as MoodState;
-      }
-    } catch (_err) {
-      console.error('Failed to load mood state, starting fresh');
-    }
+  try {
+    const result = await pool.query(
+      'SELECT mood, intensity, last_shift, last_decay FROM mood_state WHERE server_id = $1',
+      [guildId]
+    );
+    const row = result.rows[0];
+    if (!row) return { mood: 'neutral', intensity: 0, lastShift: Date.now(), lastDecay: Date.now() };
+    return {
+      mood: (row.mood as MoodType) || 'neutral',
+      intensity: (row.intensity as number) || 0,
+      lastShift: new Date(row.last_shift as string).getTime(),
+      lastDecay: new Date(row.last_decay as string).getTime(),
+    };
+  } catch (err) {
+    console.error('getMoodState failed:', (err as Error).message);
     return { mood: 'neutral', intensity: 0, lastShift: Date.now(), lastDecay: Date.now() };
-  }
-
-  _save(): void {
-    try {
-      if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-      writeFileSync(MOOD_FILE, JSON.stringify(this.state, null, 2));
-    } catch (_err) {
-      console.error('Failed to save mood state');
-    }
-  }
-
-  /**
-   * Get current mood after applying decay.
-   */
-  getMood(): { mood: MoodType; intensity: number } {
-    this._applyDecay();
-    if (this.state.intensity <= 0) {
-      this.state.mood = 'neutral';
-      this.state.intensity = 0;
-    }
-    return { mood: this.state.mood, intensity: this.state.intensity };
-  }
-
-  /**
-   * Get the mood-specific addition to the system prompt.
-   */
-  getMoodPrompt(): string {
-    const { mood, intensity } = this.getMood();
-    if (mood === 'neutral' || intensity <= 10) return '';
-    return MOOD_PROMPTS[mood] || '';
-  }
-
-  /**
-   * Get the temperature adjustment for the current mood.
-   */
-  getMoodTemperature(): number {
-    const { mood, intensity } = this.getMood();
-    if (mood === 'neutral' || intensity <= 10) return 1.2; // default
-    // Blend between neutral temp and mood temp based on intensity
-    const moodTemp = MOOD_TEMPERATURES[mood] || 1.2;
-    const blend = Math.min(intensity, 100) / 100;
-    return 1.2 + (moodTemp - 1.2) * blend;
-  }
-
-  /**
-   * Shift mood based on an event.
-   */
-  shift(event: MoodEvent): void {
-    const shifts: Record<MoodEvent, MoodShiftConfig> = {
-      complimented: { mood: 'soft', delta: 40 },
-      insulted: { mood: 'petty', delta: 40 },
-      chaos: { mood: 'chaotic', delta: 30 },
-      boring: { mood: 'bored', delta: 20 },
-      nice_to_each_other: { mood: 'chill', delta: 25 },
-      fighting: { mood: 'unhinged', delta: 35 },
-      begged_back: { mood: 'petty', delta: 30 },
-    };
-
-    let config = shifts[event];
-    if (!config) return;
-
-    // 40% chance wholesome vibes push Sass into soft mood instead of chill
-    if (event === 'nice_to_each_other' && Math.random() < 0.4) {
-      config = { mood: 'soft', delta: 15 };
-    }
-
-    // If mood is changing to something new, reset intensity
-    if (this.state.mood !== config.mood && this.state.mood !== 'neutral') {
-      // Competing moods — reduce old intensity, add new
-      this.state.intensity = Math.max(0, this.state.intensity - 20);
-      if (this.state.intensity <= 10) {
-        this.state.mood = config.mood;
-        this.state.intensity = config.delta;
-      }
-    } else {
-      this.state.mood = config.mood;
-      this.state.intensity = Math.min(100, this.state.intensity + config.delta);
-    }
-
-    this.state.lastShift = Date.now();
-    this._save();
-  }
-
-  /**
-   * Apply time-based decay toward neutral.
-   */
-  _applyDecay(): void {
-    const now = Date.now();
-    const elapsed = now - (this.state.lastDecay || now);
-    const ticks = Math.floor(elapsed / MOOD_DECAY_MS);
-
-    if (ticks > 0) {
-      this.state.intensity = Math.max(0, this.state.intensity - ticks * DECAY_AMOUNT);
-      this.state.lastDecay = now;
-      if (this.state.intensity <= 0) {
-        this.state.mood = 'neutral';
-      }
-      this._save();
-    }
-  }
-
-  /**
-   * Get a human-readable mood status for display.
-   */
-  getStatus(): MoodStatus {
-    const { mood, intensity } = this.getMood();
-    const labels: Record<MoodType, string> = {
-      neutral: '\u{1F610} neutral \u2014 just vibing',
-      chaotic: '\u{1F92A} chaotic \u2014 gremlin mode activated',
-      chill: '\u{1F60E} chill \u2014 almost friendly (don\'t get used to it)',
-      petty: '\u{1F485} petty \u2014 holding grudges and names',
-      bored: '\u{1F611} bored \u2014 couldn\'t care less',
-      unhinged: '\u{1F525} UNHINGED \u2014 no filter, no mercy',
-      soft: '\u{1F97A} soft \u2014 (don\'t tell anyone)',
-    };
-    return { mood, intensity, label: labels[mood] || labels.neutral };
   }
 }
 
-export const mood = new MoodSystem();
+// --- Helper to save mood state ---
+async function saveMoodState(guildId: string, state: MoodState): Promise<void> {
+  const pool = getPool();
+  if (!pool) return;
+
+  try {
+    await pool.query(
+      `INSERT INTO mood_state (server_id, mood, intensity, last_shift, last_decay)
+       VALUES ($1, $2, $3, to_timestamp($4), to_timestamp($5))
+       ON CONFLICT (server_id) DO UPDATE SET
+         mood = $2, intensity = $3, last_shift = to_timestamp($4), last_decay = to_timestamp($5)`,
+      [guildId, state.mood, state.intensity, state.lastShift / 1000, state.lastDecay / 1000]
+    );
+  } catch (err) {
+    console.error('saveMoodState failed:', (err as Error).message);
+  }
+}
+
+// --- Apply decay ---
+function applyDecay(state: MoodState): boolean {
+  const now = Date.now();
+  const elapsed = now - (state.lastDecay || now);
+  const ticks = Math.floor(elapsed / MOOD_DECAY_MS);
+
+  if (ticks > 0) {
+    state.intensity = Math.max(0, state.intensity - ticks * DECAY_AMOUNT);
+    state.lastDecay = now;
+    if (state.intensity <= 0) {
+      state.mood = 'neutral';
+    }
+    return true; // changed
+  }
+  return false;
+}
+
+// --- Public API ---
+
+/**
+ * Get current mood for a guild after applying decay.
+ */
+export async function getMood(guildId: string): Promise<{ mood: MoodType; intensity: number }> {
+  const state = await getMoodState(guildId);
+  const changed = applyDecay(state);
+  if (changed) await saveMoodState(guildId, state);
+
+  if (state.intensity <= 0) {
+    return { mood: 'neutral', intensity: 0 };
+  }
+  return { mood: state.mood, intensity: state.intensity };
+}
+
+/**
+ * Get the mood-specific addition to the system prompt.
+ */
+export async function getMoodPrompt(guildId: string): Promise<string> {
+  const { mood, intensity } = await getMood(guildId);
+  if (mood === 'neutral' || intensity <= 10) return '';
+  return MOOD_PROMPTS[mood] || '';
+}
+
+/**
+ * Get the temperature adjustment for the current mood.
+ */
+export async function getMoodTemperature(guildId: string): Promise<number> {
+  const { mood, intensity } = await getMood(guildId);
+  if (mood === 'neutral' || intensity <= 10) return 1.2;
+  const moodTemp = MOOD_TEMPERATURES[mood] || 1.2;
+  const blend = Math.min(intensity, 100) / 100;
+  return 1.2 + (moodTemp - 1.2) * blend;
+}
+
+/**
+ * Shift mood based on an event.
+ */
+export async function shift(guildId: string, event: MoodEvent): Promise<void> {
+  if (!isDatabaseConnected()) return;
+
+  const shifts: Record<MoodEvent, MoodShiftConfig> = {
+    complimented: { mood: 'soft', delta: 40 },
+    insulted: { mood: 'petty', delta: 40 },
+    chaos: { mood: 'chaotic', delta: 30 },
+    boring: { mood: 'bored', delta: 20 },
+    nice_to_each_other: { mood: 'chill', delta: 25 },
+    fighting: { mood: 'unhinged', delta: 35 },
+    begged_back: { mood: 'petty', delta: 30 },
+  };
+
+  let config = shifts[event];
+  if (!config) return;
+
+  if (event === 'nice_to_each_other' && Math.random() < 0.4) {
+    config = { mood: 'soft', delta: 15 };
+  }
+
+  const state = await getMoodState(guildId);
+  applyDecay(state);
+
+  if (state.mood !== config.mood && state.mood !== 'neutral') {
+    state.intensity = Math.max(0, state.intensity - 20);
+    if (state.intensity <= 10) {
+      state.mood = config.mood;
+      state.intensity = config.delta;
+    }
+  } else {
+    state.mood = config.mood;
+    state.intensity = Math.min(100, state.intensity + config.delta);
+  }
+
+  state.lastShift = Date.now();
+  await saveMoodState(guildId, state);
+}
+
+/**
+ * Get a human-readable mood status for display.
+ */
+export async function getStatus(guildId: string): Promise<MoodStatus> {
+  const { mood, intensity } = await getMood(guildId);
+  return { mood, intensity, label: MOOD_LABELS[mood] || MOOD_LABELS.neutral };
+}

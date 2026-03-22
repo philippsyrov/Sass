@@ -15,7 +15,7 @@ import * as userMemory from '../userMemory.js';
 import { isOnMentionCooldown, setMentionCooldown, setAutoSassCooldown, trackMentionEscalation, getEscalationCount } from '../cooldown.js';
 import { storeMemory, searchMemories } from '../vectorMemory.js';
 import { buildHelpPages } from '../helpPages.js';
-import { mood } from '../mood.js';
+import * as mood from '../mood.js';
 import { extractStatement, checkContradiction, generate4kCallout, storeStatement } from '../caughtIn4k.js';
 import { logInteraction, logCommand } from '../database.js';
 import { recordResponse, getRecentResponses } from '../responseMemory.js';
@@ -58,7 +58,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
   if (!client.user) return;
 
   // Track escalation — how much this user has been tagging Sass recently
-  const escalationLevel = trackMentionEscalation(userId);
+  const escalationLevel = trackMentionEscalation(guildId, userId);
 
   // Cast channel — this handler only runs in guild text channels
   const channel = message.channel as TextChannel;
@@ -124,7 +124,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
     const targetId = profileMatch?.[1] || userId;
 
     // Profile cooldown — 10 min per target user
-    const profileCooldownKey = `profile:${userId}:${targetId}`;
+    const profileCooldownKey = `profile:${guildId}:${userId}:${targetId}`;
     const lastProfiled = profileCooldowns.get(profileCooldownKey);
     const now = Date.now();
     if (lastProfiled && now - lastProfiled < PROFILE_COOLDOWN_MS) {
@@ -261,7 +261,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
         userId, username: displayName,
         triggerType: 'mention', commandName: 'ship',
         userMessage: cleanContent, sassResponse: shipResponse,
-        mood: mood.getStatus().mood, moodIntensity: mood.getStatus().intensity,
+        mood: (await mood.getStatus(guildId)).mood, moodIntensity: (await mood.getStatus(guildId)).intensity,
       }).catch((err) => console.error('Log interaction failed:', (err as Error).message));
     } catch (err) {
       console.error('Ship command failed:', (err as Error).message);
@@ -277,7 +277,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
     if (!conspiracyTargetId) return;
 
     // 30 min cooldown per user per target
-    const conCooldownKey = `con:${userId}:${conspiracyTargetId}`;
+    const conCooldownKey = `con:${guildId}:${userId}:${conspiracyTargetId}`;
     const lastCon = profileCooldowns.get(conCooldownKey);
     if (lastCon && Date.now() - lastCon < 30 * 60 * 1000) {
       await message.reply("i already investigated, the case is closed.").catch((err) => console.error('Reply failed:', (err as Error).message));
@@ -477,7 +477,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
 
   // Mood command — "@Sass mood" (before cold shoulder so it always works)
   if (lowerClean === 'mood' || lowerClean === 'how are you' || lowerClean === 'how you doing') {
-    const status = mood.getStatus();
+    const status = await mood.getStatus(guildId);
     const bar = '█'.repeat(Math.round(status.intensity / 10)) + '░'.repeat(10 - Math.round(status.intensity / 10));
     await message.reply(`${status.label}\nintensity: ${bar} **${status.intensity}**/100`).catch((err) => console.error('Reply failed:', (err as Error).message));
     return;
@@ -505,16 +505,16 @@ export async function handleMention(message: Message, client: Client): Promise<v
     const meanPatterns = /\b(you suck|worst bot|you'?re (trash|garbage|terrible|bad|boring|annoying|lame|stupid)|hate this bot|sass is (trash|mid|ass)|fuck you|fuck off|stfu|kys|die|kill yourself|go die|eat shit|piece of shit|pos)\b/i;
 
     if (nicePatterns.test(lowerClean)) {
-      mood.shift('complimented');
+      mood.shift(guildId, 'complimented').catch((err) => console.error('Mood shift failed:', (err as Error).message));
     } else if (meanPatterns.test(lowerClean)) {
-      mood.shift('insulted');
+      mood.shift(guildId, 'insulted').catch((err) => console.error('Mood shift failed:', (err as Error).message));
     }
   }
 
   // Snowflake detection — someone wants Sass to stop
   const snowflakePhrases = /\b(stop roasting|leave me alone|you'?re mean|stop being mean|shut up|go away|i hate you|stop it|too far|that'?s rude|back off)\b/i;
   if (!isCreator && snowflakePhrases.test(lowerClean)) {
-    mood.shift('insulted');
+    mood.shift(guildId, 'insulted').catch((err) => console.error('Mood shift failed:', (err as Error).message));
     userMemory.coldShoulder(guildId, userId).catch((err) => console.error('Cold shoulder failed:', (err as Error).message));
     const coldResponses = [
       'fine. you\'re dead to me now',
@@ -617,7 +617,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
   // Escalation context — tell the AI how much this person has been tagging
   let escalationContext = '';
   if (!isCreator && escalationLevel !== 'normal') {
-    const tagCount = getEscalationCount(userId);
+    const tagCount = getEscalationCount(guildId, userId);
     if (escalationLevel === 'annoyed') {
       escalationContext = `NOTE: ${displayName} has tagged you ${tagCount} times in the last few minutes. You're getting annoyed. Be shorter, more dismissive. Show some irritation.`;
     } else if (escalationLevel === 'cold') {
@@ -643,7 +643,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
             const callout = await generate4kCallout(displayName, contradiction.oldStatement, contradiction.newStatement);
             if (callout) {
               await message.reply(`📸 **CAUGHT IN 4K** 📸\n\n${callout}`);
-              mood.shift('chaos');
+              mood.shift(guildId, 'chaos').catch((err) => console.error('Mood shift failed:', (err as Error).message));
               userMemory.recordRoast(guildId, userId).catch((err) => console.error('Record roast failed:', (err as Error).message));
               // Still store the new statement
               storeStatement(guildId, userId, statement).catch((err) => console.error('Store statement failed:', (err as Error).message));
@@ -659,7 +659,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
     const imageUrl = imageAttachment ? imageAttachment.url : null;
     const responseHistory = getRecentResponses(channel.id);
     const fullUserContext = [userContext, vectorContext, responseHistory, escalationContext].filter(Boolean).join('\n\n');
-    const response = await getSassResponse(framedMessage, { recentContext, userContext: fullUserContext, peopleContext, isCreator, mentionsCreator, creatorName, imageUrl });
+    const response = await getSassResponse(framedMessage, { guildId, recentContext, userContext: fullUserContext, peopleContext, isCreator, mentionsCreator, creatorName, imageUrl });
     if (!response) {
       await message.reply("My brain just short-circuited. Even AI has bad days, okay?");
       return;
@@ -675,7 +675,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
     setAutoSassCooldown(channel.id);
 
     // Log to database
-    const moodStatus = mood.getStatus();
+    const moodStatus = await mood.getStatus(guildId);
     logInteraction({
       serverId: message.guild?.id, serverName: message.guild?.name,
       channelId: channel.id, channelName: channel.name,

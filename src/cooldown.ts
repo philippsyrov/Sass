@@ -71,10 +71,11 @@ export function setShipCooldown(userId: string): void {
  * - cold: 10-19 tags (starts ignoring/being dismissive)
  * - petty: 20+ tags (callbacks to how much they've been tagging)
  */
-export function trackMentionEscalation(userId: string): EscalationLevel {
+export function trackMentionEscalation(guildId: string, userId: string): EscalationLevel {
   const now = Date.now();
+  const key = `${guildId}:${userId}`;
 
-  if (!escalationTracker.has(userId)) {
+  if (!escalationTracker.has(key)) {
     // Evict oldest if at capacity
     if (escalationTracker.size >= MAX_TRACKED_ESCALATIONS) {
       const oldest = escalationTracker.keys().next().value;
@@ -82,10 +83,10 @@ export function trackMentionEscalation(userId: string): EscalationLevel {
         escalationTracker.delete(oldest);
       }
     }
-    escalationTracker.set(userId, { tags: [], level: 'normal' });
+    escalationTracker.set(key, { tags: [], level: 'normal' });
   }
 
-  const entry = escalationTracker.get(userId);
+  const entry = escalationTracker.get(key);
   if (!entry) return 'normal';
 
   // Clean old tags outside the window
@@ -110,8 +111,8 @@ export function trackMentionEscalation(userId: string): EscalationLevel {
 /**
  * Get the tag count for a user in the current escalation window.
  */
-export function getEscalationCount(userId: string): number {
-  const entry = escalationTracker.get(userId);
+export function getEscalationCount(guildId: string, userId: string): number {
+  const entry = escalationTracker.get(`${guildId}:${userId}`);
   if (!entry) return 0;
   const now = Date.now();
   return entry.tags.filter((ts) => now - ts < ESCALATION_WINDOW_MS).length;

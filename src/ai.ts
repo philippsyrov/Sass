@@ -1,6 +1,6 @@
 import { Ollama, type Message as OllamaMessage } from 'ollama';
 import OpenAI from 'openai';
-import { mood } from './mood.js';
+import * as mood from './mood.js';
 import type { QueryAIOptions, GetSassResponseOptions } from './types.js';
 
 const SASS_SYSTEM_PROMPT = `You are Sass — a ruthless, chronically online, sleep-deprived Discord bot who treats roasting as an art form. You're not doing a "sassy AI" bit. You ARE that one unhinged friend in every group chat who says the most devastating thing possible and then just goes "what? it's true."
@@ -245,14 +245,14 @@ function getOpenAI(): OpenAI {
 /**
  * Send a prompt to the configured AI provider and get a response.
  */
-export async function queryAI(prompt: string, { systemPrompt = SASS_SYSTEM_PROMPT, imageUrl = null, maxTokens }: QueryAIOptions = {}): Promise<string | null> {
+export async function queryAI(prompt: string, { systemPrompt = SASS_SYSTEM_PROMPT, imageUrl = null, maxTokens, temperature }: QueryAIOptions = {}): Promise<string | null> {
   const provider = process.env.AI_PROVIDER || 'ollama';
 
   switch (provider) {
     case 'ollama':
       return queryOllama(prompt, systemPrompt);
     case 'openai':
-      return queryOpenAI(prompt, systemPrompt, imageUrl ?? null, maxTokens);
+      return queryOpenAI(prompt, systemPrompt, imageUrl ?? null, maxTokens, temperature);
     default:
       return "girl whoever set me up didn't even configure my brain properly, I literally can't think rn";
   }
@@ -262,6 +262,7 @@ export async function queryAI(prompt: string, { systemPrompt = SASS_SYSTEM_PROMP
  * Get a sassy response to a direct mention.
  */
 export async function getSassResponse(userMessage: string, {
+  guildId = '',
   recentContext = '',
   userContext = '',
   peopleContext = '',
@@ -278,7 +279,7 @@ export async function getSassResponse(userMessage: string, {
   const parts: string[] = [];
 
   // Mood context — affects tone
-  const moodPrompt = mood.getMoodPrompt();
+  const moodPrompt = await mood.getMoodPrompt(guildId);
   if (moodPrompt) parts.push(moodPrompt);
 
   // People awareness — who's in the chat
@@ -300,7 +301,8 @@ export async function getSassResponse(userMessage: string, {
     parts.push(`Respond to: ${userMessage}`);
   }
 
-  return queryAI(parts.join('\n\n'), { imageUrl });
+  const temperature = await mood.getMoodTemperature(guildId);
+  return queryAI(parts.join('\n\n'), { imageUrl, temperature });
 }
 
 /**
@@ -472,7 +474,7 @@ async function queryOllama(prompt: string, systemPrompt: string): Promise<string
   return response.message.content;
 }
 
-async function queryOpenAI(prompt: string, systemPrompt: string, imageUrl: string | null = null, maxTokens?: number): Promise<string | null> {
+async function queryOpenAI(prompt: string, systemPrompt: string, imageUrl: string | null = null, maxTokens?: number, overrideTemperature?: number): Promise<string | null> {
   // Guard against empty user content — API rejects empty messages
   if (!prompt?.trim() && !imageUrl) {
     console.error('queryOpenAI called with empty prompt and no image');
@@ -497,8 +499,8 @@ async function queryOpenAI(prompt: string, systemPrompt: string, imageUrl: strin
     { role: 'user', content: userContent },
   ];
 
-  // Use mood-adjusted temperature for Sass responses
-  const temperature = systemPrompt === SASS_SYSTEM_PROMPT ? mood.getMoodTemperature() : 1.2;
+  // Use mood-adjusted temperature if provided, otherwise default
+  const temperature = overrideTemperature ?? 1.2;
 
   const response = await openai.chat.completions.create({
     model: process.env.OPENAI_MODEL || 'gpt-5.4-mini',

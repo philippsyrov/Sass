@@ -44,6 +44,7 @@ export async function initDatabase(): Promise<boolean> {
       max: 5,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 10000,
+      statement_timeout: 30000,
     });
 
     // Test connection
@@ -253,6 +254,30 @@ async function migrateLocalFiles(): Promise<void> {
       console.error('  beefs.json migration failed:', (err as Error).message);
     }
   }
+
+  // Migrate mood.json
+  const moodFile = join(dataDir, 'mood.json');
+  if (existsSync(moodFile)) {
+    console.log('Migrating mood.json to Postgres...');
+    try {
+      const moodData = JSON.parse(readFileSync(moodFile, 'utf-8')) as {
+        mood: string; intensity: number; lastShift: number; lastDecay: number;
+      };
+      if (fallbackServer) {
+        await pool.query(
+          `INSERT INTO mood_state (server_id, mood, intensity, last_shift, last_decay)
+           VALUES ($1, $2, $3, to_timestamp($4), to_timestamp($5))
+           ON CONFLICT (server_id) DO NOTHING`,
+          [fallbackServer, moodData.mood || 'neutral', moodData.intensity || 0,
+           (moodData.lastShift || Date.now()) / 1000, (moodData.lastDecay || Date.now()) / 1000]
+        );
+      }
+      renameSync(moodFile, moodFile + '.migrated');
+      console.log('  Migrated mood state. File renamed to .migrated');
+    } catch (err) {
+      console.error('  mood.json migration failed:', (err as Error).message);
+    }
+  }
 }
 
 /**
@@ -416,6 +441,14 @@ async function createTables(): Promise<void> {
     );
 
     CREATE INDEX IF NOT EXISTS idx_vector_memories_lookup ON vector_memories(server_id, user_id);
+
+    CREATE TABLE IF NOT EXISTS mood_state (
+      server_id TEXT PRIMARY KEY,
+      mood TEXT NOT NULL DEFAULT 'neutral',
+      intensity INTEGER DEFAULT 0,
+      last_shift TIMESTAMPTZ DEFAULT NOW(),
+      last_decay TIMESTAMPTZ DEFAULT NOW()
+    );
   `);
 }
 
@@ -609,8 +642,12 @@ export function getPool(): InstanceType<typeof Pool> | null {
  */
 export async function closeDatabase(): Promise<void> {
   if (pool) {
-    await pool.end();
-    isConnected = false;
-    console.log('Database pool closed');
+    try {
+      await pool.end();
+      isConnected = false;
+      console.log('Database pool closed');
+    } catch (err) {
+      console.error('Failed to close database:', (err as Error).message);
+    }
   }
 }
