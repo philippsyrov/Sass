@@ -56,6 +56,9 @@ export async function initDatabase(): Promise<boolean> {
     // Migrate local JSON files to Postgres (one-time, on first deploy after guild-scoping)
     await migrateLocalFiles();
 
+    // One-time: restore pair interactions after a migration reset
+    await boostUserAUserB();
+
     isConnected = true;
     console.log('Database connected \u2014 logging enabled');
     return true;
@@ -249,6 +252,46 @@ async function migrateLocalFiles(): Promise<void> {
     } catch (err) {
       console.error('  beefs.json migration failed:', (err as Error).message);
     }
+  }
+}
+
+/**
+ * One-time: restore a pair's ship score after a migration reset.
+ */
+async function boostUserAUserB(): Promise<void> {
+  if (!pool) return;
+  try {
+    // Check if already boosted (look for any pair with 200+ interactions)
+    const existing = await pool.query(
+      'SELECT interaction_count FROM pair_interactions WHERE interaction_count >= 200 LIMIT 1'
+    );
+    if (existing.rows.length > 0) return; // Already done
+
+    const userAId = '1000000000000000011';
+    const userBId = '1000000000000000012';
+
+    // Find which server they share
+    const serverResult = await pool.query(
+      `SELECT server_id FROM interactions WHERE user_id = $1 LIMIT 1`,
+      [userAId]
+    );
+    if (serverResult.rows.length === 0) {
+      console.log('UserA not found in interactions — skipping boost');
+      return;
+    }
+
+    const serverId = serverResult.rows[0].server_id as string;
+    const [id1, id2] = [userAId, userBId].sort();
+
+    await pool.query(
+      `INSERT INTO pair_interactions (server_id, user1_id, user2_id, interaction_count, last_interaction)
+       VALUES ($1, $2, $3, 200, NOW())
+       ON CONFLICT (server_id, user1_id, user2_id) DO UPDATE SET interaction_count = 200`,
+      [serverId, id1, id2]
+    );
+    console.log(`Boosted UserA (${userAId}) x UserB (${userBId}) to 200 interactions in server ${serverId}`);
+  } catch (err) {
+    console.error('UserA x UserB boost failed:', (err as Error).message);
   }
 }
 
