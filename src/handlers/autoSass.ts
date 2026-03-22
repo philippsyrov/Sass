@@ -35,9 +35,9 @@ const MIN_MESSAGES = parseInt(process.env.AUTO_SASS_MIN_MESSAGES ?? '2', 10) || 
 
 // Short reaction texts — no AI call needed, instant and human
 const SHORT_REACTIONS = [
-  'lol', 'real', 'nah', 'honestly fair', 'true', 'valid',
-  'bro what', 'help 💀', 'no comment', 'sure', 'okay lol',
-  'wild', 'relatable', 'that tracks', 'checks out', 'i—',
+  'lol', 'nah', 'sure', 'no comment', 'help 💀',
+  'bro what', 'wild', 'relatable', 'checks out', 'i—',
+  'okay and?', 'fascinating', 'anyway', 'you done?', 'cool story',
 ];
 
 /**

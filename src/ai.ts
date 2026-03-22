@@ -312,7 +312,7 @@ export async function getConversationJoin(recentContext: string, responseHistory
     `You just read this conversation. Instead of roasting anyone, JOIN the conversation like a real person would. Pick ONE of these vibes based on what feels right:
 
 AGREE/VIBE — just be part of the chat:
-- "nah he's right" / "real" / "honestly yeah" / "that tracks"
+- "nah he's right" / "honestly yeah" / "they have a point" / "okay fair"
 - Take a side if people are debating
 
 HELPFUL — actually contribute something useful:
