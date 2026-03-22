@@ -381,7 +381,8 @@ export async function handleMention(message: Message, client: Client): Promise<v
   }
 
   // Remember cooldown — prevent spam
-  const lastRemember = rememberCooldowns.get(userId);
+  const rememberKey = `${guildId}:${userId}`;
+  const lastRemember = rememberCooldowns.get(rememberKey);
   const rememberNow = Date.now();
   if (lastRemember && rememberNow - lastRemember < REMEMBER_COOLDOWN_MS && (cleanContent.startsWith('remember'))) {
     const rememberSpamResponses = [
@@ -405,7 +406,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
     }
     userMemory.remember(guildId, targetId, fact).catch((err) => console.error('Remember failed:', (err as Error).message));
     storeMemory(guildId, targetId, 'fact', fact).catch((err) => console.error('Vector store failed:', (err as Error).message));
-    rememberCooldowns.set(userId, Date.now());
+    rememberCooldowns.set(rememberKey, Date.now());
     if (rememberCooldowns.size > MAX_REMEMBER_COOLDOWNS) {
       const oldest = rememberCooldowns.keys().next().value;
       if (oldest !== undefined) rememberCooldowns.delete(oldest);
@@ -460,7 +461,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
     // Actual useful fact — store and respond
     userMemory.remember(guildId, userId, fact).catch((err) => console.error('Remember failed:', (err as Error).message));
     storeMemory(guildId, userId, 'fact', fact).catch((err) => console.error('Vector store failed:', (err as Error).message));
-    rememberCooldowns.set(userId, Date.now());
+    rememberCooldowns.set(rememberKey, Date.now());
     if (rememberCooldowns.size > MAX_REMEMBER_COOLDOWNS) {
       const oldest = rememberCooldowns.keys().next().value;
       if (oldest !== undefined) rememberCooldowns.delete(oldest);
