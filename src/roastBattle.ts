@@ -9,6 +9,19 @@ import type { BattleState } from './types.js';
 // --- Roast Battle State ---
 export const activeBattles = new Map<string, BattleState>();
 const BATTLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 min max per battle
+const TURN_TIMEOUT_MS = 2 * 60 * 1000; // 2 min per turn
+
+const FORFEIT_MESSAGES = [
+  "took too long. that's a forfeit. 0 points.",
+  "silence isn't a roast strategy. 0 points.",
+  "couldn't even come up with one line? embarrassing. 0.",
+  "timed out. the roast wrote itself — you're the joke.",
+  "two minutes and nothing? the cowardice is the real roast.",
+];
+
+function pickRandom<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)] as T;
+}
 
 // Clean up abandoned battles every 5 minutes
 setInterval(() => {
@@ -16,10 +29,94 @@ setInterval(() => {
   for (const [id, battle] of activeBattles) {
     if (now - (battle.startedAt ?? 0) > BATTLE_TIMEOUT_MS) {
       if (battle.timeout) clearTimeout(battle.timeout);
+      if (battle.turnTimeout) clearTimeout(battle.turnTimeout);
       activeBattles.delete(id);
     }
   }
 }, 5 * 60 * 1000);
+
+/**
+ * Start a per-turn timeout. If the current player doesn't respond in 2 min,
+ * they forfeit the round with 0 points and the battle advances.
+ */
+function startTurnTimer(battleId: string, threadChannel: ThreadChannel): void {
+  const battle = activeBattles.get(battleId);
+  if (!battle) return;
+
+  // Clear any existing turn timer
+  if (battle.turnTimeout) clearTimeout(battle.turnTimeout);
+
+  battle.turnTimeout = setTimeout(async () => {
+    // Re-fetch battle — might have been resolved during timeout
+    const currentBattle = activeBattles.get(battleId);
+    if (!currentBattle || currentBattle.phase !== 'active' || !currentBattle.currentTurn) return;
+
+    const forfeitId = currentBattle.currentTurn;
+    const forfeitName = forfeitId === currentBattle.challenger.id
+      ? currentBattle.challenger.displayName
+      : currentBattle.opponent.displayName;
+
+    // Give 0 for the forfeit
+    const forfeitScores = currentBattle.scores[forfeitId];
+    if (forfeitScores) forfeitScores.push(0);
+
+    const msg = pickRandom(FORFEIT_MESSAGES);
+    await threadChannel.send(`⏰ **${forfeitName}** ${msg}`).catch((err) => console.error('Forfeit message failed:', (err as Error).message));
+
+    // Advance turn/round
+    const otherId = forfeitId === currentBattle.challenger.id ? currentBattle.opponent.id : currentBattle.challenger.id;
+    const otherName = forfeitId === currentBattle.challenger.id ? currentBattle.opponent.displayName : currentBattle.challenger.displayName;
+
+    const otherScores = currentBattle.scores[otherId];
+    if (otherScores && otherScores.length < currentBattle.round) {
+      currentBattle.currentTurn = otherId;
+      await threadChannel.send(`**${otherName}**, your turn. fire back.`).catch((err) => console.error('Turn message failed:', (err as Error).message));
+      startTurnTimer(battleId, threadChannel);
+    } else {
+      currentBattle.round++;
+      if (currentBattle.round > currentBattle.maxRounds) {
+        await endBattle(battleId, currentBattle, threadChannel);
+      } else {
+        const roundEmbed = new EmbedBuilder()
+          .setColor(0xFF4D6D)
+          .setTitle(`⚔️ ROUND ${currentBattle.round}/${currentBattle.maxRounds}`)
+          .setDescription(`**${currentBattle.challenger.displayName}**, you're up.`);
+        currentBattle.currentTurn = currentBattle.challenger.id;
+        await threadChannel.send({ embeds: [roundEmbed] }).catch((err) => console.error('Round embed failed:', (err as Error).message));
+        startTurnTimer(battleId, threadChannel);
+      }
+    }
+  }, TURN_TIMEOUT_MS);
+}
+
+/**
+ * End a battle — show results, clean up, archive thread.
+ */
+async function endBattle(battleId: string, battle: BattleState, threadChannel: ThreadChannel): Promise<void> {
+  const challengerScores = battle.scores[battle.challenger.id] ?? [];
+  const opponentScores = battle.scores[battle.opponent.id] ?? [];
+  const score1 = challengerScores.reduce((a, b) => a + b, 0);
+  const score2 = opponentScores.reduce((a, b) => a + b, 0);
+  const winner = score1 > score2 ? battle.challenger : score2 > score1 ? battle.opponent : null;
+  const loser = winner ? (winner.id === battle.challenger.id ? battle.opponent : battle.challenger) : null;
+
+  const embed = new EmbedBuilder()
+    .setColor(0xFFD700)
+    .setTitle('⚔️ ROAST BATTLE — FINAL RESULTS')
+    .addFields(
+      { name: battle.challenger.displayName, value: `${challengerScores.join(' + ')} = **${score1}**`, inline: true },
+      { name: 'vs', value: '⚔️', inline: true },
+      { name: battle.opponent.displayName, value: `${opponentScores.join(' + ')} = **${score2}**`, inline: true },
+      { name: '\u200b', value: '\u200b', inline: false },
+      { name: '🏆 Winner', value: winner ? `**${winner.displayName}** absolutely cooked.` : "it's a tie. you're both equally mid.", inline: false },
+    )
+    .setFooter({ text: loser ? `${loser.displayName} needs to sit down for a while` : 'nobody won. everybody lost.' });
+
+  await threadChannel.send({ embeds: [embed] }).catch((err) => console.error('Battle results failed:', (err as Error).message));
+  if (battle.turnTimeout) clearTimeout(battle.turnTimeout);
+  activeBattles.delete(battleId);
+  setTimeout(() => threadChannel.setArchived(true).catch((err) => console.error('Failed to archive battle thread:', err.message)), 10000);
+}
 
 export async function handleBattleMessage(message: Message): Promise<boolean> {
   // Only handle messages in threads that are active battles
@@ -42,12 +139,16 @@ export async function handleBattleMessage(message: Message): Promise<boolean> {
       .setTitle('⚔️ ROUND 1/3')
       .setDescription(`**${battle.challenger.displayName}**, you challenged — you go first.\n\ndrop your best roast.`);
     await threadChannel.send({ embeds: [roundEmbed] });
+    startTurnTimer(message.channel.id, threadChannel);
     return true;
   }
 
   // Check if this is a roast in an active battle
   if (battle.phase === 'active' && message.author.id === battle.currentTurn) {
     const battleId = message.channel.id;
+
+    // Clear the turn timer — they responded in time
+    if (battle.turnTimeout) clearTimeout(battle.turnTimeout);
 
     // Score the roast — fallback to mercy score if AI fails
     let score = 5;
@@ -81,32 +182,11 @@ export async function handleBattleMessage(message: Message): Promise<boolean> {
     if (otherScores && otherScores.length < battle.round) {
       battle.currentTurn = otherId;
       await threadChannel.send(`**${otherName}**, your turn. fire back.`);
+      startTurnTimer(battleId, threadChannel);
     } else {
       battle.round++;
       if (battle.round > battle.maxRounds) {
-        const challengerScores = battle.scores[battle.challenger.id] ?? [];
-        const opponentScores = battle.scores[battle.opponent.id] ?? [];
-        const score1 = challengerScores.reduce((a, b) => a + b, 0);
-        const score2 = opponentScores.reduce((a, b) => a + b, 0);
-        const winner = score1 > score2 ? battle.challenger : score2 > score1 ? battle.opponent : null;
-        const loser = winner ? (winner.id === battle.challenger.id ? battle.opponent : battle.challenger) : null;
-
-        const embed = new EmbedBuilder()
-          .setColor(0xFFD700)
-          .setTitle('⚔️ ROAST BATTLE — FINAL RESULTS')
-          .addFields(
-            { name: battle.challenger.displayName, value: `${challengerScores.join(' + ')} = **${score1}**`, inline: true },
-            { name: 'vs', value: '⚔️', inline: true },
-            { name: battle.opponent.displayName, value: `${opponentScores.join(' + ')} = **${score2}**`, inline: true },
-            { name: '\u200b', value: '\u200b', inline: false },
-            { name: '🏆 Winner', value: winner ? `**${winner.displayName}** absolutely cooked.` : "it's a tie. you're both equally mid.", inline: false },
-          )
-          .setFooter({ text: loser ? `${loser.displayName} needs to sit down for a while` : 'nobody won. everybody lost.' });
-
-        await threadChannel.send({ embeds: [embed] });
-        activeBattles.delete(battleId);
-        // Archive thread after 10 seconds
-        setTimeout(() => threadChannel.setArchived(true).catch((err) => console.error('Failed to archive battle thread:', err.message)), 10000);
+        await endBattle(battleId, battle, threadChannel);
       } else {
         const roundEmbed = new EmbedBuilder()
           .setColor(0xFF4D6D)
@@ -114,6 +194,7 @@ export async function handleBattleMessage(message: Message): Promise<boolean> {
           .setDescription(`**${battle.challenger.displayName}**, you're up.`);
         battle.currentTurn = battle.challenger.id;
         await threadChannel.send({ embeds: [roundEmbed] });
+        startTurnTimer(battleId, threadChannel);
       }
     }
     return true;

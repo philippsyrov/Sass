@@ -557,6 +557,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
         phase: 'waiting',
         currentTurn: null,
         timeout: null,
+        turnTimeout: null,
         startedAt: Date.now(),
       });
 

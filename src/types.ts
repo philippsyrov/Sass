@@ -196,6 +196,7 @@ export interface BattleState {
   phase: 'waiting' | 'active';
   currentTurn: string | null;
   timeout: ReturnType<typeof setTimeout> | null;
+  turnTimeout: ReturnType<typeof setTimeout> | null;
   startedAt: number;
 }
 

@@ -120,8 +120,8 @@ export async function handleAutoSass(message: Message, _client: Client, options:
           const activity = getActivityDescription(target.presence);
           if (!activity) return;
           const roast = await queryAI(
-            `You just noticed ${target.displayName} has been ${activity}. Call them out publicly. Be specific about the game/app. One or two sentences. Mock the time spent if applicable.`,
-            { systemPrompt: 'You are Sass. You\'re publicly shaming someone for their Discord activity. Lowercase. Funny and brutal. Make it feel like you just caught them.' }
+            `You caught ${target.displayName} ${activity}. Call them out. ONE sentence, max 15 words. Be specific about the game/app.`,
+            { systemPrompt: 'You publicly shame Discord activity. ONE short sentence. Max 15 words. Lowercase. No metaphors, no essays. Talk like a 20-year-old texting.' }
           );
           if (roast && roast.trim().toUpperCase() !== 'SKIP') {
             setAutoSassCooldown(channelId);
