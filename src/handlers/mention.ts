@@ -377,7 +377,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
   // Mood detection — detect how user is treating Sass
   if (!isCreator && cleanContent) {
     const nicePatterns = /\b(you'?re (actually |pretty )?(cool|funny|great|awesome|the best|amazing|hilarious)|i love you|good bot|nice one|that was good|love sass|sass is the best|you'?re my fav)\b/i;
-    const meanPatterns = /\b(you suck|worst bot|you'?re (trash|garbage|terrible|bad|boring|annoying|lame|stupid)|hate this bot|sass is (trash|mid|ass))\b/i;
+    const meanPatterns = /\b(you suck|worst bot|you'?re (trash|garbage|terrible|bad|boring|annoying|lame|stupid)|hate this bot|sass is (trash|mid|ass)|fuck you|fuck off|stfu|kys|die|kill yourself|go die|eat shit|piece of shit|pos)\b/i;
 
     if (nicePatterns.test(lowerClean)) {
       mood.shift('complimented');

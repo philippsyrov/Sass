@@ -125,6 +125,10 @@ export async function handleAutoSass(message: Message, _client: Client, options:
     // Not enough messages yet
     if (count < MIN_MESSAGES) return;
 
+    // Skip short messages — not enough to work with for a good auto-sass
+    const wordCount = message.content.trim().split(/\s+/).length;
+    if (wordCount < 4) return;
+
     // Channel cooldown — don't auto-sass too frequently
     if (isOnAutoSassCooldown(channelId)) return;
 
