@@ -310,12 +310,12 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           hint = `\n\n📈 *sass has seen ${interactions} interactions between you two*`;
         }
 
-        // Generate merged avatar image
+        // Generate ship card image
         const avatar1 = user1.displayAvatarURL({ extension: 'png', size: 128 });
         const avatar2 = user2.displayAvatarURL({ extension: 'png', size: 128 });
         let files: AttachmentBuilder[] = [];
         try {
-          const shipBuffer = await generateShipImage(avatar1, avatar2);
+          const shipBuffer = await generateShipImage(avatar1, avatar2, percent);
           files = [new AttachmentBuilder(shipBuffer, { name: 'ship.png' })];
         } catch (imgErr) {
           console.error('Ship image generation failed:', (imgErr as Error).message);
@@ -331,7 +331,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           );
 
         if (files.length > 0) {
-          embed.setThumbnail('attachment://ship.png');
+          embed.setImage('attachment://ship.png');
         }
 
         await interaction.editReply({ embeds: [embed], files });
