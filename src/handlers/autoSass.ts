@@ -156,13 +156,21 @@ export async function handleAutoSass(message: Message, _client: Client, options:
       if (guild) {
         const members = guild.members.cache;
         const now = Date.now();
+        const MIN_PLAY_MINUTES = 60; // Only roast if playing for 1+ hours
         const gamers = members.filter((m: GuildMember) => {
           if (m.user.bot || m.user.id === process.env.CREATOR_ID) return false;
           // Skip users already activity-roasted in last 24h
           const lastRoasted = activityRoastCooldowns.get(m.user.id);
           if (lastRoasted && now - lastRoasted < ACTIVITY_ROAST_COOLDOWN_MS) return false;
           const activity = getActivityDescription(m.presence);
-          return activity != null && !activity.startsWith('custom status');
+          if (!activity || activity.startsWith('custom status')) return false;
+          // Only roast long gaming sessions — 8 minutes isn't roast-worthy
+          const playingActivity = m.presence?.activities?.find(a => a.type === 0 && a.timestamps?.start);
+          if (playingActivity?.timestamps?.start) {
+            const elapsed = Math.floor((now - playingActivity.timestamps.start.getTime()) / 60000);
+            if (elapsed < MIN_PLAY_MINUTES) return false;
+          }
+          return true;
         });
         if (gamers.size > 0) {
           const target = gamers.random();
