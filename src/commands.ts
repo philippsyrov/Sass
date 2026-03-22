@@ -715,8 +715,13 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
     }
 
     case 'dare': {
-      await interaction.deferReply();
       const targetUser = interaction.options.getUser('user', true);
+      const dareKey = `${interaction.user.id}:dare`;
+      if (hasUsedToday(interaction.user.id, dareKey)) {
+        await interaction.reply({ content: "you already dared someone today. one chaos event per day is enough.", ephemeral: true });
+        break;
+      }
+      await interaction.deferReply();
       const userContext = userMemory.getContext(targetUser.id);
       try {
         const response = await queryAI(
@@ -737,36 +742,11 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
             { name: 'Difficulty', value: skulls, inline: true },
           )
           .setFooter({ text: 'sass dares you. do it or be a coward.' });
+        markUsedToday(interaction.user.id, dareKey);
         await interaction.editReply({ embeds: [embed] });
       } catch (err) {
         console.error('Dare command failed:', (err as Error).message);
         await interaction.editReply(`i dare ${targetUser.displayName} to do literally anything interesting for once.`);
-      }
-      break;
-    }
-
-    case 'tierlist': {
-      await interaction.deferReply();
-      const topic = interaction.options.getString('topic') ?? '';
-      const itemsRaw = interaction.options.getString('items');
-      const itemsPrompt = itemsRaw
-        ? `Rank EXACTLY these items: ${itemsRaw}`
-        : `Generate 6-8 items for this topic and rank them`;
-      try {
-        const response = await queryAI(
-          `Create a tier list for: "${topic}"\n\n${itemsPrompt}\n\nAssign each item to a tier (S, A, B, C, D, or F) and give a brutal one-liner explanation for each placement. Format EXACTLY like this:\n\nS: [item] — [why]\nA: [item] — [why]\nB: [item] — [why]\nC: [item] — [why]\nD: [item] — [why]\nF: [item] — [why]\n\nNot every tier needs entries. Be opinionated and brutal.`,
-          { systemPrompt: 'You create tier lists. Be opinionated, funny, and brutal. Lowercase. Your rankings are objectively correct and anyone who disagrees is wrong.' }
-        );
-        if (!response) throw new Error('Empty response');
-        const embed = new EmbedBuilder()
-          .setColor(0xFF4D6D)
-          .setTitle(`📊 TIER LIST — ${topic.toUpperCase()}`)
-          .setDescription(response)
-          .setFooter({ text: 'my rankings are objectively correct. don\'t @ me.' });
-        await interaction.editReply({ embeds: [embed] });
-      } catch (err) {
-        console.error('Tierlist command failed:', (err as Error).message);
-        await interaction.editReply(`i tried to rank "${topic}" but everything was F tier. including this question.`);
       }
       break;
     }

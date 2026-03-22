@@ -138,12 +138,6 @@ export const commands = [
     .addUserOption((opt) => opt.setName('user').setDescription('Who to dare').setRequired(true)),
 
   new SlashCommandBuilder()
-    .setName('tierlist')
-    .setDescription('Generate a tier list for any topic')
-    .addStringOption((opt) => opt.setName('topic').setDescription('What to rank').setRequired(true))
-    .addStringOption((opt) => opt.setName('items').setDescription('Comma-separated items (optional, AI generates if empty)').setRequired(false)),
-
-  new SlashCommandBuilder()
     .setName('confess')
     .setDescription('Send an anonymous confession to someone')
     .addUserOption((opt) => opt.setName('user').setDescription('Who to confess to').setRequired(true))
