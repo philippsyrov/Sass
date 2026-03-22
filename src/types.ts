@@ -101,6 +101,7 @@ export interface MoodStatus {
 export interface QueryAIOptions {
   systemPrompt?: string;
   imageUrl?: string | null;
+  maxTokens?: number;
 }
 
 export interface GetSassResponseOptions {

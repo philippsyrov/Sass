@@ -11,7 +11,7 @@ import { userMemory } from './userMemory.js';
 import { buildHelpPages } from './helpPages.js';
 import { logCommand, logInteraction } from './database.js';
 import { mood } from './mood.js';
-import { getShipScore } from './shipScore.js';
+import { getShipScore, getPairInteractions } from './shipScore.js';
 
 // Re-export from extracted modules so existing imports don't break
 export { commands } from './commandDefinitions.js';
@@ -283,18 +283,35 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
 
       try {
         const prompt = `"${user1.displayName}" x "${user2.displayName}" at ${percent}%. ONE sentence verdict, max 12 words. No metaphors or object comparisons. React like a friend judging a couple.`;
-        const verdict = await queryAI(prompt, {
-          systemPrompt: 'You judge ship compatibility. ONE short sentence. Max 12 words. Lowercase. Talk like a 20-year-old, not a poet. No "chemistry of a [object]" comparisons.',
+        let verdict = await queryAI(prompt, {
+          systemPrompt: 'You judge ship compatibility. ONE short sentence. Max 12 words. Lowercase. Talk like a 20-year-old, not a poet. No "chemistry of a [object]" comparisons. If you exceed 12 words, you failed.',
         });
+
+        // Hard enforce 12 word cap — truncate to first sentence if too long
+        if (verdict && verdict.split(/\s+/).length > 14) {
+          const firstSentence = verdict.split(/[.!?]/)[0];
+          verdict = firstSentence ? firstSentence.trim() + '.' : verdict.split(/\s+/).slice(0, 12).join(' ') + '.';
+        }
 
         const shipName = user1.displayName.slice(0, Math.ceil(user1.displayName.length / 2)) +
           user2.displayName.slice(Math.floor(user2.displayName.length / 2));
+
+        // Interaction hint — show users their ship is tracked
+        const interactions = getPairInteractions(user1.id, user2.id);
+        let hint = '';
+        if (percent === 100) {
+          hint = '\n\n💯 **100% — PROVEN PAIR.** sass has seen enough. this is real.';
+        } else if (percent >= 95 && interactions >= 40) {
+          hint = '\n\n👀 *almost there... keep talking to each other*';
+        } else if (interactions >= 10) {
+          hint = `\n\n📈 *sass has seen ${interactions} interactions between you two*`;
+        }
 
         await interaction.editReply(
           `💘 **${user1.displayName}** x **${user2.displayName}**\n` +
           `ship name: **${shipName}**\n` +
           `${bar} **${percent}%**\n\n` +
-          `*${verdict}*`
+          `*${verdict}*${hint}`
         );
       } catch (err) {
         console.error('Ship command failed:', (err as Error).message);
@@ -829,10 +846,10 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
 
       try {
         const response = await queryAI(
-          `You are a fortune teller who's been stalking someone's Discord. Based on this data, predict their future.\n\n${dataPrompt}\n\nFormat your response EXACTLY like this:\n🔮 PAST: [one sentence about what you know about their history]\n📍 PRESENT: [one sentence about their current vibe]\n🌟 FUTURE: [one sentence prediction, be specific and funny]\n\n🍀 lucky item: [something insulting based on their behavior]`,
-          { systemPrompt: 'You are a sassy fortune teller who uses Discord behavior data to make predictions. Be specific to the user data provided. Lowercase. Mystical but devastating.' }
+          `Predict ${targetUser.displayName}'s future based on their Discord data. Be specific to THEIR data, not generic.\n\n${dataPrompt}\n\nFormat:\n🔮 PAST: [one sentence]\n📍 PRESENT: [one sentence]\n🌟 FUTURE: [one specific, funny prediction]\n🍀 lucky item: [something insulting based on their behavior]`,
+          { systemPrompt: 'You are a sassy fortune teller. Use the provided Discord data to make specific predictions. Lowercase. Short sentences. Mystical but devastating. Never repeat the same prediction twice — each one must be unique to the user.', maxTokens: 200 }
         );
-        if (!response) throw new Error('Empty response');
+        if (!response) throw new Error('Empty response from AI');
         markUsedToday(interaction.user.id, targetKey);
         const embed = new EmbedBuilder()
           .setColor(0x9B59B6)

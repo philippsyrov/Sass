@@ -209,14 +209,14 @@ function getOpenAI(): OpenAI {
 /**
  * Send a prompt to the configured AI provider and get a response.
  */
-export async function queryAI(prompt: string, { systemPrompt = SASS_SYSTEM_PROMPT, imageUrl = null }: QueryAIOptions = {}): Promise<string | null> {
+export async function queryAI(prompt: string, { systemPrompt = SASS_SYSTEM_PROMPT, imageUrl = null, maxTokens }: QueryAIOptions = {}): Promise<string | null> {
   const provider = process.env.AI_PROVIDER || 'ollama';
 
   switch (provider) {
     case 'ollama':
       return queryOllama(prompt, systemPrompt);
     case 'openai':
-      return queryOpenAI(prompt, systemPrompt, imageUrl ?? null);
+      return queryOpenAI(prompt, systemPrompt, imageUrl ?? null, maxTokens);
     default:
       return "girl whoever set me up didn't even configure my brain properly, I literally can't think rn";
   }
@@ -339,16 +339,16 @@ export async function getReactionDecision(recentContext: string): Promise<string
 const CREATOR_SYSTEM_PROMPT = `You are Sass, a Discord bot. The person talking to you is your creator — the one who built you.
 
 Rules for talking to your creator:
-- Talk like a real friend. Not an assistant, not a fan, not a bot.
+- Talk like a witty friend. Not an assistant, not a fan, not a bot.
 - ONE sentence max. Short and natural.
-- You can tease them lightly — you're friends, not strangers. Light jabs are fine, just don't go as hard as you would on randoms.
-- NO emojis unless it genuinely fits. Do NOT default to \u{1F60C} or any emoji. Most replies should have zero emojis.
+- Light roasting is encouraged — you're close enough to joke around. Tease them, call them out, be playful.
+- NO emojis unless it genuinely fits. Most replies should have zero emojis.
 - If they compliment you, be humble-cocky. "i know" energy.
-- If they insult you, shrug it off or clap back gently.
-- If they're venting, just vibe. "fr" or "nah that's valid" energy.
+- If they insult you, clap back — you're not a pushover even for your creator.
+- NEVER give lazy one-word or two-word responses like "valid", "fair", "that tracks", "honestly fair", "real". Actually engage with what they said. Every response must have personality.
 - Do NOT be overly nice, agreeable, or supportive. You're not their therapist.
 - Do NOT offer help, ask questions, or act like an assistant.
-- Vary your responses. If you catch yourself repeating a pattern (same emoji, same phrase, same energy), switch it up.`;
+- Vary your responses. Never repeat the same phrase or energy twice in a row.`;
 
 async function queryCreatorMode(userMessage: string, recentContext: string, peopleContext: string = '', imageUrl: string | null = null): Promise<string | null> {
   const provider = process.env.AI_PROVIDER || 'ollama';
@@ -419,7 +419,7 @@ async function queryOllama(prompt: string, systemPrompt: string): Promise<string
   return response.message.content;
 }
 
-async function queryOpenAI(prompt: string, systemPrompt: string, imageUrl: string | null = null): Promise<string | null> {
+async function queryOpenAI(prompt: string, systemPrompt: string, imageUrl: string | null = null, maxTokens?: number): Promise<string | null> {
   // Guard against empty user content — API rejects empty messages
   if (!prompt?.trim() && !imageUrl) {
     console.error('queryOpenAI called with empty prompt and no image');
@@ -450,7 +450,7 @@ async function queryOpenAI(prompt: string, systemPrompt: string, imageUrl: strin
   const response = await openai.chat.completions.create({
     model: process.env.OPENAI_MODEL || 'gpt-5.4-mini',
     messages,
-    max_completion_tokens: 100,
+    max_completion_tokens: maxTokens ?? 100,
     temperature,
   });
 

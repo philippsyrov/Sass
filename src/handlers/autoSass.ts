@@ -63,18 +63,22 @@ export async function handleAutoSass(message: Message, _client: Client, options:
   // Wild quote detection — store genuinely unhinged statements, not reactions
   const text = message.content;
   if (text.length > 15 && text.length < 200) {
-    // Must contain actual sentence content (at least 3 words), not just reactions
     const wordCount = text.split(/\s+/).length;
     if (wordCount >= 4) {
-      // Wild = actual unhinged claims, threats, confessions, weird takes
-      const hasWildContent = /\b(kill|die|fight|marry|eat|destroy|worship|sacrifice|ban|arrest|haunted|cursed|pregnant|kidnap|steal|illegal|commit)\b/i.test(text);
-      const hasWeirdClaim = /\b(i (am|was|will|could|should|wanna|need to|have to)|they (are|should)|we (should|need))\b/i.test(text) && /[!?]{2,}/i.test(text);
-      const isAllCaps = text.length > 20 && (text.match(/[A-Z]/g) || []).length / text.length > 0.7;
+      // Skip common reactions and short caps — these aren't wild, just excited
+      const trimmed = text.trim().toLowerCase();
+      const isJustReaction = /^(lmao|lol|bruh|bro|wtf|no way|i can'?t|help|dead|crying|oof|rip|yikes|same|real|true|valid|fr|nah|what|huh|bro what|no shot|help me|i'?m dead|this is insane|that was|oh my|are you|hahaha|lmfao|no way|stop|dude|damn|yo|wait)(\s|$|[!?.,])/i.test(trimmed);
+      if (isJustReaction) {
+        // Not wild, just a reaction — skip
+      } else {
+        // Short all-caps under 30 chars = reaction, not wild (e.g. "LMAO NO WAY BRO")
+        const isAllCaps = text.length > 30 && (text.match(/[A-Z]/g) || []).length / text.length > 0.7;
+        // Actual unhinged claims, threats, confessions
+        const hasWildContent = /\b(kill|die|fight|marry|eat|destroy|worship|sacrifice|ban|arrest|haunted|cursed|pregnant|kidnap|steal|illegal|commit|murder|bury|poison|betray)\b/i.test(text);
+        // Weird personal claims with emphasis (not just punctuation alone)
+        const hasWeirdClaim = /\b(i (am|was|will|could|should|wanna|need to|have to|might|swear))\b/i.test(text) && hasWildContent;
 
-      if (hasWildContent || hasWeirdClaim || isAllCaps) {
-        // Exclude common reactions that aren't actually wild
-        const isJustReaction = /^(lmao|lol|bruh|bro|wtf|no way|i can't|help|dead|crying|oof|rip|yikes|same|real|true|valid|fr|nah)\b/i.test(text.trim());
-        if (!isJustReaction) {
+        if (hasWildContent || hasWeirdClaim || isAllCaps) {
           userMemory.addWildQuote(message.author.id, text);
           mood.shift('chaos');
         }

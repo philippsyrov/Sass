@@ -19,7 +19,7 @@ import { mood } from '../mood.js';
 import { extractStatement, checkContradiction, generate4kCallout, storeStatement } from '../caughtIn4k.js';
 import { logInteraction, logCommand } from '../database.js';
 import { recordResponse, getRecentResponses } from '../responseMemory.js';
-import { getShipScore } from '../shipScore.js';
+import { getShipScore, getPairInteractions } from '../shipScore.js';
 
 /**
  * Handle direct @Sass mentions and replies to Sass.
@@ -189,11 +189,25 @@ export async function handleMention(message: Message, client: Client): Promise<v
       const percent = getShipScore(id1, id2);
       const bar = '❤️'.repeat(Math.round(percent / 10)) + '🖤'.repeat(10 - Math.round(percent / 10));
       const shipName = name1.slice(0, Math.ceil(name1.length / 2)) + name2.slice(Math.floor(name2.length / 2));
-      const verdict = await queryAI(
+      let verdict = await queryAI(
         `"${name1}" x "${name2}" at ${percent}%. ONE sentence verdict, max 12 words. No metaphors or object comparisons. React like a friend judging a couple.`,
-        { systemPrompt: 'You judge ship compatibility. ONE short sentence. Max 12 words. Lowercase. Talk like a 20-year-old, not a poet. No "chemistry of a [object]" comparisons.' }
+        { systemPrompt: 'You judge ship compatibility. ONE short sentence. Max 12 words. Lowercase. Talk like a 20-year-old, not a poet. No "chemistry of a [object]" comparisons. If you exceed 12 words, you failed.' }
       );
-      const shipResponse = `💘 **${name1}** x **${name2}**\nship name: **${shipName}**\n${bar} **${percent}%**\n\n*${verdict}*`;
+      // Hard enforce 12 word cap
+      if (verdict && verdict.split(/\s+/).length > 14) {
+        const firstSentence = verdict.split(/[.!?]/)[0];
+        verdict = firstSentence ? firstSentence.trim() + '.' : verdict.split(/\s+/).slice(0, 12).join(' ') + '.';
+      }
+      const interactions = getPairInteractions(id1, id2);
+      let hint = '';
+      if (percent === 100) {
+        hint = '\n\n💯 **100% — PROVEN PAIR.** sass has seen enough. this is real.';
+      } else if (percent >= 95 && interactions >= 40) {
+        hint = '\n\n👀 *almost there... keep talking to each other*';
+      } else if (interactions >= 10) {
+        hint = `\n\n📈 *sass has seen ${interactions} interactions between you two*`;
+      }
+      const shipResponse = `💘 **${name1}** x **${name2}**\nship name: **${shipName}**\n${bar} **${percent}%**\n\n*${verdict}*${hint}`;
       await message.reply(shipResponse);
       logInteraction({
         serverId: message.guild?.id, serverName: message.guild?.name,
