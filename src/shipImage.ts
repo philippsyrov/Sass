@@ -101,29 +101,12 @@ export async function generateShipImage(avatarUrl1: string, avatarUrl2: string, 
   drawGlowAvatar(ctx, img1, AVATAR1_X, AVATAR_Y, AVATAR_RADIUS);
   drawGlowAvatar(ctx, img2, AVATAR2_X, AVATAR_Y, AVATAR_RADIUS);
 
-  // --- Big heart in the center with glow ---
-  const heartX = CANVAS_WIDTH / 2;
-  const heartY = AVATAR_Y - 12;
-  const heartSize = 22;
-
-  // Glow behind heart
-  ctx.save();
-  ctx.shadowColor = '#FF6B8A';
-  ctx.shadowBlur = 20;
-  ctx.shadowOffsetX = 0;
-  ctx.shadowOffsetY = 0;
-  drawHeart(ctx, heartX, heartY, heartSize, '#FF4D6D');
-  ctx.restore();
-
-  // Heart again without shadow (crisper)
-  drawHeart(ctx, heartX, heartY, heartSize, '#FF4D6D');
-
-  // --- Percentage text below heart ---
+  // --- Percentage text in the center ---
   ctx.fillStyle = '#D4487A';
-  ctx.font = 'bold 22px Nunito, sans-serif';
+  ctx.font = 'bold 24px Nunito, Arial, Helvetica, sans-serif';
   ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  ctx.fillText(`${percent}%`, heartX, heartY + heartSize + 8);
+  ctx.textBaseline = 'middle';
+  ctx.fillText(percent + '%', CANVAS_WIDTH / 2, AVATAR_Y + 5);
 
   return canvas.toBuffer('image/png');
 }
