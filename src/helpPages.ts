@@ -43,7 +43,7 @@ export function buildHelpPages(botAvatar: string | null | undefined): EmbedBuild
       .setAuthor({ name: 'Sass \u2014 Fun', iconURL: botAvatar ?? undefined })
       .addFields(
         { name: '\u{1F3B1} 8 Ball', value: '`/8ball <question>`\nask me anything. i\'ll answer and roast you for asking.', inline: true },
-        { name: '\u{1F498} Ship', value: '`/ship @user1 @user2` or `@Sass ship @u1 @u2`\ncompatibility check. i\'m brutally honest.', inline: true },
+        { name: '\u{1F498} Ship', value: '`/ship @user1 @user2` or `@Sass ship @u1 @u2`\ncompatibility check. scores are consistent \u2014 same pair, same %. your score grows the more you interact (replies, reactions). beefs lower it. 100% is earned, not given.', inline: true },
         { name: '\u200b', value: '\u200b', inline: false },
         { name: '\u{1F525} Hot Take', value: '`/hottake <topic>`\ni give my spiciest, most unhinged opinion.', inline: true },
         { name: '\u{1F960} Fortune', value: '`/fortune`\na cursed fortune cookie. you\'ve been warned.', inline: true },
@@ -61,12 +61,18 @@ export function buildHelpPages(botAvatar: string | null | undefined): EmbedBuild
       .addFields(
         { name: '\u{1F310} Translate', value: '`/translate <text> <style>`\ntranslate anything into: corporate, gen z, caveman, pirate, noir, anime, medieval, or passive aggressive.', inline: false },
         { name: '\u2648 Horoscope', value: '`/horoscope <sign>`\nsassy star reading. astrology but mean.', inline: true },
-        { name: '\u{1F575}\uFE0F Conspiracy', value: '`@Sass conspiracy @user`\nabsurd conspiracy theory about someone. unhinged.', inline: true },
+        { name: '\u{1F575}\uFE0F Conspiracy', value: '`/conspiracy @user` or `@Sass conspiracy @user`\nabsurd conspiracy theory using real intel. the more i know about you, the worse it gets.', inline: true },
         { name: '\u200b', value: '\u200b', inline: false },
         { name: '\u{1F490} Compliment', value: '`@Sass compliment @user`\nbackhanded compliment. sounds nice, stings later.', inline: true },
         { name: '\u{1F440} Status', value: '`/status @user`\nroast someone\'s Discord activity. playing genshin for 4 hours? i\'ll let everyone know.', inline: true },
         { name: '\u200b', value: '\u200b', inline: false },
-        { name: '\u2694\uFE0F Roast Battle', value: '`/roastbattle @user`\nPvP roast battle in a thread. 3 rounds. AI judged.\nwinner gets bragging rights, loser gets humiliated.', inline: false },
+        { name: '\u2694\uFE0F Roast Battle', value: '`/roastbattle @user`\nPvP roast battle in a thread. 3 rounds. AI judged. 2 min per turn or you forfeit.', inline: false },
+        { name: '\u200b', value: '\u200b', inline: false },
+        { name: '\u{1F3B2} Dare', value: '`/dare @user`\ni dare someone to do something unhinged.', inline: true },
+        { name: '\u{1F3AF} Tier List', value: '`/tierlist <topic>`\ni rank things. my taste is impeccable and final.', inline: true },
+        { name: '\u200b', value: '\u200b', inline: false },
+        { name: '\u{1F64A} Confess', value: '`/confess @user <confession>`\nanonymous confession delivered by me. once per day.', inline: true },
+        { name: '\u{1F52E} Predict', value: '`/predict @user`\ni predict someone\'s future. it\'s never good. once per day per target.', inline: true },
       ),
   ];
 
