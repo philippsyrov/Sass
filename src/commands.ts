@@ -19,7 +19,7 @@ import { AttachmentBuilder } from 'discord.js';
 export { commands } from './commandDefinitions.js';
 export { FORTUNES, QUOTE_AUTHORS } from './commandDefinitions.js';
 export { activeBattles, handleBattleMessage } from './roastBattle.js';
-export { getActivityDescription, getMainCharacter, hasUsedToday, markUsedToday, pickRandom } from './shared/commandUtils.js';
+export { getActivityDescription, hasUsedToday, markUsedToday, pickRandom } from './shared/commandUtils.js';
 
 import { getActivityDescription, hasUsedToday, markUsedToday } from './shared/commandUtils.js';
 import { FORTUNES, QUOTE_AUTHORS } from './commandDefinitions.js';

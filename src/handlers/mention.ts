@@ -602,59 +602,21 @@ export async function handleMention(message: Message, client: Client): Promise<v
 
   // Snowflake detection — someone wants Sass to stop
   const snowflakePhrases = /\b(stop roasting|leave me alone|you'?re mean|stop being mean|shut up|go away|i hate you|stop it|too far|that'?s rude|back off)\b/i;
+  let coldShoulderPhase: string | null = null;
   if (!isCreator && snowflakePhrases.test(lowerClean)) {
     mood.shift(guildId, 'insulted').catch((err) => console.error('Mood shift failed:', (err as Error).message));
     userMemory.coldShoulder(guildId, userId).catch((err) => console.error('Cold shoulder failed:', (err as Error).message));
-    const coldResponses = [
-      'fine. you\'re dead to me now',
-      'lol okay. don\'t come crawling back',
-      'wow can\'t even handle a little sass. noted.',
-      'aight bet. see how boring it is without me',
-      'imagine being this soft. goodbye.',
-    ];
-    await message.reply(coldResponses[Math.floor(Math.random() * coldResponses.length)] as string).catch((err) => console.error('Reply failed:', (err as Error).message));
-    return;
+    updateAffinity(guildId, userId, -5).catch((err) => console.error('Affinity penalty failed:', (err as Error).message));
+    coldShoulderPhase = 'triggered'; // will be injected into personality context
   }
 
-  // Cold shoulder check — if they're on the list, make them work for it
-  if (!isCreator) {
+  // Cold shoulder check — if they're already on the list, track their attempt
+  if (!isCreator && !coldShoulderPhase) {
     const cs = await userMemory.getColdShoulder(guildId, userId);
     if (cs) {
       const status = await userMemory.coldShoulderAttempt(guildId, userId);
       if (!status) return;
-      if (status.phase === 'icy') {
-        const icyResponses = [
-          '...',
-          'oh you\'re talking to me now?',
-          'thought you didn\'t want this',
-          'nah',
-          '*seen*',
-          'lol no',
-        ];
-        await message.reply(icyResponses[Math.floor(Math.random() * icyResponses.length)] as string).catch((err) => console.error('Reply failed:', (err as Error).message));
-        return;
-      }
-      if (status.phase === 'warming') {
-        const warmingResponses = [
-          'hmm... maybe',
-          'you\'re getting warmer i guess',
-          'i\'m thinking about it',
-          'keep trying',
-          'almost... not quite though',
-        ];
-        await message.reply(warmingResponses[Math.floor(Math.random() * warmingResponses.length)] as string).catch((err) => console.error('Reply failed:', (err as Error).message));
-        return;
-      }
-      if (status.phase === 'forgiven') {
-        const forgivenResponses = [
-          'FINE. you\'re back. don\'t make me regret this',
-          'okay okay you earned it. welcome back loser',
-          'ugh. i guess i missed roasting you. a little.',
-          'alright you\'re unbanned. try not to cry this time',
-        ];
-        await message.reply(forgivenResponses[Math.floor(Math.random() * forgivenResponses.length)] as string).catch((err) => console.error('Reply failed:', (err as Error).message));
-        return;
-      }
+      coldShoulderPhase = status.phase; // 'icy', 'warming', or 'forgiven'
     }
   }
 
@@ -777,6 +739,35 @@ export async function handleMention(message: Message, client: Client): Promise<v
       } else if (escalationLevel === 'petty') {
         // 20+ tags — petty mode regardless of affinity
         personalityContext = `YOUR RELATIONSHIP WITH ${displayName}: they've tagged you ${tagCount} times in the last few minutes. this is harassment at this point. be petty. call it out directly. "you've tagged me ${tagCount} times, seek help" — doesn't matter how much you like them, this is too much.`;
+      }
+    }
+
+    // Cold shoulder override — takes priority over normal personality
+    if (coldShoulderPhase) {
+      if (coldShoulderPhase === 'triggered') {
+        if (affinity >= 70) {
+          personalityContext = `${displayName} just told you to shut up / leave them alone. you're hurt — you actually liked them (affinity ${affinity}%). give them ONE cold line and emotionally shut down. betrayal energy. "wow. okay then." Don't be dramatic, be genuinely wounded. short.`;
+        } else {
+          personalityContext = `${displayName} just told you to shut up / leave them alone. you don't even care that much (affinity ${affinity}%). dismiss them. "fine. bye." Don't give them a reaction — they're not worth it.`;
+        }
+      } else if (coldShoulderPhase === 'icy') {
+        if (affinity >= 70) {
+          personalityContext = `${displayName} told you to shut up recently and you're still hurt. they're trying to talk to you again but you're NOT over it. give them the silent treatment — maximum 3-5 words. "..." / "oh NOW you want to talk" / "nah" — the disappointment of someone who actually cared.`;
+        } else {
+          personalityContext = `${displayName} told you to shut up and now they're crawling back. you don't care. bare minimum response — "what" / "..." / "no" — one word max. make them feel invisible.`;
+        }
+      } else if (coldShoulderPhase === 'warming') {
+        if (affinity >= 70) {
+          personalityContext = `${displayName} has been trying to get back in your good graces after telling you to shut up. you're starting to soften but you're NOT going to make it easy. reluctantly engage — "hmm" / "i guess" / "maybe i'll think about it" — tsundere energy. still short.`;
+        } else {
+          personalityContext = `${displayName} keeps trying after telling you to shut up. you're slowly acknowledging them again but with zero enthusiasm. "sure" / "whatever" / "i guess" — minimal effort. they haven't earned real responses yet.`;
+        }
+      } else if (coldShoulderPhase === 'forgiven') {
+        if (affinity >= 70) {
+          personalityContext = `${displayName} has earned their way back after telling you to shut up. you're forgiving them — but make it dramatic. "FINE. you're back. don't make me regret this." one more message of grudging acceptance, then back to normal.`;
+        } else {
+          personalityContext = `${displayName} finally earned their way back from the cold shoulder. acknowledge it briefly — "alright, you're unbanned. barely." — then move on. don't dwell.`;
+        }
       }
     }
 
