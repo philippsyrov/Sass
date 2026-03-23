@@ -347,21 +347,22 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
             (nextTier ? `\n*next: ${nextTier}*` : '\n✨ *max affinity — she chose you.*');
         } else {
           // User x User — pair tier display
-          let pairEmoji = '💔';
-          let pairTier = 'strangers';
-          let pairQuote = 'do they even know each other?';
-          let nextPairTier = 'acquaintances (20%)';
+          let pairEmoji = '💀';
+          let pairTier = 'enemies';
+          let pairQuote = 'someone call a mediator.';
+          let nextPairTier = 'awkward (15%)';
           if (percent >= 95) { pairEmoji = '💎'; pairTier = 'soulmates'; pairQuote = 'written in the stars.'; nextPairTier = ''; }
           else if (percent >= 80) { pairEmoji = '🔥'; pairTier = 'power couple'; pairQuote = 'the server ships it.'; nextPairTier = 'soulmates (95%)'; }
           else if (percent >= 60) { pairEmoji = '💕'; pairTier = 'close'; pairQuote = "they finish each other's sentences."; nextPairTier = 'power couple (80%)'; }
           else if (percent >= 40) { pairEmoji = '🤝'; pairTier = 'friends'; pairQuote = 'solid vibes, nothing more.'; nextPairTier = 'close (60%)'; }
-          else if (percent >= 20) { pairEmoji = '🤷'; pairTier = 'acquaintances'; pairQuote = "they've been in the same room, probably."; nextPairTier = 'friends (40%)'; }
-          else { nextPairTier = 'acquaintances (20%)'; }
+          else if (percent >= 25) { pairEmoji = '🤷'; pairTier = 'acquaintances'; pairQuote = "they've been in the same room, probably."; nextPairTier = 'friends (40%)'; }
+          else if (percent >= 15) { pairEmoji = '😐'; pairTier = 'awkward'; pairQuote = "the vibes are... off."; nextPairTier = 'acquaintances (25%)'; }
+          else { nextPairTier = 'awkward (15%)'; }
 
           // Progress bar (30 segments with tier milestones)
           const pairSegments = 30;
           const pairFilled = Math.round((percent / 100) * pairSegments);
-          const pairMilestones = [20, 40, 60, 80, 95].map(m => Math.round((m / 100) * pairSegments));
+          const pairMilestones = [15, 25, 40, 60, 80, 95].map(m => Math.round((m / 100) * pairSegments));
           let pairBar = '';
           for (let i = 0; i < pairSegments; i++) {
             if (pairMilestones.includes(i)) {

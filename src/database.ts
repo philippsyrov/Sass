@@ -376,9 +376,6 @@ async function createTables(): Promise<void> {
     -- Migrate INTEGER → REAL so fractional gains accumulate (was silently truncating to 0)
     ALTER TABLE users ALTER COLUMN affinity TYPE REAL;
 
-    -- Reset: bring everyone below 50 back to neutral baseline
-    UPDATE users SET affinity = 50 WHERE affinity < 50;
-
     CREATE TABLE IF NOT EXISTS wild_quotes (
       id SERIAL PRIMARY KEY,
       server_id TEXT NOT NULL,
