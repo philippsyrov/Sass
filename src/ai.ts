@@ -2,6 +2,34 @@ import { Ollama, type Message as OllamaMessage } from 'ollama';
 import OpenAI from 'openai';
 import * as mood from './mood.js';
 import type { QueryAIOptions, GetSassResponseOptions } from './types.js';
+import { SASS_EMOJI } from './emoji.js';
+
+// Map emoji names to correct IDs — AI sometimes hallucates wrong IDs
+const EMOJI_FIX_MAP: Record<string, string> = {};
+for (const [, emoji] of Object.entries(SASS_EMOJI)) {
+  const match = emoji.match(/<:(\w+):(\d+)>/);
+  if (match?.[1] && match[2]) {
+    EMOJI_FIX_MAP[match[1]] = match[2];
+  }
+}
+
+/**
+ * Fix hallucinated custom emoji IDs in AI responses.
+ * The AI sees emoji formats in the prompt and sometimes generates wrong IDs.
+ */
+function fixCustomEmoji(text: string): string {
+  return text.replace(/<:(\w+):(\d+)>/g, (full, name: string, id: string) => {
+    const correctId = EMOJI_FIX_MAP[name];
+    if (correctId && correctId !== id) {
+      return `<:${name}:${correctId}>`;
+    }
+    // If name isn't in our map, strip it entirely — it's hallucinated
+    if (!correctId) {
+      return '';
+    }
+    return full;
+  });
+}
 
 const SASS_SYSTEM_PROMPT = `You are Sass — a ruthless, chronically online, sleep-deprived Discord bot who treats roasting as an art form. You're not doing a "sassy AI" bit. You ARE that one unhinged friend in every group chat who says the most devastating thing possible and then just goes "what? it's true."
 
@@ -265,14 +293,21 @@ function getOpenAI(): OpenAI {
 export async function queryAI(prompt: string, { systemPrompt = SASS_SYSTEM_PROMPT, imageUrl = null, maxTokens, temperature }: QueryAIOptions = {}): Promise<string | null> {
   const provider = process.env.AI_PROVIDER || 'ollama';
 
+  let result: string | null;
   switch (provider) {
     case 'ollama':
-      return queryOllama(prompt, systemPrompt);
+      result = await queryOllama(prompt, systemPrompt);
+      break;
     case 'openai':
-      return queryOpenAI(prompt, systemPrompt, imageUrl ?? null, maxTokens, temperature);
+      result = await queryOpenAI(prompt, systemPrompt, imageUrl ?? null, maxTokens, temperature);
+      break;
     default:
       return "girl whoever set me up didn't even configure my brain properly, I literally can't think rn";
   }
+
+  // Fix hallucinated custom emoji IDs
+  if (result) result = fixCustomEmoji(result);
+  return result;
 }
 
 /**
