@@ -65,7 +65,6 @@ export async function generateShipImage(
   avatarUrl1: string,
   avatarUrl2: string,
   percent: number,
-  shipName?: string,
 ): Promise<Buffer> {
   const canvas = createCanvas(CANVAS_WIDTH, CANVAS_HEIGHT);
   const ctx = canvas.getContext('2d');
@@ -246,30 +245,6 @@ function drawCrackEffect(ctx: any, cx: number, cy: number): void {
     }
     ctx.stroke();
   }
-  ctx.restore();
-}
-
-/**
- * Draw the ship name centered above the heart.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function drawShipName(ctx: any, name: string): void {
-  ctx.save();
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-
-  const y = 445; // below percentage, near bottom
-  const fontSize = 44;
-
-  // Drop shadow
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-  ctx.font = `bold ${fontSize}px ShipFont`;
-  ctx.fillText(name, CENTER_X, y + 2);
-
-  // Main text
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-  ctx.fillText(name, CENTER_X, y);
-
   ctx.restore();
 }
 

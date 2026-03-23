@@ -365,7 +365,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
         const avatar2 = user2.displayAvatarURL({ extension: 'png', size: 128 });
         let files: AttachmentBuilder[] = [];
         try {
-          const shipBuffer = await generateShipImage(avatar1, avatar2, percent, shipName);
+          const shipBuffer = await generateShipImage(avatar1, avatar2, percent);
           files = [new AttachmentBuilder(shipBuffer, { name: 'ship.png' })];
         } catch (imgErr) {
           console.error('Ship image generation failed:', (imgErr as Error).message);
