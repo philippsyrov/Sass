@@ -61,15 +61,25 @@ setInterval(() => {
   for (const [key, entry] of spamTracker) {
     if (now - entry.lastTimestamp > SPAM_WINDOW_MS) spamTracker.delete(key);
   }
-  if (spamTracker.size > MAX_SPAM_TRACKER) spamTracker.clear();
+  // FIFO eviction if still over cap after time-based cleanup
+  while (spamTracker.size > MAX_SPAM_TRACKER) {
+    const oldest = spamTracker.keys().next().value;
+    if (oldest !== undefined) spamTracker.delete(oldest); else break;
+  }
   for (const [key, entry] of sensitiveTracker) {
     if (now - entry.lastTimestamp > SENSITIVE_BAN_MS * 2) sensitiveTracker.delete(key);
   }
-  if (sensitiveTracker.size > MAX_SENSITIVE_TRACKER) sensitiveTracker.clear();
+  while (sensitiveTracker.size > MAX_SENSITIVE_TRACKER) {
+    const oldest = sensitiveTracker.keys().next().value;
+    if (oldest !== undefined) sensitiveTracker.delete(oldest); else break;
+  }
   for (const [key, ts] of affinityGainCooldowns) {
     if (now - ts > AFFINITY_GAIN_COOLDOWN_MS) affinityGainCooldowns.delete(key);
   }
-  if (affinityGainCooldowns.size > MAX_AFFINITY_COOLDOWNS) affinityGainCooldowns.clear();
+  while (affinityGainCooldowns.size > MAX_AFFINITY_COOLDOWNS) {
+    const oldest = affinityGainCooldowns.keys().next().value;
+    if (oldest !== undefined) affinityGainCooldowns.delete(oldest); else break;
+  }
 }, 10 * 60 * 1000);
 
 /**

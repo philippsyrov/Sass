@@ -698,8 +698,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
 
     case 'dare': {
       const targetUser = interaction.options.getUser('user', true);
-      const dareKey = `${interaction.user.id}:dare`;
-      if (hasUsedToday(guildId, interaction.user.id, dareKey)) {
+      if (hasUsedToday(guildId, interaction.user.id, 'dare')) {
         await interaction.reply({ content: "you already dared someone today. one chaos event per day is enough.", ephemeral: true });
         break;
       }
@@ -724,7 +723,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
             { name: 'Difficulty', value: skulls, inline: true },
           )
           .setFooter({ text: 'sass dares you. do it or be a coward.' });
-        markUsedToday(guildId, interaction.user.id, dareKey);
+        markUsedToday(guildId, interaction.user.id, 'dare');
         await interaction.editReply({ embeds: [embed] });
       } catch (err) {
         console.error('Dare command failed:', (err as Error).message);
