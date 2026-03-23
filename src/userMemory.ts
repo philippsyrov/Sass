@@ -460,16 +460,11 @@ export async function addWildQuote(guildId: string, userId: string, name: string
   if (!pool) return;
 
   try {
-    // Check for duplicate quote text before inserting
-    const existing = await pool.query(
-      `SELECT id FROM wild_quotes WHERE server_id = $1 AND quote = $2 LIMIT 1`,
-      [guildId, quote]
-    );
-    if ((existing.rows?.length ?? 0) > 0) return; // Already exists, skip
-
+    // Single atomic insert — unique constraint on (server_id, quote) prevents duplicates
     await pool.query(
       `INSERT INTO wild_quotes (server_id, user_id, name, quote)
-       VALUES ($1, $2, $3, $4)`,
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT DO NOTHING`,
       [guildId, userId, name, quote]
     );
     // Cap at 20 per guild — delete oldest

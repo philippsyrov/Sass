@@ -111,17 +111,7 @@ function hashPair(id1: string, id2: string): number {
  * Base hash + interaction boost - beef penalty.
  * Call warmPairCache() before this for DB-backed counts.
  */
-// Blessed pairs — couples who earned a permanent score floor (e.g., married IRL)
-const BLESSED_PAIRS: Record<string, number> = {
-  '1000000000000000011:1000000000000000012': 99, // UserA x UserB
-};
-
 export async function getShipScore(guildId: string, userId1: string, userId2: string): Promise<number> {
-  // Check for blessed pairs
-  const sortedKey = [userId1, userId2].sort().join(':');
-  const blessedScore = BLESSED_PAIRS[sortedKey];
-  if (blessedScore !== undefined) return blessedScore;
-
   const hash = hashPair(userId1, userId2);
   const baseScore = 5 + (hash % 71);
 

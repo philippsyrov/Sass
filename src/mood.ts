@@ -9,6 +9,22 @@
 import { getPool, isDatabaseConnected } from './database.js';
 import type { MoodType, MoodEvent, MoodState, MoodStatus } from './types.js';
 
+// --- Per-guild lock to serialize read-modify-write mood shifts ---
+const guildLocks = new Map<string, Promise<void>>();
+
+async function withGuildLock(guildId: string, fn: () => Promise<void>): Promise<void> {
+  const prev = guildLocks.get(guildId) ?? Promise.resolve();
+  const next = prev.then(fn, fn); // run fn after previous completes, even if previous failed
+  guildLocks.set(guildId, next);
+  // Clean up after completion to prevent memory leak
+  void next.finally(() => {
+    if (guildLocks.get(guildId) === next) {
+      guildLocks.delete(guildId);
+    }
+  });
+  return next;
+}
+
 const MOOD_DECAY_MS = 30 * 60 * 1000; // mood decays every 30 min
 const DECAY_AMOUNT = 15;
 
@@ -148,39 +164,41 @@ export async function getMoodTemperature(guildId: string): Promise<number> {
 export async function shift(guildId: string, event: MoodEvent): Promise<void> {
   if (!isDatabaseConnected()) return;
 
-  const shifts: Record<MoodEvent, MoodShiftConfig> = {
-    complimented: { mood: 'soft', delta: 40 },
-    insulted: { mood: 'petty', delta: 40 },
-    chaos: { mood: 'chaotic', delta: 30 },
-    boring: { mood: 'bored', delta: 20 },
-    nice_to_each_other: { mood: 'chill', delta: 25 },
-    fighting: { mood: 'unhinged', delta: 35 },
-    begged_back: { mood: 'petty', delta: 30 },
-  };
+  return withGuildLock(guildId, async () => {
+    const shifts: Record<MoodEvent, MoodShiftConfig> = {
+      complimented: { mood: 'soft', delta: 40 },
+      insulted: { mood: 'petty', delta: 40 },
+      chaos: { mood: 'chaotic', delta: 30 },
+      boring: { mood: 'bored', delta: 20 },
+      nice_to_each_other: { mood: 'chill', delta: 25 },
+      fighting: { mood: 'unhinged', delta: 35 },
+      begged_back: { mood: 'petty', delta: 30 },
+    };
 
-  let config = shifts[event];
-  if (!config) return;
+    let config = shifts[event];
+    if (!config) return;
 
-  if (event === 'nice_to_each_other' && Math.random() < 0.4) {
-    config = { mood: 'soft', delta: 15 };
-  }
-
-  const state = await getMoodState(guildId);
-  applyDecay(state);
-
-  if (state.mood !== config.mood && state.mood !== 'neutral') {
-    state.intensity = Math.max(0, state.intensity - 20);
-    if (state.intensity <= 10) {
-      state.mood = config.mood;
-      state.intensity = config.delta;
+    if (event === 'nice_to_each_other' && Math.random() < 0.4) {
+      config = { mood: 'soft', delta: 15 };
     }
-  } else {
-    state.mood = config.mood;
-    state.intensity = Math.min(100, state.intensity + config.delta);
-  }
 
-  state.lastShift = Date.now();
-  await saveMoodState(guildId, state);
+    const state = await getMoodState(guildId);
+    applyDecay(state);
+
+    if (state.mood !== config.mood && state.mood !== 'neutral') {
+      state.intensity = Math.max(0, state.intensity - 20);
+      if (state.intensity <= 10) {
+        state.mood = config.mood;
+        state.intensity = config.delta;
+      }
+    } else {
+      state.mood = config.mood;
+      state.intensity = Math.min(100, state.intensity + config.delta);
+    }
+
+    state.lastShift = Date.now();
+    await saveMoodState(guildId, state);
+  });
 }
 
 /**
