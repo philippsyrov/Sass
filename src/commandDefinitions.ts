@@ -32,11 +32,6 @@ export const commands = [
     .setDescription('Check who is the current favorite user'),
 
   new SlashCommandBuilder()
-    .setName('sass')
-    .setDescription('Get a sassy response from the bot')
-    .addStringOption((opt) => opt.setName('message').setDescription('What to say to Sass').setRequired(true)),
-
-  new SlashCommandBuilder()
     .setName('halloffame')
     .setDescription('The wildest things people have said in this server'),
 
@@ -57,38 +52,6 @@ export const commands = [
     .setName('compliment')
     .setDescription('Give someone a backhanded compliment')
     .addUserOption((opt) => opt.setName('user').setDescription('The lucky recipient').setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName('roastas')
-    .setDescription('Roast someone as a specific persona')
-    .addUserOption((opt) => opt.setName('user').setDescription('Who to roast').setRequired(true))
-    .addStringOption((opt) => opt.setName('persona').setDescription('Who to roast as').setRequired(true)
-      .addChoices(
-        { name: 'Gordon Ramsay', value: 'gordon-ramsay' },
-        { name: 'Shakespeare', value: 'shakespeare' },
-        { name: 'Disappointed Mom', value: 'disappointed-mom' },
-        { name: 'Drill Sergeant', value: 'drill-sergeant' },
-        { name: 'Therapist', value: 'therapist' },
-        { name: 'David Attenborough', value: 'david-attenborough' },
-        { name: 'Anime Villain', value: 'anime-villain' },
-        { name: 'Passive-Aggressive Coworker', value: 'passive-aggressive-coworker' },
-      )),
-
-  new SlashCommandBuilder()
-    .setName('translate')
-    .setDescription('Translate a message into a different vibe')
-    .addStringOption((opt) => opt.setName('message').setDescription('The message to translate').setRequired(true))
-    .addStringOption((opt) => opt.setName('style').setDescription('Translation style').setRequired(true)
-      .addChoices(
-        { name: 'Corporate Email', value: 'corporate' },
-        { name: 'Gen Z Brainrot', value: 'genz' },
-        { name: 'Shakespeare', value: 'shakespeare' },
-        { name: 'Passive-Aggressive', value: 'passive-aggressive' },
-        { name: 'Overenthusiastic Influencer', value: 'influencer' },
-        { name: 'Caveman', value: 'caveman' },
-        { name: 'Noir Detective', value: 'noir' },
-        { name: 'Pirate', value: 'pirate' },
-      )),
 
   new SlashCommandBuilder()
     .setName('horoscope')
@@ -113,10 +76,6 @@ export const commands = [
     .setDescription('Check the beef between two users')
     .addUserOption((opt) => opt.setName('user1').setDescription('First person').setRequired(true))
     .addUserOption((opt) => opt.setName('user2').setDescription('Second person').setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName('maincharacter')
-    .setDescription('See who the main character of the day is'),
 
   new SlashCommandBuilder()
     .setName('dare')

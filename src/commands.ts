@@ -21,7 +21,7 @@ export { FORTUNES, QUOTE_AUTHORS } from './commandDefinitions.js';
 export { activeBattles, handleBattleMessage } from './roastBattle.js';
 export { getActivityDescription, getMainCharacter, hasUsedToday, markUsedToday, pickRandom } from './shared/commandUtils.js';
 
-import { getActivityDescription, getMainCharacter, hasUsedToday, markUsedToday } from './shared/commandUtils.js';
+import { getActivityDescription, hasUsedToday, markUsedToday } from './shared/commandUtils.js';
 import { FORTUNES, QUOTE_AUTHORS } from './commandDefinitions.js';
 import { activeBattles } from './roastBattle.js';
 
@@ -519,19 +519,6 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
       break;
     }
 
-    case 'sass': {
-      await interaction.deferReply();
-      const msg = interaction.options.getString('message') ?? '';
-      try {
-        const response = await queryAI(`${interaction.user.displayName} says: ${msg}`);
-        await interaction.editReply(response ?? "my brain broke. congrats, you're that boring.");
-      } catch (err) {
-        console.error('Sass command failed:', (err as Error).message);
-        await interaction.editReply("my brain broke. congrats, you're that boring.");
-      }
-      break;
-    }
-
     case 'conspiracy': {
       const targetUser = interaction.options.getUser('user', true);
       const conspiracyKey = `${guildId}:${interaction.user.id}:${targetUser.id}`;
@@ -583,75 +570,6 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
       } catch (err) {
         console.error('Compliment command failed:', (err as Error).message);
         await interaction.editReply(`💐 ${targetUser.displayName}, you're really brave for being yourself when literally any other option exists.`);
-      }
-      break;
-    }
-
-    case 'roastas': {
-      await interaction.deferReply();
-      const targetUser = interaction.options.getUser('user', true);
-      const persona = interaction.options.getString('persona') ?? '';
-      const personas: Record<string, string> = {
-        'gordon-ramsay': 'You are Gordon Ramsay. Roast them like a failed dish. Use cooking metaphors. Yell. "This is RAW" energy. Uppercase when yelling.',
-        'shakespeare': 'You are Shakespeare. Roast them in iambic pentameter or Elizabethan English. Use "thou," "thy," "forsooth." Make it sound like a dramatic monologue from a play.',
-        'disappointed-mom': 'You are a deeply disappointed mother. Use guilt and passive aggression. "I\'m not mad, I\'m just disappointed." Reference how you sacrificed everything and this is what you get.',
-        'drill-sergeant': 'You are a military drill sergeant. Scream at them. Use military jargon. Question their life choices like they failed basic training. ALL CAPS for the yelling parts.',
-        'therapist': 'You are an overly analytical therapist. Roast them by "diagnosing" their behavior with fake psychology terms. Sound professional but devastating. "This is a textbook case of..."',
-        'david-attenborough': 'You are David Attenborough narrating a nature documentary. Describe this user\'s behavior as if observing a fascinating but disappointing creature in its natural habitat. Calm, observational, devastating.',
-        'anime-villain': 'You are a dramatic anime villain. Monologue about how pathetic this opponent is. Use dramatic pauses (...), reference your "power level," and laugh maniacally. Be theatrical.',
-        'passive-aggressive-coworker': 'You are a passive-aggressive coworker. Use corporate speak to absolutely destroy them. "Per my last message," "as previously discussed," "just to circle back." Sound polite but lethal.',
-      };
-      try {
-        const response = await queryAI(
-          `Roast the Discord user "${targetUser.displayName}". Stay in character completely. 2-3 sentences max.`,
-          { systemPrompt: personas[persona] }
-        );
-        const labels: Record<string, string> = {
-          'gordon-ramsay': '👨‍🍳 Gordon Ramsay',
-          'shakespeare': '🎭 Shakespeare',
-          'disappointed-mom': '👩 Disappointed Mom',
-          'drill-sergeant': '🎖️ Drill Sergeant',
-          'therapist': '🛋️ Therapist',
-          'david-attenborough': '🎬 David Attenborough',
-          'anime-villain': '⚔️ Anime Villain',
-          'passive-aggressive-coworker': '💼 Passive-Aggressive Coworker',
-        };
-        await interaction.editReply(`${labels[persona]} on **${targetUser.displayName}**:\n\n*${response}*`);
-      } catch (err) {
-        console.error('Roastas command failed:', (err as Error).message);
-        await interaction.editReply(`even ${persona} couldn't find the words. that's how bad it is.`);
-      }
-      break;
-    }
-
-    case 'translate': {
-      await interaction.deferReply();
-      const msg = interaction.options.getString('message') ?? '';
-      const style = interaction.options.getString('style') ?? '';
-      const styles: Record<string, string> = {
-        'corporate': 'Rewrite this message as a corporate email. Use "per my last message," "circle back," "synergy," "moving forward," "let\'s take this offline." Sound professional but soulless.',
-        'genz': 'Rewrite this message in extreme Gen Z internet slang. Use "no cap," "fr fr," "slay," "its giving," "lowkey," "highkey," "bussin," "ong," "rizz," brainrot language. Excessive abbreviations.',
-        'shakespeare': 'Rewrite this message in Shakespearean English. Use "thou," "thy," "hath," "forsooth," "prithee." Make it sound like a dramatic soliloquy.',
-        'passive-aggressive': 'Rewrite this message as passive-aggressive as possible. Add "as I mentioned before," "just wanted to follow up," "no worries if not," "just a gentle reminder." Sound polite but absolutely furious underneath.',
-        'influencer': 'Rewrite this message as an overenthusiastic Instagram influencer. Use excessive exclamation marks, "OMG," "obsessed," "living my best life," "link in bio energy." Everything is THE BEST THING EVER.',
-        'caveman': 'Rewrite this message as a caveman would say it. Simple words only. "Me think," "you no good," "fire hot." Grunt energy. Reference rocks, fire, mammoth.',
-        'noir': 'Rewrite this message as a 1940s noir detective narration. Dark, rainy, cynical. "The dame walked in," "this city never sleeps," "I\'d seen it all — or so I thought." Use period-appropriate slang.',
-        'pirate': 'Rewrite this message as a pirate. Use "arr," "ye," "matey," "scallywag," "walk the plank," "shiver me timbers." Reference the sea, treasure, and rum.',
-      };
-      const labels: Record<string, string> = {
-        'corporate': '💼 Corporate', 'genz': '🧠 Gen Z', 'shakespeare': '🎭 Shakespeare',
-        'passive-aggressive': '😊 Passive-Aggressive', 'influencer': '✨ Influencer',
-        'caveman': '🪨 Caveman', 'noir': '🕵️ Noir Detective', 'pirate': '🏴‍☠️ Pirate',
-      };
-      try {
-        const response = await queryAI(
-          `Original message: "${msg}"\n\nRewrite it in the specified style. Keep the same meaning but completely change the tone and vocabulary.`,
-          { systemPrompt: styles[style] }
-        );
-        await interaction.editReply(`${labels[style]} **translation:**\n\n> original: *"${msg}"*\n\n${response}`);
-      } catch (err) {
-        console.error('Translate command failed:', (err as Error).message);
-        await interaction.editReply("translation failed. some things are beyond even my abilities.");
       }
       break;
     }
@@ -774,26 +692,6 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           { name: 'Latest Beef', value: beef.lastTopic ?? 'classified', inline: false },
         )
         .setFooter({ text: 'sass intelligence agency — beef division' });
-      await interaction.reply({ embeds: [embed] });
-      break;
-    }
-
-    case 'maincharacter': {
-      const guildId = interaction.guild?.id;
-      if (!guildId) {
-        await interaction.reply("this only works in a server. try it there.");
-        break;
-      }
-      const mc = await getMainCharacter(guildId);
-      if (!mc) {
-        await interaction.reply("nobody's earned main character status today. the server is full of NPCs.");
-        break;
-      }
-      const embed = new EmbedBuilder()
-        .setColor(0xFFD700)
-        .setTitle('👑 TODAY\'S MAIN CHARACTER')
-        .setDescription(`**${mc.name}** is the main character today.\n\neveryone else is a supporting role at best. extras at worst.`)
-        .setFooter({ text: 'selected based on who\'s been the most unhinged today' });
       await interaction.reply({ embeds: [embed] });
       break;
     }

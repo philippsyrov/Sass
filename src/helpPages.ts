@@ -13,7 +13,7 @@ export function buildHelpPages(botAvatar: string | null | undefined): EmbedBuild
       .setThumbnail(botAvatar ?? null)
       .setDescription("here's everything i can do. use it wisely (you won't).\n\n*i learn from every interaction. the more you talk, the more ammo i have.*")
       .addFields(
-        { name: '\u{1F4AC} Chat', value: '`@Sass <anything>` \u2014 talk to me\n`/sass <message>` \u2014 same thing but fancier', inline: true },
+        { name: '\u{1F4AC} Chat', value: '`@Sass <anything>` \u2014 talk to me\njust say "sass" and i\'ll hear you too', inline: true },
         { name: '\u{1F9E0} Memory', value: '`@Sass remember <fact>` \u2014 weaponize yourself\n`@Sass remember @user <fact>` \u2014 snitch on someone', inline: true },
         { name: '\u200b', value: '\u200b', inline: false },
         { name: '\u{1F321}\uFE0F Mood', value: '`@Sass mood`\nmy vibe shifts based on how you treat me.', inline: true },
@@ -30,8 +30,6 @@ export function buildHelpPages(botAvatar: string | null | undefined): EmbedBuild
         { name: '\u200b', value: '\u200b', inline: false },
         { name: '\u2B50 Favorite', value: '`/favorite`\ni pick my favorite person. not you.', inline: true },
         { name: '\u{1F3C6} Hall of Fame', value: '`/halloffame`\nwildest things said in this server.', inline: true },
-        { name: '\u200b', value: '\u200b', inline: false },
-        { name: '\u{1F3AD} Main Character', value: '`/maincharacter`\ntoday\'s protagonist. spoiler: not you.', inline: true },
       ),
 
     // Page 3 — Fun Commands
@@ -52,9 +50,6 @@ export function buildHelpPages(botAvatar: string | null | undefined): EmbedBuild
       .setColor(0xFF4D6D)
       .setAuthor({ name: 'Sass \u2014 More Fun', iconURL: botAvatar ?? undefined })
       .addFields(
-        { name: '\u{1F3AD} Roast As', value: '`/roastas @user <persona>`\ngordon ramsay, shakespeare, disappointed mom, drill sergeant, therapist, anime villain, etc.', inline: false },
-        { name: '\u{1F310} Translate', value: '`/translate <text> <style>`\ncorporate, gen z, caveman, pirate, noir, anime, medieval, passive aggressive.', inline: false },
-        { name: '\u200b', value: '\u200b', inline: false },
         { name: '\u2648 Horoscope', value: '`/horoscope <sign>`\nastrology but mean. once per day.', inline: true },
         { name: '\u{1F575}\uFE0F Conspiracy', value: '`/conspiracy @user`\nabsurd theory using real intel.', inline: true },
         { name: '\u200b', value: '\u200b', inline: false },
