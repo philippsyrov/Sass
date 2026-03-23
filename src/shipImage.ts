@@ -98,12 +98,7 @@ export async function generateShipImage(
   // --- Step 5: Center effects/icons ---
   drawCenterEffects(ctx, percent);
 
-  // --- Step 6: Ship name overlay ---
-  if (shipName) {
-    drawShipName(ctx, shipName);
-  }
-
-  // --- Step 7: Percentage text with drop shadow ---
+  // --- Step 6: Percentage text with drop shadow ---
   drawPercentageText(ctx, percent);
 
   return canvas.toBuffer('image/png');
@@ -116,7 +111,7 @@ export async function generateShipImage(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function drawBackgroundTint(ctx: any, percent: number): void {
   const energy = getEnergyColor(percent);
-  ctx.fillStyle = `rgba(${energy.r}, ${energy.g}, ${energy.b}, 0.15)`;
+  ctx.fillStyle = `rgba(${energy.r}, ${energy.g}, ${energy.b}, 0.35)`;
   ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 }
 
@@ -126,9 +121,10 @@ function drawBackgroundTint(ctx: any, percent: number): void {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function drawAvatarGlow(ctx: any, cx: number, cy: number, radius: number, color: string): void {
   ctx.save();
-  const glowRadius = radius + 18;
-  const gradient = ctx.createRadialGradient(cx, cy, radius - 2, cx, cy, glowRadius);
+  const glowRadius = radius + 40;
+  const gradient = ctx.createRadialGradient(cx, cy, radius - 5, cx, cy, glowRadius);
   gradient.addColorStop(0, color);
+  gradient.addColorStop(0.5, color.replace('0.6)', '0.3)'));
   gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
   ctx.fillStyle = gradient;
   ctx.beginPath();
@@ -183,17 +179,19 @@ function drawCenterEffects(ctx: any, percent: number): void {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function drawSparkles(ctx: any, cx: number, cy: number, percent: number): void {
   const sparklePositions = [
-    { x: cx - 90, y: cy - 60, size: 8 },
-    { x: cx + 85, y: cy - 50, size: 6 },
-    { x: cx - 70, y: cy + 40, size: 5 },
-    { x: cx + 95, y: cy + 45, size: 7 },
-    { x: cx - 30, y: cy - 80, size: 5 },
-    { x: cx + 40, y: cy + 70, size: 6 },
+    { x: cx - 120, y: cy - 70, size: 18 },
+    { x: cx + 115, y: cy - 60, size: 14 },
+    { x: cx - 95, y: cy + 50, size: 12 },
+    { x: cx + 100, y: cy + 55, size: 16 },
+    { x: cx - 40, y: cy - 95, size: 11 },
+    { x: cx + 50, y: cy + 85, size: 13 },
+    { x: cx - 140, y: cy + 10, size: 10 },
+    { x: cx + 135, y: cy - 5, size: 12 },
   ];
 
   // More sparkles for higher percentages
-  const count = percent >= 95 ? 6 : 4;
-  const alpha = percent >= 95 ? 0.9 : 0.7;
+  const count = percent >= 95 ? 8 : 5;
+  const alpha = percent >= 95 ? 1.0 : 0.85;
 
   for (let i = 0; i < count; i++) {
     const sp = sparklePositions[i];
@@ -227,8 +225,8 @@ function drawStar(ctx: any, x: number, y: number, size: number, color: string): 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function drawCrackEffect(ctx: any, cx: number, cy: number): void {
   ctx.save();
-  ctx.strokeStyle = 'rgba(100, 130, 200, 0.5)';
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(80, 120, 200, 0.8)';
+  ctx.lineWidth = 4;
 
   // Jagged crack lines
   const cracks = [
@@ -260,16 +258,16 @@ function drawShipName(ctx: any, name: string): void {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  const y = 440; // below percentage, near bottom
-  const fontSize = 32;
+  const y = 445; // below percentage, near bottom
+  const fontSize = 44;
 
   // Drop shadow
   ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
   ctx.font = `bold ${fontSize}px ShipFont`;
   ctx.fillText(name, CENTER_X, y + 2);
 
-  // Main text — soft white with slight transparency
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+  // Main text
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
   ctx.fillText(name, CENTER_X, y);
 
   ctx.restore();
