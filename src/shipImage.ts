@@ -3,13 +3,10 @@
  *
  * Draws avatars first, then overlays the template image on top.
  * The template has transparent circle cutouts where avatars show through.
- * Percentage text rendered below the heart in the center.
  *
- * Enhancements:
+ * Visual enhancements:
  * - Dynamic background tint (warm pink for high %, cool blue for low %)
- * - Glow/border around avatars (warm glow high %, cold glow low %)
- * - Ship name overlaid centered above the heart
- * - Icons/effects between avatars based on percentage
+ * - Glow ring around avatars (color matches energy)
  * - Drop shadow on percentage text
  */
 
@@ -39,16 +36,12 @@ const AVATAR2_CY = 231;
 const AVATAR2_RADIUS = 162;
 const PERCENT_X = 724;
 const PERCENT_Y = 370;
-const CENTER_X = 724;
-const CENTER_Y = 200; // heart area center
 
 /**
  * Get the energy color based on ship percentage.
  * High % = warm pink/red, Low % = cool blue/purple.
  */
 function getEnergyColor(percent: number): { r: number; g: number; b: number } {
-  // Warm (high): #FF6B9D (255, 107, 157)
-  // Cold (low):  #6B8BFF (107, 139, 255)
   const t = percent / 100;
   return {
     r: Math.round(107 + (255 - 107) * t),
@@ -69,49 +62,44 @@ export async function generateShipImage(
   const canvas = createCanvas(CANVAS_WIDTH, CANVAS_HEIGHT);
   const ctx = canvas.getContext('2d');
 
-  // Load template and avatars in parallel
   const [template, img1, img2] = await Promise.all([
     loadImage(TEMPLATE_PATH).catch(() => null),
     loadImage(avatarUrl1).catch(() => null),
     loadImage(avatarUrl2).catch(() => null),
   ]);
 
-  // --- Step 1: Dynamic background tint ---
-  drawBackgroundTint(ctx, percent);
-
-  // --- Step 2: Avatar glow rings ---
+  // Step 1: Dynamic background tint
   const energy = getEnergyColor(percent);
+  ctx.fillStyle = `rgba(${energy.r}, ${energy.g}, ${energy.b}, 0.35)`;
+  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+  // Step 2: Avatar glow rings
   const glowColor = `rgba(${energy.r}, ${energy.g}, ${energy.b}, 0.6)`;
   drawAvatarGlow(ctx, AVATAR1_CX, AVATAR1_CY, AVATAR1_RADIUS, glowColor);
   drawAvatarGlow(ctx, AVATAR2_CX, AVATAR2_CY, AVATAR2_RADIUS, glowColor);
 
-  // --- Step 3: Draw avatars (behind template) ---
+  // Step 3: Draw avatars (behind template)
   drawCircularAvatar(ctx, img1, AVATAR1_CX, AVATAR1_CY, AVATAR1_RADIUS);
   drawCircularAvatar(ctx, img2, AVATAR2_CX, AVATAR2_CY, AVATAR2_RADIUS);
 
-  // --- Step 4: Draw template on top ---
+  // Step 4: Draw template on top — transparent cutouts reveal avatars
   if (template) {
     ctx.drawImage(template, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
   }
 
-  // --- Step 5: Center effects/icons ---
-  drawCenterEffects(ctx, percent);
+  // Step 5: Percentage text with drop shadow
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 64px ShipFont';
 
-  // --- Step 6: Percentage text with drop shadow ---
-  drawPercentageText(ctx, percent);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+  ctx.fillText(`${percent}%`, PERCENT_X + 3, PERCENT_Y + 3);
+
+  const mainColor = `rgb(${Math.round(energy.r * 0.7)}, ${Math.round(energy.g * 0.4)}, ${Math.round(energy.b * 0.5)})`;
+  ctx.fillStyle = mainColor;
+  ctx.fillText(`${percent}%`, PERCENT_X, PERCENT_Y);
 
   return canvas.toBuffer('image/png');
-}
-
-/**
- * Draw a subtle background tint before the template.
- * Warm pink for high scores, cool blue for low scores.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function drawBackgroundTint(ctx: any, percent: number): void {
-  const energy = getEnergyColor(percent);
-  ctx.fillStyle = `rgba(${energy.r}, ${energy.g}, ${energy.b}, 0.35)`;
-  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 }
 
 /**
@@ -148,122 +136,4 @@ function drawCircularAvatar(ctx: any, img: any, cx: number, cy: number, radius: 
     ctx.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
   }
   ctx.restore();
-}
-
-/**
- * Draw effects between the avatars based on percentage.
- * 80%+: sparkles, 50-79%: small hearts, 20-49%: question marks, <20%: broken heart
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function drawCenterEffects(ctx: any, percent: number): void {
-  ctx.save();
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-
-  if (percent >= 80) {
-    // Sparkles scattered around the heart area
-    drawSparkles(ctx, CENTER_X, CENTER_Y, percent);
-  } else if (percent < 20) {
-    // Broken heart / crack effect
-    drawCrackEffect(ctx, CENTER_X, CENTER_Y);
-  }
-  // 20-79%: no extra effects — the heart template + glow is enough
-
-  ctx.restore();
-}
-
-/**
- * Draw sparkle stars around the center area.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function drawSparkles(ctx: any, cx: number, cy: number, percent: number): void {
-  const sparklePositions = [
-    { x: cx - 120, y: cy - 70, size: 18 },
-    { x: cx + 115, y: cy - 60, size: 14 },
-    { x: cx - 95, y: cy + 50, size: 12 },
-    { x: cx + 100, y: cy + 55, size: 16 },
-    { x: cx - 40, y: cy - 95, size: 11 },
-    { x: cx + 50, y: cy + 85, size: 13 },
-    { x: cx - 140, y: cy + 10, size: 10 },
-    { x: cx + 135, y: cy - 5, size: 12 },
-  ];
-
-  // More sparkles for higher percentages
-  const count = percent >= 95 ? 8 : 5;
-  const alpha = percent >= 95 ? 1.0 : 0.85;
-
-  for (let i = 0; i < count; i++) {
-    const sp = sparklePositions[i];
-    if (!sp) continue;
-    drawStar(ctx, sp.x, sp.y, sp.size, `rgba(255, 255, 255, ${alpha})`);
-  }
-}
-
-/**
- * Draw a 4-point star (sparkle).
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function drawStar(ctx: any, x: number, y: number, size: number, color: string): void {
-  ctx.save();
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  // 4-point star shape
-  ctx.moveTo(x, y - size);
-  ctx.quadraticCurveTo(x + size * 0.3, y - size * 0.3, x + size, y);
-  ctx.quadraticCurveTo(x + size * 0.3, y + size * 0.3, x, y + size);
-  ctx.quadraticCurveTo(x - size * 0.3, y + size * 0.3, x - size, y);
-  ctx.quadraticCurveTo(x - size * 0.3, y - size * 0.3, x, y - size);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
-}
-
-/**
- * Draw crack lines emanating from center for very low percentages.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function drawCrackEffect(ctx: any, cx: number, cy: number): void {
-  ctx.save();
-  ctx.strokeStyle = 'rgba(80, 120, 200, 0.8)';
-  ctx.lineWidth = 4;
-
-  // Jagged crack lines
-  const cracks = [
-    [{ x: cx - 15, y: cy + 30 }, { x: cx - 25, y: cy + 55 }, { x: cx - 18, y: cy + 75 }],
-    [{ x: cx + 12, y: cy + 28 }, { x: cx + 22, y: cy + 50 }, { x: cx + 30, y: cy + 70 }],
-  ];
-
-  for (const crack of cracks) {
-    const start = crack[0];
-    if (!start) continue;
-    ctx.beginPath();
-    ctx.moveTo(start.x, start.y);
-    for (let i = 1; i < crack.length; i++) {
-      const pt = crack[i];
-      if (!pt) continue;
-      ctx.lineTo(pt.x, pt.y);
-    }
-    ctx.stroke();
-  }
-  ctx.restore();
-}
-
-/**
- * Draw percentage text with a drop shadow for better readability.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function drawPercentageText(ctx: any, percent: number): void {
-  const energy = getEnergyColor(percent);
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.font = 'bold 64px ShipFont';
-
-  // Drop shadow (darker, offset down-right)
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
-  ctx.fillText(`${percent}%`, PERCENT_X + 3, PERCENT_Y + 3);
-
-  // Main text — tinted by energy color
-  const mainColor = `rgb(${Math.round(energy.r * 0.7)}, ${Math.round(energy.g * 0.4)}, ${Math.round(energy.b * 0.5)})`;
-  ctx.fillStyle = mainColor;
-  ctx.fillText(`${percent}%`, PERCENT_X, PERCENT_Y);
 }
