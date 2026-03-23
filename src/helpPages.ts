@@ -46,7 +46,6 @@ export function buildHelpPages(botAvatar: string | null | undefined): EmbedBuild
         { name: '\u{1F960} Fortune', value: '`/fortune`\ncursed fortune cookie. you\'ve been warned.', inline: true },
         { name: '\u200b', value: '\u200b', inline: false },
         { name: '\u{1F4AC} Quote', value: '`/quote`\nfake inspirational quote. means nothing.', inline: true },
-        { name: '\u{1F916} NPC', value: '`/npc @user`\nrate someone\'s NPC energy.', inline: true },
       ),
 
     // Page 4 — More Fun

@@ -729,15 +729,18 @@ export async function getTopReactions(guildId: string, limit = 5): Promise<Array
   try {
     const result = await pool.query(
       `SELECT r.sass_response, r.message_id, COUNT(*) as reaction_count,
-              (SELECT i.user_message FROM interactions i WHERE i.server_id = $1 AND i.sass_response = r.sass_response AND (i.trigger_type IS NULL OR i.trigger_type != 'auto-sass-activity') ORDER BY i.timestamp DESC LIMIT 1) as user_message,
-              (SELECT i.username FROM interactions i WHERE i.server_id = $1 AND i.sass_response = r.sass_response AND (i.trigger_type IS NULL OR i.trigger_type != 'auto-sass-activity') ORDER BY i.timestamp DESC LIMIT 1) as username
+              i.user_message, i.username
        FROM reactions r
+       INNER JOIN interactions i
+         ON i.server_id = r.server_id AND i.sass_response = r.sass_response
        WHERE r.server_id = $1
-         AND NOT EXISTS (
-           SELECT 1 FROM interactions i
-           WHERE i.server_id = $1 AND i.sass_response = r.sass_response AND i.trigger_type = 'auto-sass-activity'
-         )
-       GROUP BY r.sass_response, r.message_id
+         AND r.sass_response IS NOT NULL
+         AND LENGTH(TRIM(r.sass_response)) > 0
+         AND i.trigger_type NOT IN ('auto-sass-activity', 'command')
+         AND i.username IS NOT NULL
+         AND i.username != ''
+       GROUP BY r.sass_response, r.message_id, i.user_message, i.username
+       HAVING COUNT(*) >= 2
        ORDER BY reaction_count DESC
        LIMIT $2`,
       [guildId, limit]

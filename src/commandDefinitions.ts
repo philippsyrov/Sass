@@ -32,15 +32,6 @@ export const commands = [
     .setDescription('Check who is the current favorite user'),
 
   new SlashCommandBuilder()
-    .setName('npc')
-    .setDescription('Generate NPC dialogue for a user')
-    .addUserOption((opt) => opt.setName('user').setDescription('Who to NPC-ify').setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName('ping')
-    .setDescription('Check if the bot is alive and responding'),
-
-  new SlashCommandBuilder()
     .setName('sass')
     .setDescription('Get a sassy response from the bot')
     .addStringOption((opt) => opt.setName('message').setDescription('What to say to Sass').setRequired(true)),

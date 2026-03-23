@@ -195,15 +195,6 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
   }).catch((err) => console.error('Failed to log command:', err.message));
 
   switch (commandName) {
-    case 'ping': {
-      const uptime = Math.floor(process.uptime());
-      const hours = Math.floor(uptime / 3600);
-      const mins = Math.floor((uptime % 3600) / 60);
-      const uptimeStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
-      await interaction.reply(`i'm alive unfortunately. been suffering for ${uptimeStr}.`);
-      break;
-    }
-
     case 'help': {
       const botAvatar = interaction.client.user?.displayAvatarURL({ size: 256 }) ?? '';
       const helpPages = buildHelpPages(botAvatar);
@@ -469,28 +460,6 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
       break;
     }
 
-    case 'npc': {
-      await interaction.deferReply();
-      const targetUser = interaction.options.getUser('user', true);
-      try {
-        const response = await queryAI(
-          `"${targetUser.displayName}" is now an NPC in an RPG. What class/role are they? Give their title, then 3 dialogue lines a player would hear when interacting with them. The dialogue should subtly roast them. Format EXACTLY like this:\n**Class:** [their class]\n\n💬 "line 1"\n💬 "line 2"\n💬 "line 3"`,
-          { systemPrompt: 'You generate RPG NPC cards. Follow the format exactly. Be funny and roast-y. Lowercase dialogue.' }
-        );
-        await interaction.editReply(`⚔️ **${targetUser.displayName}** — NPC\n${response}`);
-      } catch (err) {
-        console.error('NPC command failed:', (err as Error).message);
-        await interaction.editReply(
-          `⚔️ **${targetUser.displayName}** — NPC\n` +
-          `**Class:** Village Idiot\n\n` +
-          `💬 "i used to be an adventurer, but then i opened discord"\n` +
-          `💬 "please... no more... my inventory is full of L's"\n` +
-          `💬 "the prophecy said someone cool would come. you're not them."`
-        );
-      }
-      break;
-    }
-
     case 'halloffame': {
       const quotes = await userMemory.getWildQuotes(guildId, 10);
       if (quotes.length === 0) {
@@ -588,7 +557,8 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           `Create an absurd, funny conspiracy theory about a Discord user named "${targetUser.displayName}". Use their name specifically. 2-3 sentences max. Sound like a deranged detective presenting evidence.\n\n${evidence.length > 0 ? `USE THIS REAL INTEL to make the conspiracy personal and specific:\n${evidence.join('\n')}` : 'You have no intel on them yet — make it about how suspiciously clean their record is.'}`,
           { systemPrompt: 'You generate absurd conspiracy theories about people. Be creative and unhinged but not mean-spirited. Lowercase. Weave in any real facts/activity as "evidence." Each conspiracy should be wildly different — never repeat the same format or structure.' }
         );
-        await interaction.editReply(`🕵️ **CLASSIFIED INTEL ON ${targetUser.displayName.toUpperCase()}**\n\n${response}`);
+        const conspiracyText = response?.trim() || `${targetUser.displayName} has zero digital footprint. no evidence, no trail, nothing. that's more suspicious than anything i could've found.`;
+        await interaction.editReply(`🕵️ **CLASSIFIED INTEL ON ${targetUser.displayName.toUpperCase()}**\n\n${conspiracyText}`);
         conspiracyCooldowns.set(conspiracyKey, Date.now());
         if (conspiracyCooldowns.size > MAX_CONSPIRACY_COOLDOWNS) {
           const oldest = conspiracyCooldowns.keys().next().value;
