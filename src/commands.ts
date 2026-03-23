@@ -9,7 +9,7 @@ import {
 import { queryAI } from './ai.js';
 import * as userMemory from './userMemory.js';
 import { buildHelpPages } from './helpPages.js';
-import { logCommand, logInteraction } from './database.js';
+import { logCommand, logInteraction, getAffinity, getTopReactions } from './database.js';
 import * as mood from './mood.js';
 import { getShipScore, getPairInteractions, warmPairCache } from './shipScore.js';
 import { generateShipImage } from './shipImage.js';
@@ -294,13 +294,26 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
       await interaction.deferReply();
       const user1 = interaction.options.getUser('user1', true);
       const user2 = interaction.options.getUser('user2', true);
-      await warmPairCache(guildId, user1.id, user2.id);
-      const percent = await getShipScore(guildId, user1.id, user2.id);
+
+      // Check if shipping with Sass — use affinity instead of hash
+      const botId = interaction.client.user?.id;
+      const isShipWithSass = botId && (user1.id === botId || user2.id === botId);
+      const otherUser = isShipWithSass ? (user1.id === botId ? user2 : user1) : null;
+
+      let percent: number;
+      if (isShipWithSass && otherUser) {
+        percent = await getAffinity(guildId, otherUser.id);
+      } else {
+        await warmPairCache(guildId, user1.id, user2.id);
+        percent = await getShipScore(guildId, user1.id, user2.id);
+      }
       const bar = '❤️'.repeat(Math.round(percent / 10)) + '🖤'.repeat(10 - Math.round(percent / 10));
 
       try {
-        const prompt = `"${user1.displayName}" x "${user2.displayName}" at ${percent}%. ONE sentence verdict, max 12 words. No metaphors or object comparisons. React like a friend judging a couple.`;
-        let verdict = await queryAI(prompt, {
+        const shipPrompt = isShipWithSass
+          ? `Someone shipped "${otherUser?.displayName}" with you (Sass). Your affinity with them is ${percent}%. ONE sentence verdict about how you feel about them, max 12 words. Be tsundere — if high affinity, admit you like them reluctantly. If low, be cold.`
+          : `"${user1.displayName}" x "${user2.displayName}" at ${percent}%. ONE sentence verdict, max 12 words. No metaphors or object comparisons. React like a friend judging a couple.`;
+        let verdict = await queryAI(shipPrompt, {
           systemPrompt: 'You judge ship compatibility. ONE short sentence. Max 12 words. Lowercase. Talk like a 20-year-old, not a poet. No "chemistry of a [object]" comparisons. If you exceed 12 words, you failed.',
         });
 
@@ -440,6 +453,54 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
       }
       const lines = quotes.map((q, i) => `**${i + 1}.** "${q.quote}" — *${q.name}*`);
       await interaction.reply(`🏆 **hall of fame — wildest things said here**\n\n${lines.join('\n')}`);
+      break;
+    }
+
+    case 'bestof': {
+      await interaction.deferReply();
+      const topResponses = await getTopReactions(guildId, 10);
+      if (topResponses.length === 0) {
+        await interaction.editReply("nobody's reacted to anything yet. you lot are ungrateful.");
+        break;
+      }
+
+      // Paginate — 5 per page
+      const pageSize = 5;
+      const totalPages = Math.ceil(topResponses.length / pageSize);
+      let currentPage = 0;
+
+      const buildPage = (page: number): string => {
+        const start = page * pageSize;
+        const items = topResponses.slice(start, start + pageSize);
+        const lines = items.map((r, i) => {
+          const rank = start + i + 1;
+          const userMsg = r.userMessage ? `**${r.username}:** "${r.userMessage}"\n   ` : '';
+          return `**${rank}.** ${userMsg}**Sass:** "${r.sassResponse}"`;
+        });
+        return `💅 **best of sass** — ranked by you lot, obviously\n\n${lines.join('\n\n')}${totalPages > 1 ? `\n\n*page ${page + 1}/${totalPages}*` : ''}`;
+      };
+
+      if (totalPages <= 1) {
+        await interaction.editReply(buildPage(0));
+      } else {
+        const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder().setCustomId('bestof_prev').setLabel('◀').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId('bestof_next').setLabel('▶').setStyle(ButtonStyle.Secondary),
+        );
+        const reply = await interaction.editReply({ content: buildPage(0), components: [buttons] });
+        const collector = reply.createMessageComponentCollector({
+          componentType: ComponentType.Button,
+          time: 120_000,
+        });
+        collector.on('collect', async (btn) => {
+          if (btn.customId === 'bestof_prev') currentPage = (currentPage - 1 + totalPages) % totalPages;
+          else if (btn.customId === 'bestof_next') currentPage = (currentPage + 1) % totalPages;
+          await btn.update({ content: buildPage(currentPage), components: [buttons] });
+        });
+        collector.on('end', async () => {
+          try { await reply.edit({ components: [] }); } catch (_err) { /* message deleted */ }
+        });
+      }
       break;
     }
 

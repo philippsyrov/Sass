@@ -340,8 +340,11 @@ async function createTables(): Promise<void> {
       sass_response TEXT,
       mood TEXT,
       mood_intensity INTEGER,
-      tokens_estimate INTEGER
+      tokens_estimate INTEGER,
+      context TEXT
     );
+
+    ALTER TABLE interactions ADD COLUMN IF NOT EXISTS context TEXT;
 
     CREATE TABLE IF NOT EXISTS mood_history (
       id SERIAL PRIMARY KEY,
@@ -378,8 +381,11 @@ async function createTables(): Promise<void> {
       reactor_id TEXT,
       reactor_name TEXT,
       emoji TEXT,
+      emoji_id TEXT,
       is_positive BOOLEAN
     );
+
+    ALTER TABLE reactions ADD COLUMN IF NOT EXISTS emoji_id TEXT;
 
     CREATE INDEX IF NOT EXISTS idx_reactions_message ON reactions(message_id);
 
@@ -405,8 +411,11 @@ async function createTables(): Promise<void> {
       cold_shoulder_attempts_needed INTEGER DEFAULT 0,
       cold_shoulder_attempts_made INTEGER DEFAULT 0,
       gender TEXT,
+      affinity INTEGER DEFAULT 50,
       PRIMARY KEY (server_id, user_id)
     );
+
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS affinity INTEGER DEFAULT 50;
 
     CREATE TABLE IF NOT EXISTS wild_quotes (
       id SERIAL PRIMARY KEY,
@@ -458,7 +467,7 @@ async function createTables(): Promise<void> {
 export async function logInteraction({
   serverId, serverName, channelId, channelName,
   userId, username, triggerType, commandName,
-  userMessage, sassResponse, mood, moodIntensity,
+  userMessage, sassResponse, mood, moodIntensity, context,
 }: InteractionLog): Promise<void> {
   if (!isConnected || !pool) return;
 
@@ -471,10 +480,10 @@ export async function logInteraction({
     await pool.query(
       `INSERT INTO interactions
         (server_id, server_name, channel_id, channel_name, user_id, username,
-         trigger_type, command_name, user_message, sass_response, mood, mood_intensity, tokens_estimate)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+         trigger_type, command_name, user_message, sass_response, mood, mood_intensity, tokens_estimate, context)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
       [serverId, serverName, channelId, channelName, userId, username,
-       triggerType, commandName, userMessage, sassResponse, mood, moodIntensity, tokensEstimate]
+       triggerType, commandName, userMessage, sassResponse, mood, moodIntensity, tokensEstimate, context]
     );
   } catch (err) {
     console.error('Failed to log interaction:', (err as Error).message);
@@ -570,16 +579,16 @@ export async function getTrainingData(limit = 1000): Promise<TrainingDataRow[]> 
  */
 export async function logReaction({
   serverId, channelId, messageId, sassResponse,
-  reactorId, reactorName, emoji, isPositive,
+  reactorId, reactorName, emoji, emojiId, isPositive,
 }: ReactionLog): Promise<void> {
   if (!isConnected || !pool) return;
 
   try {
     await pool.query(
       `INSERT INTO reactions
-        (server_id, channel_id, message_id, sass_response, reactor_id, reactor_name, emoji, is_positive)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [serverId, channelId, messageId, sassResponse, reactorId, reactorName, emoji, isPositive]
+        (server_id, channel_id, message_id, sass_response, reactor_id, reactor_name, emoji, emoji_id, is_positive)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [serverId, channelId, messageId, sassResponse, reactorId, reactorName, emoji, emojiId ?? null, isPositive]
     );
   } catch (err) {
     console.error('Failed to log reaction:', (err as Error).message);
@@ -622,6 +631,68 @@ export async function getPairInteractionCountDB(guildId: string, userId1: string
   } catch (err) {
     console.error('Failed to get pair interactions:', (err as Error).message);
     return 0;
+  }
+}
+
+/**
+ * Update a user's affinity score (clamped 0-100).
+ */
+export async function updateAffinity(guildId: string, userId: string, delta: number): Promise<void> {
+  if (!isConnected || !pool) return;
+  try {
+    await pool.query(
+      `UPDATE users SET affinity = GREATEST(0, LEAST(100, COALESCE(affinity, 50) + $3))
+       WHERE server_id = $1 AND user_id = $2`,
+      [guildId, userId, delta]
+    );
+  } catch (err) {
+    console.error('Failed to update affinity:', (err as Error).message);
+  }
+}
+
+/**
+ * Get a user's affinity score (default 50 if not set).
+ */
+export async function getAffinity(guildId: string, userId: string): Promise<number> {
+  if (!isConnected || !pool) return 50;
+  try {
+    const result = await pool.query(
+      'SELECT affinity FROM users WHERE server_id = $1 AND user_id = $2',
+      [guildId, userId]
+    );
+    return (result.rows[0]?.affinity as number) ?? 50;
+  } catch (err) {
+    console.error('Failed to get affinity:', (err as Error).message);
+    return 50;
+  }
+}
+
+/**
+ * Get top reactions for Sass's messages — for /bestof command.
+ */
+export async function getTopReactions(guildId: string, limit = 5): Promise<Array<{ sassResponse: string; userMessage: string; username: string; reactionCount: number }>> {
+  if (!isConnected || !pool) return [];
+  try {
+    const result = await pool.query(
+      `SELECT r.sass_response, r.message_id, COUNT(*) as reaction_count,
+              (SELECT i.user_message FROM interactions i WHERE i.server_id = $1 AND i.sass_response = r.sass_response ORDER BY i.timestamp DESC LIMIT 1) as user_message,
+              (SELECT i.username FROM interactions i WHERE i.server_id = $1 AND i.sass_response = r.sass_response ORDER BY i.timestamp DESC LIMIT 1) as username
+       FROM reactions r
+       WHERE r.server_id = $1
+       GROUP BY r.sass_response, r.message_id
+       ORDER BY reaction_count DESC
+       LIMIT $2`,
+      [guildId, limit]
+    );
+    return result.rows.map((row) => ({
+      sassResponse: row.sass_response as string,
+      userMessage: (row.user_message as string) ?? '',
+      username: (row.username as string) ?? 'unknown',
+      reactionCount: parseInt(row.reaction_count as string),
+    }));
+  } catch (err) {
+    console.error('Failed to get top reactions:', (err as Error).message);
+    return [];
   }
 }
 

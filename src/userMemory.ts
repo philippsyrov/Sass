@@ -263,10 +263,10 @@ export async function buildPeopleContext(guildId: string, recentMessages: Buffer
       else if (user.messageCount <= 3) parts.push('newcomer');
 
       if (user.facts && user.facts.length > 0) {
-        parts.push(`intel: ${user.facts.join('; ')}`);
+        parts.push(`${displayName}'s intel: ${user.facts.join('; ')}`);
       }
       if (user.roasts.length > 0) {
-        parts.push(`ammo: ${user.roasts.join(', ')}`);
+        parts.push(`${displayName}'s ammo: ${user.roasts.join(', ')}`);
       }
     } else {
       parts.push('unknown — first time seeing them');

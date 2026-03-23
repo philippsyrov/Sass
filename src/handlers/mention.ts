@@ -17,7 +17,7 @@ import { storeMemory, searchMemories } from '../vectorMemory.js';
 import { buildHelpPages } from '../helpPages.js';
 import * as mood from '../mood.js';
 import { extractStatement, checkContradiction, generate4kCallout, storeStatement } from '../caughtIn4k.js';
-import { logInteraction, logCommand } from '../database.js';
+import { logInteraction, logCommand, updateAffinity, getAffinity } from '../database.js';
 import { recordResponse, getRecentResponses } from '../responseMemory.js';
 import { getShipScore, getPairInteractions, warmPairCache } from '../shipScore.js';
 
@@ -31,6 +31,19 @@ const rememberCooldowns = new Map<string, number>();
 const REMEMBER_COOLDOWN_MS = 30 * 1000; // 30 seconds between remembers
 const MAX_REMEMBER_COOLDOWNS = 500;
 
+// Spam tracker — detect low-effort repeated pings
+const spamTracker = new Map<string, { count: number; lastTimestamp: number }>();
+const SPAM_WINDOW_MS = 2 * 60 * 1000; // 2 minutes
+const SPAM_THRESHOLD = 3; // 3+ low-effort messages = ignore
+const MAX_SPAM_TRACKER = 500;
+
+// Sensitive topic tracker — soft-ban users who spam drama
+const sensitiveTracker = new Map<string, { count: number; lastTimestamp: number; softBanUntil: number }>();
+const SENSITIVE_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+const SENSITIVE_BAN_MS = 15 * 60 * 1000; // 15 minute soft-ban
+const MAX_SENSITIVE_TRACKER = 500;
+const SENSITIVE_KEYWORDS = /\b(kill myself|wanna die|killing myself|i'm dying|im dying|bleeding out|gonna bleed|self.?harm|end it all|jump off|hang myself|slit my|cut myself|overdose|i'm dead|im dead|my arm fell off|pass out|bleeding everywhere)\b/i;
+
 // Clean up cooldowns every 10 min
 setInterval(() => {
   const now = Date.now();
@@ -40,6 +53,14 @@ setInterval(() => {
   for (const [key, ts] of rememberCooldowns) {
     if (now - ts > REMEMBER_COOLDOWN_MS) rememberCooldowns.delete(key);
   }
+  for (const [key, entry] of spamTracker) {
+    if (now - entry.lastTimestamp > SPAM_WINDOW_MS) spamTracker.delete(key);
+  }
+  if (spamTracker.size > MAX_SPAM_TRACKER) spamTracker.clear();
+  for (const [key, entry] of sensitiveTracker) {
+    if (now - entry.lastTimestamp > SENSITIVE_BAN_MS * 2) sensitiveTracker.delete(key);
+  }
+  if (sensitiveTracker.size > MAX_SENSITIVE_TRACKER) sensitiveTracker.clear();
 }, 10 * 60 * 1000);
 
 /**
@@ -77,6 +98,64 @@ export async function handleMention(message: Message, client: Client): Promise<v
   );
 
   const lowerClean = cleanContent.toLowerCase();
+
+  // --- Spam detection: ignore low-effort repeated pings ---
+  const spamKey = `${guildId}:${userId}`;
+  if (cleanContent.length <= 5 && !isCreator) {
+    const now = Date.now();
+    const entry = spamTracker.get(spamKey);
+    if (entry && now - entry.lastTimestamp < SPAM_WINDOW_MS) {
+      entry.count++;
+      entry.lastTimestamp = now;
+      if (entry.count >= SPAM_THRESHOLD) {
+        // Silently ignore — no API call, no response
+        updateAffinity(guildId, userId, -3).catch((err) => console.error('Affinity update failed:', (err as Error).message));
+        return;
+      }
+    } else {
+      spamTracker.set(spamKey, { count: 1, lastTimestamp: now });
+    }
+  } else {
+    // Real message — reset spam counter
+    spamTracker.delete(spamKey);
+  }
+
+  // --- Sensitive topic handling: disengage from drama bait ---
+  if (!isCreator && SENSITIVE_KEYWORDS.test(cleanContent)) {
+    const sensitiveKey = `${guildId}:${userId}`;
+    const now = Date.now();
+    const entry = sensitiveTracker.get(sensitiveKey);
+
+    if (entry?.softBanUntil && now < entry.softBanUntil) {
+      // Still soft-banned — ignore completely
+      return;
+    }
+
+    if (entry?.softBanUntil && now >= entry.softBanUntil) {
+      // Soft-ban expired — check-in message
+      sensitiveTracker.delete(sensitiveKey);
+      const channel = message.channel as TextChannel;
+      await channel.sendTyping();
+      const checkIn = await queryAI(`${displayName} was being dramatic earlier about injuries/death. They just messaged again. Give a short sassy check-in like "you good now?" or "you better? i need proof." Keep it under 10 words, be sassy but not mean.`, { temperature: 1.0 });
+      if (checkIn) {
+        await message.reply(checkIn).catch((err) => console.error('Reply failed:', (err as Error).message));
+      }
+      return;
+    }
+
+    if (entry && now - entry.lastTimestamp < SENSITIVE_WINDOW_MS) {
+      entry.count++;
+      entry.lastTimestamp = now;
+      if (entry.count >= 2) {
+        // 2nd+ sensitive message — soft-ban
+        entry.softBanUntil = now + SENSITIVE_BAN_MS;
+        return;
+      }
+    } else {
+      sensitiveTracker.set(sensitiveKey, { count: 1, lastTimestamp: now, softBanUntil: 0 });
+    }
+    // First sensitive message — let AI handle with dismiss hint (added to escalationContext later)
+  }
 
   // Help command — paginated embeds with button navigation
   if (lowerClean === 'help' || lowerClean === 'commands' || lowerClean === '?') {
@@ -592,7 +671,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
   }
 
   // Build context — include who is speaking so the AI understands the conversation
-  const recentMessages = messageBuffer.getRecentRaw(channel.id, 20);
+  const recentMessages = messageBuffer.getRecentRaw(channel.id, 25);
   const recentContext = recentMessages.map(
     (msg) => `${msg.author}${msg.isBot ? ' [BOT]' : ''}: ${msg.content}`
   ).join('\n');
@@ -659,7 +738,16 @@ export async function handleMention(message: Message, client: Client): Promise<v
 
     const imageUrl = imageAttachment ? imageAttachment.url : null;
     const responseHistory = getRecentResponses(channel.id);
-    const fullUserContext = [userContext, vectorContext, responseHistory, escalationContext].filter(Boolean).join('\n\n');
+
+    // Affinity context — tell the AI how Sass feels about this user
+    const affinity = await getAffinity(guildId, userId);
+    const affinityContext = `YOUR RELATIONSHIP WITH ${displayName}: affinity ${affinity}%. ${affinity >= 70 ? 'you like them. be warmer, tease affectionately.' : affinity <= 30 ? 'you can barely stand them. be cold and dismissive.' : 'neutral — standard sass.'}`;
+
+    // Sensitive topic dismiss hint
+    const sensitiveEntry = sensitiveTracker.get(`${guildId}:${userId}`);
+    const sensitiveHint = sensitiveEntry?.count === 1 ? `NOTE: ${displayName} is being dramatic about injuries/death for attention. Dismiss with sass. Do not engage seriously or play along. "i'm not paid enough for this" energy.` : '';
+
+    const fullUserContext = [userContext, vectorContext, responseHistory, escalationContext, affinityContext, sensitiveHint].filter(Boolean).join('\n\n');
     const response = await getSassResponse(framedMessage, { guildId, recentContext, userContext: fullUserContext, peopleContext, isCreator, mentionsCreator, creatorName, imageUrl });
     if (!response) {
       await message.reply("My brain just short-circuited. Even AI has bad days, okay?");
@@ -675,8 +763,9 @@ export async function handleMention(message: Message, client: Client): Promise<v
     // Set auto-sass cooldown so she doesn't double-respond in this channel
     setAutoSassCooldown(channel.id);
 
-    // Log to database
+    // Log the interaction and its context to the database
     const moodStatus = await mood.getStatus(guildId);
+    const fullContext = [recentContext, peopleContext, vectorContext, affinityContext].filter(Boolean).join('\n---\n');
     logInteraction({
       serverId: message.guild?.id, serverName: message.guild?.name,
       channelId: channel.id, channelName: channel.name,
@@ -684,7 +773,11 @@ export async function handleMention(message: Message, client: Client): Promise<v
       triggerType: 'mention', commandName: null,
       userMessage: cleanContent, sassResponse: response,
       mood: moodStatus.mood, moodIntensity: moodStatus.intensity,
+      context: fullContext,
     }).catch((err) => console.error('Log interaction failed:', (err as Error).message));
+
+    // Bump affinity for genuine exchange
+    updateAffinity(guildId, userId, 1).catch((err) => console.error('Affinity update failed:', (err as Error).message));
 
     // Don't track roast topics for the creator (we don't roast them)
     if (!isCreator) {

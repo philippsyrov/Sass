@@ -5,7 +5,8 @@ import { handleAutoSass } from './handlers/autoSass.js';
 import { handleCommand, handleBattleMessage } from './commands.js';
 import { messageBuffer } from './messageBuffer.js';
 import * as userMemory from './userMemory.js';
-import { initDatabase, closeDatabase, logReaction } from './database.js';
+import { initDatabase, closeDatabase, logReaction, updateAffinity } from './database.js';
+import { queryAI } from './ai.js';
 import { isOnSlashCooldown, setSlashCooldown, isOnShipCooldown, setShipCooldown } from './cooldown.js';
 import { recordPairInteraction } from './shipScore.js';
 
@@ -253,8 +254,7 @@ client.on('messageCreate', async (message) => {
   await handleAutoSass(message, client);
 });
 
-// Reaction tracking — log reactions on Sass's messages as quality signals
-const POSITIVE_EMOJI = new Set(['💀', '😂', '🤣', '❤️', '🔥', '💯', '😭', '⬆️', '👍', '🫡', '💀', '☠️', '🤯', '😈', '👑']);
+// Reaction tracking — log ALL reactions on Sass's messages as quality signals
 const NEGATIVE_EMOJI = new Set(['👎', '😐', '🤡', '❌']);
 
 client.on('messageReactionAdd', async (reaction, user) => {
@@ -277,16 +277,33 @@ client.on('messageReactionAdd', async (reaction, user) => {
       recordPairInteraction(reactionGuildId, user.id, messageAuthor.id);
     }
 
+    // Reaction-based wild quote detection — if a non-bot message gets 3+ reactions, check if it's wild
+    if (messageAuthor && !messageAuthor.bot && messageAuthor.id !== client.user?.id) {
+      const totalReactions = reaction.message.reactions.cache.reduce((sum, r) => sum + (r.count ?? 0), 0);
+      if (totalReactions >= 3 && reaction.message.content && reaction.message.content.length >= 15) {
+        const content = reaction.message.content;
+        const authorName = messageAuthor.displayName || messageAuthor.username;
+        // Lightweight AI check — is this wild enough for hall of fame?
+        queryAI(`Is this message wild, unhinged, or hilarious enough for a "hall of fame" of crazy things said in a Discord server? Message: "${content}". Reply with ONLY "yes" or "no".`, { temperature: 0.3 })
+          .then(async (answer) => {
+            if (answer?.toLowerCase().includes('yes')) {
+              await userMemory.addWildQuote(reactionGuildId, messageAuthor.id, authorName, content);
+            }
+          })
+          .catch((err) => console.error('Wild quote AI check failed:', (err as Error).message));
+      }
+      return;
+    }
+
     // Only log to DB for reactions on Sass's messages
     if (messageAuthor?.id !== client.user?.id) return;
 
-    const emoji = reaction.emoji.name || reaction.emoji.toString();
-    const isPositive = POSITIVE_EMOJI.has(emoji);
-    const isNegative = NEGATIVE_EMOJI.has(emoji);
+    const emojiName = reaction.emoji.name || reaction.emoji.toString();
+    const emojiId = reaction.emoji.id ?? undefined;
+    const isNegative = NEGATIVE_EMOJI.has(emojiName);
+    const isPositive = !isNegative;
 
-    // Only log known sentiment emoji
-    if (!isPositive && !isNegative) return;
-
+    // Track ALL reactions — custom emoji are positive by default
     logReaction({
       serverId: reaction.message.guild?.id,
       channelId: reaction.message.channel.id,
@@ -294,9 +311,14 @@ client.on('messageReactionAdd', async (reaction, user) => {
       sassResponse: reaction.message.content || '',
       reactorId: user.id,
       reactorName: ('displayName' in user ? user.displayName : null) || user.username || 'unknown',
-      emoji,
+      emoji: emojiName,
+      emojiId,
       isPositive,
     }).catch((err) => console.error('Reaction log failed:', (err as Error).message));
+
+    // Update affinity based on reaction sentiment
+    updateAffinity(reactionGuildId, user.id, isPositive ? 2 : -2)
+      .catch((err) => console.error('Affinity update failed:', (err as Error).message));
   } catch (err) {
     console.error('Reaction handler error:', (err as Error).message);
   }

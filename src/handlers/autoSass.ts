@@ -216,7 +216,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
     }
   }
 
-  const recentMessages = messageBuffer.getRecentRaw(channelId, 15);
+  const recentMessages = messageBuffer.getRecentRaw(channelId, 20);
   if (!recentMessages || recentMessages.length === 0) return;
 
   const recentContext = recentMessages.map(
@@ -353,6 +353,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
       triggerType: 'auto-sass', commandName: null,
       userMessage: message.content, sassResponse: remark,
       mood: moodStatus.mood, moodIntensity: moodStatus.intensity,
+      context: [recentContext, peopleContext].filter(Boolean).join('\n---\n'),
     }).catch((err) => console.error('DB log failed:', (err as Error).message));
   } catch (err) {
     console.error('Auto-sass failed:', (err as Error).message);

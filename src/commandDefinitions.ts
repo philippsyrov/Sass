@@ -55,6 +55,10 @@ export const commands = [
     .setDescription('The wildest things people have said in this server'),
 
   new SlashCommandBuilder()
+    .setName('bestof')
+    .setDescription('Sass\'s greatest hits — ranked by your reactions'),
+
+  new SlashCommandBuilder()
     .setName('help')
     .setDescription('Show help information about SassyBot'),
 

@@ -130,6 +130,7 @@ export interface InteractionLog {
   sassResponse: string;
   mood: string;
   moodIntensity: number;
+  context?: string;
 }
 
 export interface MoodLog {
@@ -170,6 +171,7 @@ export interface ReactionLog {
   reactorId: string;
   reactorName: string;
   emoji: string;
+  emojiId?: string;
   isPositive: boolean;
 }
 
