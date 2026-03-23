@@ -9,7 +9,7 @@ import {
   type Attachment,
   type TextChannel,
 } from 'discord.js';
-import { getSassResponse, extractRoastTopic, analyzeProfile, queryAI } from '../ai.js';
+import { getSassResponse, extractRoastTopic, queryAI } from '../ai.js';
 import { messageBuffer } from '../messageBuffer.js';
 import * as userMemory from '../userMemory.js';
 import { isOnMentionCooldown, setMentionCooldown, setAutoSassCooldown, trackMentionEscalation, getEscalationCount } from '../cooldown.js';
@@ -218,102 +218,9 @@ export async function handleMention(message: Message, client: Client): Promise<v
     return;
   }
 
-  // Profile command — "@Sass profile" or "@Sass profile @user"
-  const profileMatch = lowerClean.match(/^profile\s*(?:<@!?(\d+)>)?$/);
-  if (lowerClean === 'profile' || profileMatch) {
-    const targetId = profileMatch?.[1] || userId;
-
-    // Profile cooldown — 10 min per target user
-    const profileCooldownKey = `profile:${guildId}:${userId}:${targetId}`;
-    const lastProfiled = profileCooldowns.get(profileCooldownKey);
-    const now = Date.now();
-    if (lastProfiled && now - lastProfiled < PROFILE_COOLDOWN_MS) {
-      const remaining = Math.ceil((PROFILE_COOLDOWN_MS - (now - lastProfiled)) / 60000);
-      const spamResponses = [
-        `you just checked ${remaining} min ago. they haven't gotten less annoying yet.`,
-        `obsessed much? try again in ${remaining} min <:sass_judge:100000000000000902>`,
-        `i already told you. reading it twice won't change the verdict.`,
-        `you're speedrunning this command and it's embarrassing <:sass_stare:100000000000000900>`,
-      ];
-      await message.reply(spamResponses[Math.floor(Math.random() * spamResponses.length)] as string).catch((err) => console.error('Reply failed:', (err as Error).message));
-      return;
-    }
-
-    const targetUser = targetId === userId
-      ? message.author
-      : await message.guild?.members.fetch(targetId).then((m) => m.user).catch(() => null) ?? null;
-    if (!targetUser) {
-      await message.reply("can't find that person. they probably don't exist, like your taste").catch((err) => console.error('Reply failed:', (err as Error).message));
-      return;
-    }
-    const targetName = targetUser.displayName || targetUser.username;
-
-    // Fetch recent messages from this channel by the target user
-    try {
-      await channel.sendTyping().catch((err) => console.error('sendTyping failed:', (err as Error).message));
-      const fetched = await channel.messages.fetch({ limit: 100 });
-      const userMsgs = fetched
-        .filter((m) => m.author.id === targetId && !m.author.bot)
-        .map((m) => m.content)
-        .filter((c) => c.length > 0)
-        .reverse()
-        .slice(0, 30);
-
-      if (userMsgs.length < 3) {
-        await message.reply(`${targetName} barely talks. can't profile a ghost.`).catch((err) => console.error('Reply failed:', (err as Error).message));
-        return;
-      }
-
-      const raw = await analyzeProfile(targetName, userMsgs.join('\n'));
-      if (!raw) {
-        await message.reply("my brain crashed trying to analyze this person. that says a lot honestly.").catch((err) => console.error('Reply failed:', (err as Error).message));
-        return;
-      }
-
-      // Parse the response
-      const lines = raw.trim().split('\n');
-      const scores: Record<string, number> = {};
-      let archetype = 'Unknown';
-      let roast = '';
-      for (const line of lines) {
-        const [key, ...rest] = line.split(':');
-        if (!key) continue;
-        const val = rest.join(':').trim();
-        if (['chaos', 'thirst', 'aggro', 'clown', 'brain'].includes(key.trim())) {
-          scores[key.trim()] = Math.min(10, Math.max(0, parseInt(val, 10) || 0));
-        } else if (key.trim() === 'archetype') {
-          archetype = val;
-        } else if (key.trim() === 'roast') {
-          roast = val;
-        }
-      }
-
-      // Build visual bars
-      const bar = (score: number): string => '█'.repeat(score) + '░'.repeat(10 - score);
-      const profile = [
-        `**${targetName}'s behavioral diagnosis**`,
-        `> archetype: **${archetype}**`,
-        '',
-        `\`chaos \` ${bar(scores['chaos'] || 0)} **${scores['chaos'] || 0}**/10`,
-        `\`thirst\` ${bar(scores['thirst'] || 0)} **${scores['thirst'] || 0}**/10`,
-        `\`aggro \` ${bar(scores['aggro'] || 0)} **${scores['aggro'] || 0}**/10`,
-        `\`clown \` ${bar(scores['clown'] || 0)} **${scores['clown'] || 0}**/10`,
-        `\`brain \` ${bar(scores['brain'] || 0)} **${scores['brain'] || 0}**/10`,
-        '',
-        `*${roast}*`,
-      ];
-      await message.reply(profile.join('\n')).catch((err) => console.error('Reply failed:', (err as Error).message));
-      // Set profile cooldown
-      profileCooldowns.set(profileCooldownKey, Date.now());
-      if (profileCooldowns.size > MAX_PROFILE_COOLDOWNS) {
-        const oldest = profileCooldowns.keys().next().value;
-        if (oldest !== undefined) profileCooldowns.delete(oldest);
-      }
-      logCommand({ serverId: message.guild?.id, userId, commandName: 'profile', commandType: 'mention' }).catch((err) => console.error('Log command failed:', (err as Error).message));
-    } catch (err) {
-      console.error('Profile analysis failed:', (err as Error).message);
-      await message.reply("my brain crashed trying to analyze this person. that says a lot honestly.").catch((replyErr) => console.error('Reply failed:', (replyErr as Error).message));
-    }
+  // Profile command — moved to /profile slash command
+  if (lowerClean === 'profile' || lowerClean.match(/^profile\s/)) {
+    await message.reply("profile is now a slash command! use `/profile @user` instead.").catch((err) => console.error('Reply failed:', (err as Error).message));
     return;
   }
 

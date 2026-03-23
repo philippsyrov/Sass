@@ -77,6 +77,11 @@ export const commands = [
     .addUserOption((opt) => opt.setName('user1').setDescription('First person').setRequired(true))
     .addUserOption((opt) => opt.setName('user2').setDescription('Second person').setRequired(true)),
 
+  new SlashCommandBuilder()
+    .setName('profile')
+    .setDescription('Behavioral diagnosis — chaos, thirst, aggro, clown, brain')
+    .addUserOption((opt) => opt.setName('user').setDescription('Who to analyze (defaults to you)').setRequired(false)),
+
 ];
 
 // --- Fortune cookies ---

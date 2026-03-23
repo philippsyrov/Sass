@@ -6,7 +6,7 @@ import {
   ComponentType,
   type ChatInputCommandInteraction,
 } from 'discord.js';
-import { queryAI } from './ai.js';
+import { queryAI, analyzeProfile } from './ai.js';
 import * as userMemory from './userMemory.js';
 import { buildHelpPages } from './helpPages.js';
 import { logCommand, logInteraction, getAffinity, getTopReactions } from './database.js';
@@ -832,6 +832,76 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
       } catch (err) {
         console.error('Predict command failed:', (err as Error).message);
         await interaction.editReply(`the crystal ball showed me ${targetUser.displayName}'s future and honestly? it cracked. that's the prediction.`);
+      }
+      break;
+    }
+
+    case 'profile': {
+      await interaction.deferReply();
+      const targetUser = interaction.options.getUser('user') ?? interaction.user;
+      const targetId = targetUser.id;
+      const targetName = targetUser.displayName || targetUser.username;
+
+      try {
+        const channel = interaction.channel;
+        if (!channel || !('messages' in channel)) {
+          await interaction.editReply("i can't read messages here. try a normal text channel.");
+          break;
+        }
+        const fetched = await channel.messages.fetch({ limit: 100 });
+        const userMsgs = fetched
+          .filter((m) => m.author.id === targetId && !m.author.bot)
+          .map((m) => m.content)
+          .filter((c) => c.length > 0)
+          .reverse()
+          .slice(0, 30);
+
+        if (userMsgs.length < 3) {
+          await interaction.editReply(`${targetName} barely talks. can't profile a ghost.`);
+          break;
+        }
+
+        const raw = await analyzeProfile(targetName, userMsgs.join('\n'));
+        if (!raw) {
+          await interaction.editReply("my brain crashed trying to analyze this person. that says a lot honestly.");
+          break;
+        }
+
+        const lines = raw.trim().split('\n');
+        const scores: Record<string, number> = {};
+        let archetype = 'Unknown';
+        let roast = '';
+        for (const line of lines) {
+          const [key, ...rest] = line.split(':');
+          if (!key) continue;
+          const val = rest.join(':').trim();
+          if (['chaos', 'thirst', 'aggro', 'clown', 'brain'].includes(key.trim())) {
+            scores[key.trim()] = Math.min(10, Math.max(0, parseInt(val, 10) || 0));
+          } else if (key.trim() === 'archetype') {
+            archetype = val;
+          } else if (key.trim() === 'roast') {
+            roast = val;
+          }
+        }
+
+        const bar = (score: number): string => '\u2588'.repeat(score) + '\u2591'.repeat(10 - score);
+        const profile = [
+          `**${targetName}'s behavioral diagnosis**`,
+          `> archetype: **${archetype}**`,
+          '',
+          `\`chaos \` ${bar(scores['chaos'] || 0)} **${scores['chaos'] || 0}**/10`,
+          `\`thirst\` ${bar(scores['thirst'] || 0)} **${scores['thirst'] || 0}**/10`,
+          `\`aggro \` ${bar(scores['aggro'] || 0)} **${scores['aggro'] || 0}**/10`,
+          `\`clown \` ${bar(scores['clown'] || 0)} **${scores['clown'] || 0}**/10`,
+          `\`brain \` ${bar(scores['brain'] || 0)} **${scores['brain'] || 0}**/10`,
+          '',
+          `*${roast}*`,
+        ];
+        await interaction.editReply(profile.join('\n'));
+        logCommand({ serverId: guildId, userId: interaction.user.id, commandName: 'profile', commandType: 'slash' }).catch((err) => console.error('Log command failed:', (err as Error).message));
+      } catch (err) {
+        console.error('Profile command failed:', (err as Error).message);
+        await interaction.editReply("my brain crashed trying to analyze this person. that says a lot honestly.");
       }
       break;
     }
