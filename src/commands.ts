@@ -352,7 +352,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           const filled = Math.round(percent / 5);
           const progressBar = '█'.repeat(filled) + '░'.repeat(20 - filled);
 
-          hint = `\n\n═══════════════ ✿ ═══════════════\n\n` +
+          hint = `\n\n─────────────── ✿ ───────────────\n\n` +
             `${tierEmoji} **${tierName}**\n` +
             `*"${tierQuote}"*\n\n` +
             `\`${progressBar}\` **${percent}%**` +
