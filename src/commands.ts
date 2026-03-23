@@ -347,7 +347,8 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           const filled = Math.round(percent / 5);
           const progressBar = '█'.repeat(filled) + '░'.repeat(20 - filled);
 
-          hint = `\n\n${tierEmoji} **${tierName}**\n` +
+          hint = `\n\n───── ✿ ─────\n\n` +
+            `${tierEmoji} **${tierName}**\n` +
             `*"${tierQuote}"*\n\n` +
             `\`${progressBar}\` **${percent}%**` +
             (nextTier ? `\n*next: ${nextTier}*` : '\n✨ *max affinity — she chose you.*');
@@ -364,7 +365,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
         const avatar2 = user2.displayAvatarURL({ extension: 'png', size: 128 });
         let files: AttachmentBuilder[] = [];
         try {
-          const shipBuffer = await generateShipImage(avatar1, avatar2, percent);
+          const shipBuffer = await generateShipImage(avatar1, avatar2, percent, shipName);
           files = [new AttachmentBuilder(shipBuffer, { name: 'ship.png' })];
         } catch (imgErr) {
           console.error('Ship image generation failed:', (imgErr as Error).message);
@@ -373,12 +374,12 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
         const embed = new EmbedBuilder()
           .setColor(0xFF4D6D)
           .setDescription(
-            `🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸\n\n` +
+            `🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸\n\n` +
             `💘 **${user1.displayName}** x **${user2.displayName}**\n` +
             `ship name: **${shipName}**\n` +
             `${bar} **${percent}%**\n\n` +
             `*${verdict}*${hint}\n\n` +
-            `🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸`
+            `🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸`
           );
 
         if (files.length > 0) {
