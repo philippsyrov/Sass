@@ -417,6 +417,9 @@ async function createTables(): Promise<void> {
 
     ALTER TABLE users ADD COLUMN IF NOT EXISTS affinity INTEGER DEFAULT 50;
 
+    -- One-time fix: bump anyone below 20 to 30 (from pre-rebalance era)
+    UPDATE users SET affinity = 30 WHERE affinity < 20;
+
     CREATE TABLE IF NOT EXISTS wild_quotes (
       id SERIAL PRIMARY KEY,
       server_id TEXT NOT NULL,

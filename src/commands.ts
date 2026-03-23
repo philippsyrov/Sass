@@ -330,16 +330,27 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
         const interactions = getPairInteractions(guildId, user1.id, user2.id);
         let hint = '';
         if (isShipWithSass) {
-          // Show affinity tier when shipping with Sass
-          let tier = '';
-          if (percent >= 96) tier = '💎 **ride or die** — "i\'d never admit it, but i\'d choose you."';
-          else if (percent >= 86) tier = '💗 **favorite** — "don\'t tell anyone, but you\'re my favorite."';
-          else if (percent >= 71) tier = '💕 **liked** — "...fine, i like you. shut up about it."';
-          else if (percent >= 51) tier = '🤝 **familiar** — "you\'re tolerable. don\'t push it."';
-          else if (percent >= 31) tier = '😐 **acquaintance** — "i acknowledge your existence."';
-          else if (percent >= 16) tier = '😒 **nuisance** — "oh, you\'re still here."';
-          else tier = '❓ **stranger** — "who are you again?"';
-          hint = `\n\n${tier}`;
+          // Show affinity tier + progress bar when shipping with Sass
+          let tierEmoji = '❓';
+          let tierName = 'stranger';
+          let tierQuote = 'who are you again?';
+          let nextTier = 'nuisance (16%)';
+          if (percent >= 96) { tierEmoji = '💎'; tierName = 'ride or die'; tierQuote = "i'd never admit it, but i'd choose you."; nextTier = ''; }
+          else if (percent >= 86) { tierEmoji = '💗'; tierName = 'favorite'; tierQuote = "don't tell anyone, but you're my favorite."; nextTier = 'ride or die (96%)'; }
+          else if (percent >= 71) { tierEmoji = '💕'; tierName = 'liked'; tierQuote = '...fine, i like you. shut up about it.'; nextTier = 'favorite (86%)'; }
+          else if (percent >= 51) { tierEmoji = '🤝'; tierName = 'familiar'; tierQuote = "you're tolerable. don't push it."; nextTier = 'liked (71%)'; }
+          else if (percent >= 31) { tierEmoji = '😐'; tierName = 'acquaintance'; tierQuote = 'i acknowledge your existence.'; nextTier = 'familiar (51%)'; }
+          else if (percent >= 16) { tierEmoji = '😒'; tierName = 'nuisance'; tierQuote = "oh, you're still here."; nextTier = 'acquaintance (31%)'; }
+          else { nextTier = 'nuisance (16%)'; }
+
+          // Visual progress bar (20 segments)
+          const filled = Math.round(percent / 5);
+          const progressBar = '█'.repeat(filled) + '░'.repeat(20 - filled);
+
+          hint = `\n\n${tierEmoji} **${tierName}**\n` +
+            `*"${tierQuote}"*\n\n` +
+            `\`${progressBar}\` **${percent}%**` +
+            (nextTier ? `\n*next: ${nextTier}*` : '\n✨ *max affinity — she chose you.*');
         } else if (percent === 100) {
           hint = '\n\n💯 **100% — PROVEN PAIR.** sass has seen enough. this is real.';
         } else if (percent >= 95 && interactions >= 40) {
