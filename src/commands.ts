@@ -17,12 +17,12 @@ import { AttachmentBuilder } from 'discord.js';
 
 // Re-export from extracted modules so existing imports don't break
 export { commands } from './commandDefinitions.js';
-export { EIGHT_BALL, FORTUNES, QUOTE_AUTHORS } from './commandDefinitions.js';
+export { FORTUNES, QUOTE_AUTHORS } from './commandDefinitions.js';
 export { activeBattles, handleBattleMessage } from './roastBattle.js';
 export { getActivityDescription, getMainCharacter, hasUsedToday, markUsedToday, pickRandom } from './shared/commandUtils.js';
 
 import { getActivityDescription, getMainCharacter, hasUsedToday, markUsedToday } from './shared/commandUtils.js';
-import { EIGHT_BALL, FORTUNES, QUOTE_AUTHORS } from './commandDefinitions.js';
+import { FORTUNES, QUOTE_AUTHORS } from './commandDefinitions.js';
 import { activeBattles } from './roastBattle.js';
 
 // --- Conspiracy cooldown — 30 min per user per target ---
@@ -230,23 +230,6 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
         );
         helpReply.edit({ components: [disabled] }).catch((err) => console.error('Failed to disable help buttons:', err.message));
       });
-      break;
-    }
-
-    case '8ball': {
-      await interaction.deferReply();
-      const question = interaction.options.getString('question') ?? '';
-      try {
-        const answer = await queryAI(
-          `Someone asked the magic 8 ball: "${question}". Give a sassy, brutal one-sentence answer that actually addresses their specific question. Be mean about it.`,
-          { systemPrompt: 'You are a sassy magic 8 ball. Answer the question directly but make them feel dumb for asking. One short sentence. Lowercase.' }
-        );
-        await interaction.editReply(`🎱 **${question}**\n${answer}`);
-      } catch (err) {
-        console.error('8ball command failed:', (err as Error).message);
-        const answer = EIGHT_BALL[Math.floor(Math.random() * EIGHT_BALL.length)] ?? 'no.';
-        await interaction.editReply(`🎱 **${question}**\n${answer}`);
-      }
       break;
     }
 

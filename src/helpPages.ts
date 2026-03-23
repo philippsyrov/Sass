@@ -40,7 +40,6 @@ export function buildHelpPages(botAvatar: string | null | undefined): EmbedBuild
       .setColor(0xFF4D6D)
       .setAuthor({ name: 'Sass \u2014 Fun', iconURL: botAvatar ?? undefined })
       .addFields(
-        { name: '\u{1F3B1} 8 Ball', value: '`/8ball <question>`\nask me anything. i\'ll roast you for asking.', inline: true },
         { name: '\u{1F498} Ship', value: '`/ship @u1 @u2`\ncompatibility %. grows with interactions. 100% is earned.', inline: true },
         { name: '\u200b', value: '\u200b', inline: false },
         { name: '\u{1F525} Hot Take', value: '`/hottake <topic>`\nmy spiciest, most unhinged opinion.', inline: true },

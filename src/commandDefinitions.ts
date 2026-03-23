@@ -4,11 +4,6 @@ import { SlashCommandBuilder } from 'discord.js';
 
 export const commands = [
   new SlashCommandBuilder()
-    .setName('8ball')
-    .setDescription('Ask the magic 8 ball a question (with sass)')
-    .addStringOption((opt) => opt.setName('question').setDescription('Your question').setRequired(true)),
-
-  new SlashCommandBuilder()
     .setName('ship')
     .setDescription('Test compatibility between two users')
     .addUserOption((opt) => opt.setName('user1').setDescription('First person').setRequired(true))
@@ -151,26 +146,6 @@ export const commands = [
     .setName('predict')
     .setDescription('Predict someone\'s future based on their Discord behavior')
     .addUserOption((opt) => opt.setName('user').setDescription('Whose future to predict (defaults to you)').setRequired(false)),
-];
-
-// --- 8ball responses ---
-export const EIGHT_BALL: string[] = [
-  "absolutely not lmao",
-  "yeah... no",
-  "the stars say you're delusional",
-  "ask again when you're less annoying",
-  "signs point to you being a clown",
-  "unfortunately for everyone involved, yes",
-  "i'd say yes but i don't wanna give you hope",
-  "100% — and that's the problem",
-  "my sources say you should sit down",
-  "outlook: bleak, just like your chances",
-  "hard yes but you didn't hear it from me",
-  "the universe says maybe. i say no.",
-  "yes, and you should be worried about that",
-  "genuinely cannot believe you had to ask",
-  "no. next question.",
-  "bold of you to think fate cares about you",
 ];
 
 // --- Fortune cookies ---
