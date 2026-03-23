@@ -286,7 +286,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
 
       let percent: number;
       if (isShipWithSass && otherUser) {
-        percent = await getAffinity(guildId, otherUser.id);
+        percent = Math.round(await getAffinity(guildId, otherUser.id));
       } else {
         await warmPairCache(guildId, user1.id, user2.id);
         percent = await getShipScore(guildId, user1.id, user2.id);

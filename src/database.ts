@@ -368,11 +368,13 @@ async function createTables(): Promise<void> {
       cold_shoulder_attempts_needed INTEGER DEFAULT 0,
       cold_shoulder_attempts_made INTEGER DEFAULT 0,
       gender TEXT,
-      affinity INTEGER DEFAULT 50,
+      affinity REAL DEFAULT 50,
       PRIMARY KEY (server_id, user_id)
     );
 
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS affinity INTEGER DEFAULT 50;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS affinity REAL DEFAULT 50;
+    -- Migrate INTEGER → REAL so fractional gains accumulate (was silently truncating to 0)
+    ALTER TABLE users ALTER COLUMN affinity TYPE REAL;
 
     -- One-time fix: bump anyone below 20 to 30 (from pre-rebalance era)
     UPDATE users SET affinity = 30 WHERE affinity < 20;
