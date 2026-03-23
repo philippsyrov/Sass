@@ -77,21 +77,6 @@ export const commands = [
     .addUserOption((opt) => opt.setName('user1').setDescription('First person').setRequired(true))
     .addUserOption((opt) => opt.setName('user2').setDescription('Second person').setRequired(true)),
 
-  new SlashCommandBuilder()
-    .setName('dare')
-    .setDescription('Dare someone to do something unhinged')
-    .addUserOption((opt) => opt.setName('user').setDescription('Who to dare').setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName('confess')
-    .setDescription('Send an anonymous confession to someone')
-    .addUserOption((opt) => opt.setName('user').setDescription('Who to confess to').setRequired(true))
-    .addStringOption((opt) => opt.setName('confession').setDescription('Your anonymous confession').setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName('predict')
-    .setDescription('Predict someone\'s future based on their Discord behavior')
-    .addUserOption((opt) => opt.setName('user').setDescription('Whose future to predict (defaults to you)').setRequired(false)),
 ];
 
 // --- Fortune cookies ---
