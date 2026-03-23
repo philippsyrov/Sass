@@ -635,16 +635,35 @@ export async function getPairInteractionCountDB(guildId: string, userId1: string
 }
 
 /**
- * Update a user's affinity score (clamped 0-100).
+ * Update a user's affinity score with diminishing returns (clamped 0-100).
+ * Positive gains slow down as affinity increases:
+ *   0-50: full gains, 50-75: ×0.5, 75-90: ×0.25, 90-100: ×0.1
+ * Negative changes always apply at full strength.
  */
 export async function updateAffinity(guildId: string, userId: string, delta: number): Promise<void> {
   if (!isConnected || !pool) return;
   try {
-    await pool.query(
-      `UPDATE users SET affinity = GREATEST(0, LEAST(100, COALESCE(affinity, 50) + $3))
-       WHERE server_id = $1 AND user_id = $2`,
-      [guildId, userId, delta]
-    );
+    // For positive gains, apply diminishing returns based on current level
+    if (delta > 0) {
+      const current = await getAffinity(guildId, userId);
+      let multiplier = 1;
+      if (current >= 90) multiplier = 0.1;
+      else if (current >= 75) multiplier = 0.25;
+      else if (current >= 50) multiplier = 0.5;
+      const adjustedDelta = Math.max(0.1, delta * multiplier);
+      await pool.query(
+        `UPDATE users SET affinity = GREATEST(0, LEAST(100, COALESCE(affinity, 50) + $3))
+         WHERE server_id = $1 AND user_id = $2`,
+        [guildId, userId, adjustedDelta]
+      );
+    } else {
+      // Negatives apply at full strength
+      await pool.query(
+        `UPDATE users SET affinity = GREATEST(0, LEAST(100, COALESCE(affinity, 50) + $3))
+         WHERE server_id = $1 AND user_id = $2`,
+        [guildId, userId, delta]
+      );
+    }
   } catch (err) {
     console.error('Failed to update affinity:', (err as Error).message);
   }
@@ -675,10 +694,14 @@ export async function getTopReactions(guildId: string, limit = 5): Promise<Array
   try {
     const result = await pool.query(
       `SELECT r.sass_response, r.message_id, COUNT(*) as reaction_count,
-              (SELECT i.user_message FROM interactions i WHERE i.server_id = $1 AND i.sass_response = r.sass_response ORDER BY i.timestamp DESC LIMIT 1) as user_message,
-              (SELECT i.username FROM interactions i WHERE i.server_id = $1 AND i.sass_response = r.sass_response ORDER BY i.timestamp DESC LIMIT 1) as username
+              (SELECT i.user_message FROM interactions i WHERE i.server_id = $1 AND i.sass_response = r.sass_response AND (i.trigger_type IS NULL OR i.trigger_type != 'auto-sass-activity') ORDER BY i.timestamp DESC LIMIT 1) as user_message,
+              (SELECT i.username FROM interactions i WHERE i.server_id = $1 AND i.sass_response = r.sass_response AND (i.trigger_type IS NULL OR i.trigger_type != 'auto-sass-activity') ORDER BY i.timestamp DESC LIMIT 1) as username
        FROM reactions r
        WHERE r.server_id = $1
+         AND NOT EXISTS (
+           SELECT 1 FROM interactions i
+           WHERE i.server_id = $1 AND i.sass_response = r.sass_response AND i.trigger_type = 'auto-sass-activity'
+         )
        GROUP BY r.sass_response, r.message_id
        ORDER BY reaction_count DESC
        LIMIT $2`,

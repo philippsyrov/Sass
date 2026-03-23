@@ -44,6 +44,11 @@ const SENSITIVE_BAN_MS = 15 * 60 * 1000; // 15 minute soft-ban
 const MAX_SENSITIVE_TRACKER = 500;
 const SENSITIVE_KEYWORDS = /\b(kill myself|wanna die|killing myself|i'm dying|im dying|bleeding out|gonna bleed|self.?harm|end it all|jump off|hang myself|slit my|cut myself|overdose|i'm dead|im dead|my arm fell off|pass out|bleeding everywhere)\b/i;
 
+// Affinity gain cooldown — max 1 gain per 10 min per user
+const affinityGainCooldowns = new Map<string, number>();
+const AFFINITY_GAIN_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
+const MAX_AFFINITY_COOLDOWNS = 500;
+
 // Clean up cooldowns every 10 min
 setInterval(() => {
   const now = Date.now();
@@ -61,6 +66,10 @@ setInterval(() => {
     if (now - entry.lastTimestamp > SENSITIVE_BAN_MS * 2) sensitiveTracker.delete(key);
   }
   if (sensitiveTracker.size > MAX_SENSITIVE_TRACKER) sensitiveTracker.clear();
+  for (const [key, ts] of affinityGainCooldowns) {
+    if (now - ts > AFFINITY_GAIN_COOLDOWN_MS) affinityGainCooldowns.delete(key);
+  }
+  if (affinityGainCooldowns.size > MAX_AFFINITY_COOLDOWNS) affinityGainCooldowns.clear();
 }, 10 * 60 * 1000);
 
 /**
@@ -776,8 +785,13 @@ export async function handleMention(message: Message, client: Client): Promise<v
       context: fullContext,
     }).catch((err) => console.error('Log interaction failed:', (err as Error).message));
 
-    // Bump affinity for genuine exchange
-    updateAffinity(guildId, userId, 1).catch((err) => console.error('Affinity update failed:', (err as Error).message));
+    // Bump affinity for genuine exchange (+0.5, max once per 10 min per user)
+    const affinityKey = `${guildId}:${userId}`;
+    const lastAffinityGain = affinityGainCooldowns.get(affinityKey) ?? 0;
+    if (Date.now() - lastAffinityGain > AFFINITY_GAIN_COOLDOWN_MS) {
+      affinityGainCooldowns.set(affinityKey, Date.now());
+      updateAffinity(guildId, userId, 0.5).catch((err) => console.error('Affinity update failed:', (err as Error).message));
+    }
 
     // Don't track roast topics for the creator (we don't roast them)
     if (!isCreator) {

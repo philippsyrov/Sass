@@ -168,13 +168,13 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
         const channel = interaction.channel;
         if (channel && 'send' in channel) {
           const publicRoasts = [
-            `imagine being rate limited by a bot`,
-            `someone's really testing my patience today`,
+            `<@${interaction.user.id}> imagine being rate limited by a bot`,
+            `<@${interaction.user.id}> is really testing my patience today`,
             `<@${interaction.user.id}> got cut off and honestly it's deserved`,
             `<@${interaction.user.id}> just got told to go outside by a bot. let that sink in.`,
-            `someone's treating me like a vending machine again`,
-            `the commands are not going anywhere. neither is your life apparently.`,
-            `bro is using commands like they're running out of stock`,
+            `<@${interaction.user.id}> was spamming slash commands like their life depended on it`,
+            `<@${interaction.user.id}> the commands are not going anywhere. neither is your life apparently.`,
+            `<@${interaction.user.id}> is using commands like they're running out of stock`,
           ];
           const publicMsg = publicRoasts[Math.floor(Math.random() * publicRoasts.length)] as string;
           const delay = 1000 + Math.random() * 2000;
@@ -329,7 +329,18 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
         // Interaction hint — show users their ship is tracked
         const interactions = getPairInteractions(guildId, user1.id, user2.id);
         let hint = '';
-        if (percent === 100) {
+        if (isShipWithSass) {
+          // Show affinity tier when shipping with Sass
+          let tier = '';
+          if (percent >= 96) tier = '💎 **ride or die** — "i\'d never admit it, but i\'d choose you."';
+          else if (percent >= 86) tier = '💗 **favorite** — "don\'t tell anyone, but you\'re my favorite."';
+          else if (percent >= 71) tier = '💕 **liked** — "...fine, i like you. shut up about it."';
+          else if (percent >= 51) tier = '🤝 **familiar** — "you\'re tolerable. don\'t push it."';
+          else if (percent >= 31) tier = '😐 **acquaintance** — "i acknowledge your existence."';
+          else if (percent >= 16) tier = '😒 **nuisance** — "oh, you\'re still here."';
+          else tier = '❓ **stranger** — "who are you again?"';
+          hint = `\n\n${tier}`;
+        } else if (percent === 100) {
           hint = '\n\n💯 **100% — PROVEN PAIR.** sass has seen enough. this is real.';
         } else if (percent >= 95 && interactions >= 40) {
           hint = '\n\n👀 *almost there... keep talking to each other*';

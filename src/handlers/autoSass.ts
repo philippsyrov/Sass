@@ -90,12 +90,14 @@ export async function handleAutoSass(message: Message, _client: Client, options:
 
   // Vibe detection — shift mood based on chat energy
   const lowerText = text.toLowerCase();
-  const fightPatterns = /\b(stfu|fight me|you'?re wrong|shut up|no one asked|cope|L take|ratio|fuck you|fuck off|kys|you suck|trash|garbage|mid|ass|clown|loser|idiot|stupid|dumb|cringe|weirdo|bro what|delusional|dog ?water|skill ?issue|get good|no bitches|maidenless|touch grass|you wish|in your dreams|stay mad|seethe|cry about it|die mad|bozo|nah you'?re|liar|cap|you'?re cooked|get rekt|sit down|go away|nobody likes|embarrassing|pathetic|brain ?dead|you fell off)\b/i;
+  // Beef detection — only register REAL fights, not casual banter
+  // Requires direct targeting: @mention with hostile language OR hostile reply to another user
+  const fightPatterns = /\b(stfu|fight me|shut up|fuck you|fuck off|kys|you suck|loser|idiot|stupid|pathetic|brain ?dead|die mad|get rekt|go away|nobody likes|i hate you|you'?re cooked|you fell off|trash take)\b/i;
   const wholesomePatterns = /\b(love you|you'?re (amazing|the best|awesome)|thank you|ily|<3|❤️|😊|🥰)\b/i;
 
   if (fightPatterns.test(lowerText)) {
     mood.shift(guildId, 'fighting').catch((err) => console.error('Mood shift failed:', (err as Error).message));
-    // Record beef if this is a reply to another user
+    // Record beef ONLY if directly replying to another user with hostile language
     if (message.reference?.messageId) {
       try {
         const repliedTo = await message.channel.messages.fetch(message.reference.messageId);
@@ -105,7 +107,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
         }
       } catch (_err) { /* message might be deleted */ }
     }
-    // Record beef if they mentioned another user aggressively
+    // Record beef ONLY if they @mentioned another user with hostile language
     const mentionedUsers = message.mentions.users.filter((u) => !u.bot && u.id !== message.author.id && u.id !== _client.user?.id);
     for (const [, mentionedUser] of mentionedUsers) {
       const topic = text.slice(0, 50);
@@ -113,18 +115,6 @@ export async function handleAutoSass(message: Message, _client: Client, options:
     }
   } else if (wholesomePatterns.test(lowerText)) {
     mood.shift(guildId, 'nice_to_each_other').catch((err) => console.error('Mood shift failed:', (err as Error).message));
-  } else {
-    // Light beef — any reply to another user with teasing/roasting energy (not wholesome)
-    const banterPatterns = /\b(lmao|bruh|bro|imagine|cope|nah|wrong|cap|sus|caught|ratio|ok buddy|sure|yeah right|doubt|you really|how dare|excuse me|bold of you|the audacity)\b/i;
-    if (banterPatterns.test(lowerText) && message.reference?.messageId) {
-      try {
-        const repliedTo = await message.channel.messages.fetch(message.reference.messageId);
-        if (repliedTo?.author && !repliedTo.author.bot && repliedTo.author.id !== message.author.id) {
-          const topic = text.slice(0, 50);
-          userMemory.addBeef(guildId, message.author.id, repliedTo.author.id, topic).catch((err) => console.error('Add beef failed:', (err as Error).message));
-        }
-      } catch { /* message might be deleted */ }
-    }
   }
 
   // Cast channel — this handler only runs in guild text channels

@@ -12,6 +12,18 @@ import { recordPairInteraction } from './shipScore.js';
 
 dotenv.config();
 
+// Track which users already got affinity for reacting to a specific message (prevent spam-reacting)
+const reactionAffinityTracker = new Map<string, Set<string>>();
+const REACTION_AFFINITY_CLEANUP_MS = 30 * 60 * 1000; // 30 min
+const MAX_REACTION_AFFINITY_ENTRIES = 500;
+setInterval(() => {
+  if (reactionAffinityTracker.size > MAX_REACTION_AFFINITY_ENTRIES) {
+    const entries = [...reactionAffinityTracker.keys()];
+    const toDelete = entries.slice(0, entries.length - MAX_REACTION_AFFINITY_ENTRIES);
+    for (const key of toDelete) reactionAffinityTracker.delete(key);
+  }
+}, REACTION_AFFINITY_CLEANUP_MS);
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -187,9 +199,9 @@ client.on('messageCreate', async (message) => {
     } catch (_err) { /* message might be deleted */ }
   }
 
-  // Beef detection — track hostility in ALL messages (not just auto-sass context)
+  // Beef detection — only real fights with direct targeting (@mention or reply + hostile language)
   const lowerText = message.content.toLowerCase();
-  const fightPatterns = /\b(stfu|fight me|you'?re wrong|shut up|no one asked|cope|L take|ratio|fuck you|fuck off|kys|you suck|trash|garbage|clown|loser|idiot|stupid|dumb|cringe|weirdo|delusional|dog ?water|skill ?issue|get good|no bitches|maidenless|touch grass|stay mad|seethe|cry about it|die mad|bozo|you'?re cooked|get rekt|sit down|go away|nobody likes|embarrassing|pathetic|brain ?dead|you fell off)\b/i;
+  const fightPatterns = /\b(stfu|fight me|shut up|fuck you|fuck off|kys|you suck|loser|idiot|stupid|pathetic|brain ?dead|die mad|get rekt|go away|nobody likes|i hate you|you'?re cooked|you fell off|trash take)\b/i;
   if (fightPatterns.test(lowerText)) {
     // Check @mentioned users
     const mentionedUsers = message.mentions.users.filter((u) => !u.bot && u.id !== message.author.id);
@@ -340,9 +352,18 @@ client.on('messageReactionAdd', async (reaction, user) => {
       isPositive,
     }).catch((err) => console.error('Reaction log failed:', (err as Error).message));
 
-    // Update affinity based on reaction sentiment
-    updateAffinity(reactionGuildId, user.id, isPositive ? 2 : -2)
-      .catch((err) => console.error('Affinity update failed:', (err as Error).message));
+    // Update affinity — only once per user per message (prevent spam-reacting to farm)
+    const affinityKey = `${reactionGuildId}:${reaction.message.id}`;
+    if (!reactionAffinityTracker.has(affinityKey)) {
+      reactionAffinityTracker.set(affinityKey, new Set());
+    }
+    const reactedUsers = reactionAffinityTracker.get(affinityKey);
+    if (reactedUsers && !reactedUsers.has(user.id)) {
+      reactedUsers.add(user.id);
+      // +0.25 for positive (slow gains), -2 for negative (harsh penalties)
+      updateAffinity(reactionGuildId, user.id, isPositive ? 0.25 : -2)
+        .catch((err) => console.error('Affinity update failed:', (err as Error).message));
+    }
   } catch (err) {
     console.error('Reaction handler error:', (err as Error).message);
   }
