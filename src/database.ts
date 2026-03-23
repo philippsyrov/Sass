@@ -386,7 +386,6 @@ async function createTables(): Promise<void> {
     );
 
     CREATE INDEX IF NOT EXISTS idx_wild_quotes_server ON wild_quotes(server_id);
-    CREATE UNIQUE INDEX IF NOT EXISTS wild_quotes_server_quote_unique ON wild_quotes (server_id, quote);
 
     CREATE TABLE IF NOT EXISTS beefs (
       server_id TEXT NOT NULL,
@@ -419,6 +418,20 @@ async function createTables(): Promise<void> {
       last_decay TIMESTAMPTZ DEFAULT NOW()
     );
   `);
+
+  // Deduplicate wild quotes then add unique index (separate step to avoid breaking schema init)
+  try {
+    await pool.query(`
+      DELETE FROM wild_quotes a USING wild_quotes b
+      WHERE a.id > b.id AND a.server_id = b.server_id AND a.quote = b.quote
+    `);
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS wild_quotes_server_quote_unique
+      ON wild_quotes (server_id, quote)
+    `);
+  } catch (err) {
+    console.error('Wild quotes dedup/index failed (non-fatal):', (err as Error).message);
+  }
 }
 
 /**
