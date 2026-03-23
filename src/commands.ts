@@ -295,6 +295,11 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
       const user1 = interaction.options.getUser('user1', true);
       const user2 = interaction.options.getUser('user2', true);
 
+      if (user1.id === user2.id) {
+        await interaction.editReply('you can\'t ship someone with themselves. that\'s just called being alone.');
+        break;
+      }
+
       // Check if shipping with Sass — use affinity instead of hash
       const botId = interaction.client.user?.id;
       const isShipWithSass = botId && (user1.id === botId || user2.id === botId);
