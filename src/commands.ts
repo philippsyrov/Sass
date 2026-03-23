@@ -798,47 +798,6 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
       break;
     }
 
-    case 'wrapped': {
-      if (hasUsedToday(guildId, interaction.user.id, 'wrapped')) {
-        await interaction.reply("you already got today's recap. it hasn't gotten any less embarrassing.");
-        break;
-      }
-      await interaction.deferReply();
-      const stats = await userMemory.getServerStats(guildId);
-      if (!stats || stats.totalMessages === 0) {
-        await interaction.editReply("not enough data yet. talk more so i have material to work with.");
-        break;
-      }
-
-      try {
-        const statsText = Object.entries(stats.users)
-          .map(([, data]) => `${data.name}: ${data.messageCount} messages, roasted ${data.timesRoasted ?? 0} times`)
-          .join('\n');
-
-        const commentary = await queryAI(
-          `Here are the server stats:\n${statsText}\n\nWrite a sassy "server wrapped" roast recap. Roast the most active user, the least active, the most roasted, etc. 4-5 short bullet points. Be brutal and specific about each person.`,
-          { systemPrompt: 'You write server recap roasts. Short bullet points. Lowercase. Use the actual stats to roast people personally. Be specific with numbers.' }
-        );
-
-        const embed = new EmbedBuilder()
-          .setColor(0xFF4D6D)
-          .setTitle('📊 SERVER WRAPPED — ROAST EDITION')
-          .setDescription(commentary)
-          .addFields(
-            { name: '💬 Most Active', value: stats.mostActive ? `**${stats.mostActive.name}** (${stats.mostActive.messageCount} msgs)` : 'nobody talks here', inline: true },
-            { name: '💀 Most Roasted', value: stats.mostRoasted ? `**${stats.mostRoasted.name}** (${stats.mostRoasted.timesRoasted}x)` : 'nobody roasted yet', inline: true },
-          )
-          .setFooter({ text: "sass analytics department" })
-          .setTimestamp();
-        markUsedToday(guildId, interaction.user.id, 'wrapped');
-        await interaction.editReply({ embeds: [embed] });
-      } catch (err) {
-        console.error('Wrapped command failed:', (err as Error).message);
-        await interaction.editReply("my analytics department is on strike. try again later.");
-      }
-      break;
-    }
-
     case 'dare': {
       const targetUser = interaction.options.getUser('user', true);
       const dareKey = `${interaction.user.id}:dare`;

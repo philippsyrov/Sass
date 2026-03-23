@@ -119,10 +119,6 @@ export const commands = [
     .setDescription('See who the main character of the day is'),
 
   new SlashCommandBuilder()
-    .setName('wrapped')
-    .setDescription('Get the server roast recap'),
-
-  new SlashCommandBuilder()
     .setName('dare')
     .setDescription('Dare someone to do something unhinged')
     .addUserOption((opt) => opt.setName('user').setDescription('Who to dare').setRequired(true)),

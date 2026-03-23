@@ -32,7 +32,6 @@ export function buildHelpPages(botAvatar: string | null | undefined): EmbedBuild
         { name: '\u{1F3C6} Hall of Fame', value: '`/halloffame`\nwildest things said in this server.', inline: true },
         { name: '\u200b', value: '\u200b', inline: false },
         { name: '\u{1F3AD} Main Character', value: '`/maincharacter`\ntoday\'s protagonist. spoiler: not you.', inline: true },
-        { name: '\u{1F4E6} Wrapped', value: '`/wrapped`\nserver review. with my commentary.', inline: true },
       ),
 
     // Page 3 — Fun Commands
