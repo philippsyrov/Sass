@@ -17,14 +17,9 @@ import { storeMemory, searchMemories } from '../vectorMemory.js';
 import { buildHelpPages } from '../helpPages.js';
 import * as mood from '../mood.js';
 import { extractStatement, checkContradiction, generate4kCallout, storeStatement } from '../caughtIn4k.js';
-import { logInteraction, logCommand, updateAffinity, getAffinity } from '../database.js';
+import { logInteraction, updateAffinity, getAffinity } from '../database.js';
 import { recordResponse, getRecentResponses } from '../responseMemory.js';
-import { getShipScore, getPairInteractions, warmPairCache } from '../shipScore.js';
-
-// Profile cooldown — prevent spamming profile checks
-const profileCooldowns = new Map<string, number>();
-const PROFILE_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
-const MAX_PROFILE_COOLDOWNS = 500;
+// Ship score imports removed — ship is now slash-only
 
 // Remember cooldown — prevent spamming remember commands
 const rememberCooldowns = new Map<string, number>();
@@ -52,9 +47,6 @@ const MAX_AFFINITY_COOLDOWNS = 500;
 // Clean up cooldowns every 10 min
 setInterval(() => {
   const now = Date.now();
-  for (const [key, ts] of profileCooldowns) {
-    if (now - ts > PROFILE_COOLDOWN_MS) profileCooldowns.delete(key);
-  }
   for (const [key, ts] of rememberCooldowns) {
     if (now - ts > REMEMBER_COOLDOWN_MS) rememberCooldowns.delete(key);
   }
@@ -225,99 +217,15 @@ export async function handleMention(message: Message, client: Client): Promise<v
   }
 
   // Ship command — "@Sass ship @user1 @user2"
-  const shipMatch = cleanContent.match(/^ship\s+<@!?(\d+)>\s+<@!?(\d+)>/i);
-  if (shipMatch) {
-    const id1 = shipMatch[1]; const id2 = shipMatch[2];
-    if (!id1 || !id2) return;
-    try {
-      await channel.sendTyping().catch((err) => console.error('sendTyping failed:', (err as Error).message));
-      const member1 = await message.guild?.members.fetch(id1);
-      const member2 = await message.guild?.members.fetch(id2);
-      if (!member1 || !member2) {
-        await message.reply("couldn't ship them. maybe they're not meant to be.");
-        return;
-      }
-      const name1 = member1.displayName; const name2 = member2.displayName;
-      await warmPairCache(guildId, id1, id2);
-      const percent = await getShipScore(guildId, id1, id2);
-      const bar = '❤️'.repeat(Math.round(percent / 10)) + '🖤'.repeat(10 - Math.round(percent / 10));
-      const shipName = name1.slice(0, Math.ceil(name1.length / 2)) + name2.slice(Math.floor(name2.length / 2));
-      let verdict = await queryAI(
-        `"${name1}" x "${name2}" at ${percent}%. ONE sentence verdict, max 12 words. No metaphors or object comparisons. React like a friend judging a couple.`,
-        { systemPrompt: 'You judge ship compatibility. ONE short sentence. Max 12 words. Lowercase. Talk like a 20-year-old, not a poet. No "chemistry of a [object]" comparisons. If you exceed 12 words, you failed.' }
-      );
-      // Hard enforce 12 word cap
-      if (verdict && verdict.split(/\s+/).length > 14) {
-        const firstSentence = verdict.split(/[.!?]/)[0];
-        verdict = firstSentence ? firstSentence.trim() + '.' : verdict.split(/\s+/).slice(0, 12).join(' ') + '.';
-      }
-      const interactions = getPairInteractions(guildId, id1, id2);
-      let hint = '';
-      if (percent === 100) {
-        hint = '\n\n💯 **100% — PROVEN PAIR.** sass has seen enough. this is real.';
-      } else if (percent >= 95 && interactions >= 40) {
-        hint = '\n\n👀 *almost there... keep talking to each other*';
-      } else if (interactions >= 10) {
-        hint = `\n\n📈 *sass has seen ${interactions} interactions between you two*`;
-      }
-      const shipResponse = `🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸\n\n💘 **${name1}** x **${name2}**\nship name: **${shipName}**\n${bar} **${percent}%**\n\n*${verdict}*${hint}\n\n🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸`;
-      await message.reply(shipResponse);
-      logInteraction({
-        serverId: message.guild?.id, serverName: message.guild?.name,
-        channelId: channel.id, channelName: channel.name,
-        userId, username: displayName,
-        triggerType: 'mention', commandName: 'ship',
-        userMessage: cleanContent, sassResponse: shipResponse,
-        mood: (await mood.getStatus(guildId)).mood, moodIntensity: (await mood.getStatus(guildId)).intensity,
-      }).catch((err) => console.error('Log interaction failed:', (err as Error).message));
-    } catch (err) {
-      console.error('Ship command failed:', (err as Error).message);
-      await message.reply("couldn't ship them. maybe they're not meant to be.").catch((replyErr) => console.error('Reply failed:', (replyErr as Error).message));
-    }
+  // Ship — moved to /ship slash command
+  if (cleanContent.match(/^ship\s+<@/i)) {
+    await message.reply("ship is a slash command! use `/ship @user1 @user2` instead.").catch((err) => console.error('Reply failed:', (err as Error).message));
     return;
   }
 
-  // Conspiracy command — "@Sass conspiracy @user"
-  const conspiracyMatch = cleanContent.match(/^conspiracy\s+<@!?(\d+)>/i);
-  if (conspiracyMatch) {
-    const conspiracyTargetId = conspiracyMatch[1];
-    if (!conspiracyTargetId) return;
-
-    // 30 min cooldown per user per target
-    const conCooldownKey = `con:${guildId}:${userId}:${conspiracyTargetId}`;
-    const lastCon = profileCooldowns.get(conCooldownKey);
-    if (lastCon && Date.now() - lastCon < 30 * 60 * 1000) {
-      await message.reply("i already investigated, the case is closed.").catch((err) => console.error('Reply failed:', (err as Error).message));
-      return;
-    }
-
-    try {
-      await channel.sendTyping().catch((err) => console.error('sendTyping failed:', (err as Error).message));
-      const member = await message.guild?.members.fetch(conspiracyTargetId);
-      if (!member) {
-        await message.reply("my investigation was compromised. suspicious.");
-        return;
-      }
-      const conUserContext = await userMemory.getContext(guildId, conspiracyTargetId);
-      const conFacts = await userMemory.getFacts(guildId, conspiracyTargetId);
-      const conActivity = member.presence?.activities?.[0];
-      const conActivityInfo = conActivity ? `Currently: ${conActivity.type === 0 ? 'Playing' : conActivity.type === 1 ? 'Streaming' : conActivity.type === 2 ? 'Listening to' : conActivity.type === 3 ? 'Watching' : 'Doing'} ${conActivity.name}${conActivity.state ? ` (${conActivity.state})` : ''}` : '';
-
-      const conEvidence: string[] = [];
-      if (conFacts.length > 0) conEvidence.push(`Known facts: ${conFacts.slice(0, 3).join(', ')}`);
-      if (conActivityInfo) conEvidence.push(conActivityInfo);
-      if (conUserContext) conEvidence.push(conUserContext);
-
-      const response = await queryAI(
-        `Create an absurd, funny conspiracy theory about a Discord user named "${member.displayName}". Use their name specifically. 2-3 sentences max. Sound like a deranged detective presenting evidence.\n\n${conEvidence.length > 0 ? `USE THIS REAL INTEL to make the conspiracy personal and specific:\n${conEvidence.join('\n')}` : 'You have no intel on them yet — make it about how suspiciously clean their record is.'}`,
-        { systemPrompt: 'You generate absurd conspiracy theories about people. Be creative and unhinged but not mean-spirited. Lowercase. Weave in any real facts/activity as "evidence." Each conspiracy should be wildly different — never repeat the same format or structure.' }
-      );
-      await message.reply(`🕵️ **CLASSIFIED INTEL ON ${member.displayName.toUpperCase()}**\n\n${response}`);
-      profileCooldowns.set(conCooldownKey, Date.now());
-    } catch (err) {
-      console.error('Conspiracy command failed:', (err as Error).message);
-      await message.reply("my investigation was compromised. suspicious.").catch((replyErr) => console.error('Reply failed:', (replyErr as Error).message));
-    }
+  // Conspiracy — moved to /conspiracy slash command
+  if (cleanContent.match(/^conspiracy\s+<@/i)) {
+    await message.reply("conspiracy is a slash command! use `/conspiracy @user` instead.").catch((err) => console.error('Reply failed:', (err as Error).message));
     return;
   }
 
@@ -466,12 +374,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
   }
 
   // Mood command — "@Sass mood" (before cold shoulder so it always works)
-  if (lowerClean === 'mood' || lowerClean === 'how are you' || lowerClean === 'how you doing') {
-    const status = await mood.getStatus(guildId);
-    const bar = '█'.repeat(Math.round(status.intensity / 10)) + '░'.repeat(10 - Math.round(status.intensity / 10));
-    await message.reply(`${status.label}\nintensity: ${bar} **${status.intensity}**/100`).catch((err) => console.error('Reply failed:', (err as Error).message));
-    return;
-  }
+  // Mood — removed as a command (mood system still affects her personality internally)
 
   // Leaderboard / stats command (before cold shoulder so it always works)
   if (lowerClean === 'leaderboard' || lowerClean === 'stats' || lowerClean === 'scoreboard') {
