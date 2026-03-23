@@ -538,14 +538,30 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
       await interaction.deferReply();
       const userContext = await userMemory.getContext(guildId, targetUser.id);
       const facts = await userMemory.getFacts(guildId, targetUser.id);
-      const member = interaction.guild?.members.cache.get(targetUser.id);
+      const member = interaction.guild?.members.cache.get(targetUser.id) ?? await interaction.guild?.members.fetch(targetUser.id).catch(() => null);
       const activity = member?.presence?.activities?.[0];
       const activityInfo = activity ? `Currently: ${activity.type === 0 ? 'Playing' : activity.type === 1 ? 'Streaming' : activity.type === 2 ? 'Listening to' : activity.type === 3 ? 'Watching' : 'Doing'} ${activity.name}${activity.state ? ` (${activity.state})` : ''}` : '';
+
+      // Fallback: grab recent messages from the channel by this user (like profile does)
+      const channel = interaction.channel;
+      let recentMsgs: string[] = [];
+      if (channel && 'messages' in channel) {
+        const fetched = await channel.messages.fetch({ limit: 100 }).catch(() => null);
+        if (fetched) {
+          recentMsgs = fetched
+            .filter((m) => m.author.id === targetUser.id && !m.author.bot)
+            .map((m) => m.content)
+            .filter((c) => c.length > 5)
+            .slice(0, 10);
+        }
+      }
 
       const evidence: string[] = [];
       if (facts.length > 0) evidence.push(`Known facts: ${facts.slice(0, 3).join(', ')}`);
       if (activityInfo) evidence.push(activityInfo);
       if (userContext) evidence.push(userContext);
+      if (recentMsgs.length > 0) evidence.push(`Recent things they said: "${recentMsgs.slice(0, 5).join('", "')}"`);
+      console.log(`[conspiracy] ${targetUser.displayName}: facts=${facts.length}, context=${userContext ? 'yes' : 'no'}, activity=${activityInfo ? 'yes' : 'no'}, msgs=${recentMsgs.length}, evidence=${evidence.length}`);
 
       try {
         const response = await queryAI(
@@ -833,6 +849,22 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
         console.error('Predict command failed:', (err as Error).message);
         await interaction.editReply(`the crystal ball showed me ${targetUser.displayName}'s future and honestly? it cracked. that's the prediction.`);
       }
+      break;
+    }
+
+    case 'leaderboard': {
+      await interaction.deferReply();
+      const board = await userMemory.getLeaderboard(guildId, 5);
+      if (board.length === 0 || board.every((u) => u.timesRoasted === 0)) {
+        await interaction.editReply("nobody's been roasted enough to make a list yet. give it time.");
+        break;
+      }
+      const medals = ['\u{1F451}', '\u{1F480}', '\u{1FAA6}', '\u{1F4A9}', '\u{1F921}'];
+      const lines = board
+        .filter((u) => u.timesRoasted > 0)
+        .map((u, i) => `${medals[i] || '\u2022'} **${u.name}** \u2014 roasted ${u.timesRoasted} time${u.timesRoasted === 1 ? '' : 's'}`);
+      await interaction.editReply(`**sass's wall of shame**\n${lines.join('\n')}`);
+      logCommand({ serverId: guildId, userId: interaction.user.id, commandName: 'leaderboard', commandType: 'slash' }).catch((err) => console.error('Log command failed:', (err as Error).message));
       break;
     }
 

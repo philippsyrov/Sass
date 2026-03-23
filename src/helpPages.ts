@@ -16,8 +16,7 @@ export function buildHelpPages(botAvatar: string | null | undefined): EmbedBuild
         { name: '\u{1F4AC} Chat', value: '`@Sass <anything>` \u2014 talk to me\njust say "sass" and i\'ll hear you too', inline: true },
         { name: '\u{1F9E0} Memory', value: '`@Sass remember <fact>` \u2014 weaponize yourself\n`@Sass remember @user <fact>` \u2014 snitch on someone', inline: true },
         { name: '\u200b', value: '\u200b', inline: false },
-        { name: '\u{1F321}\uFE0F Mood', value: '`@Sass mood`\nmy vibe shifts based on how you treat me.', inline: true },
-        { name: '\u26A0\uFE0F Fine Print', value: 'i jump into convos uninvited. tell me to stop and i\'ll ghost you.', inline: true },
+        { name: '\u26A0\uFE0F Fine Print', value: 'i jump into convos uninvited. my mood shifts based on how you treat me.', inline: true },
       ),
 
     // Page 2 — Stats & Tracking
@@ -25,8 +24,8 @@ export function buildHelpPages(botAvatar: string | null | undefined): EmbedBuild
       .setColor(0xFF4D6D)
       .setAuthor({ name: 'Sass \u2014 Stats & Tracking', iconURL: botAvatar ?? undefined })
       .addFields(
-        { name: '\u{1F4CA} Leaderboard', value: '`@Sass leaderboard`\nwall of shame. most roasted users.', inline: true },
-        { name: '\u{1F9EC} Profile', value: '`@Sass profile [@user]`\nbehavioral diagnosis + archetype.', inline: true },
+        { name: '\u{1F4CA} Leaderboard', value: '`/leaderboard`\nwall of shame. most roasted users.', inline: true },
+        { name: '\u{1F9EC} Profile', value: '`/profile [@user]`\nbehavioral diagnosis + archetype.', inline: true },
         { name: '\u200b', value: '\u200b', inline: false },
         { name: '\u2B50 Favorite', value: '`/favorite`\ni pick my favorite person. not you.', inline: true },
         { name: '\u{1F3C6} Hall of Fame', value: '`/halloffame`\nwildest things said in this server.', inline: true },
@@ -53,7 +52,7 @@ export function buildHelpPages(botAvatar: string | null | undefined): EmbedBuild
         { name: '\u2648 Horoscope', value: '`/horoscope <sign>`\nastrology but mean. once per day.', inline: true },
         { name: '\u{1F575}\uFE0F Conspiracy', value: '`/conspiracy @user`\nabsurd theory using real intel.', inline: true },
         { name: '\u200b', value: '\u200b', inline: false },
-        { name: '\u{1F490} Compliment', value: '`@Sass compliment @user`\nbackhanded. sounds nice, stings later.', inline: true },
+        { name: '\u{1F490} Compliment', value: '`/compliment @user`\nbackhanded. sounds nice, stings later.', inline: true },
         { name: '\u{1F440} Status', value: '`/status @user`\nroast someone\'s Discord activity.', inline: true },
       ),
 

@@ -82,6 +82,10 @@ export const commands = [
     .setDescription('Behavioral diagnosis — chaos, thirst, aggro, clown, brain')
     .addUserOption((opt) => opt.setName('user').setDescription('Who to analyze (defaults to you)').setRequired(false)),
 
+  new SlashCommandBuilder()
+    .setName('leaderboard')
+    .setDescription('Wall of shame — most roasted users'),
+
 ];
 
 // --- Fortune cookies ---

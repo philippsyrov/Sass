@@ -321,27 +321,9 @@ export async function handleMention(message: Message, client: Client): Promise<v
     return;
   }
 
-  // Compliment command — "@Sass compliment @user"
-  const complimentMatch = cleanContent.match(/^compliment\s+<@!?(\d+)>/i);
-  if (complimentMatch) {
-    const complimentTargetId = complimentMatch[1];
-    if (!complimentTargetId) return;
-    try {
-      await channel.sendTyping().catch((err) => console.error('sendTyping failed:', (err as Error).message));
-      const member = await message.guild?.members.fetch(complimentTargetId);
-      if (!member) {
-        await message.reply("i tried to compliment them but even i couldn't find anything.");
-        return;
-      }
-      const response = await queryAI(
-        `Give "${member.displayName}" a backhanded compliment. Sound genuinely nice at first, then subtly roast by the end. One or two sentences. The twist should be subtle.`,
-        { systemPrompt: 'You give backhanded compliments. Sincere at first, then twist. Lowercase. Subtle.' }
-      );
-      await message.reply(`💐 ${response}`);
-    } catch (err) {
-      console.error('Compliment command failed:', (err as Error).message);
-      await message.reply("i tried to compliment them but even i couldn't find anything.").catch((replyErr) => console.error('Reply failed:', (replyErr as Error).message));
-    }
+  // Compliment command — moved to /compliment slash command
+  if (lowerClean.match(/^compliment\s/)) {
+    await message.reply("compliment is now a slash command! use `/compliment @user` instead.").catch((err) => console.error('Reply failed:', (err as Error).message));
     return;
   }
 
@@ -493,17 +475,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
 
   // Leaderboard / stats command (before cold shoulder so it always works)
   if (lowerClean === 'leaderboard' || lowerClean === 'stats' || lowerClean === 'scoreboard') {
-    const board = await userMemory.getLeaderboard(guildId, 5);
-    if (board.length === 0 || board.every((u) => u.timesRoasted === 0)) {
-      await message.reply("nobody's been roasted enough to make a list yet. give it time.").catch((err) => console.error('Reply failed:', (err as Error).message));
-      return;
-    }
-    const medals = ['👑', '💀', '🪦', '💩', '🤡'];
-    const lines = board
-      .filter((u) => u.timesRoasted > 0)
-      .map((u, i) => `${medals[i] || '•'} **${u.name}** — roasted ${u.timesRoasted} time${u.timesRoasted === 1 ? '' : 's'}`);
-    const header = "**sass's wall of shame**";
-    await message.reply(`${header}\n${lines.join('\n')}`).catch((err) => console.error('Reply failed:', (err as Error).message));
+    await message.reply("leaderboard is now a slash command! use `/leaderboard` instead.").catch((err) => console.error('Reply failed:', (err as Error).message));
     return;
   }
 
