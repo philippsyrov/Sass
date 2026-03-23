@@ -703,18 +703,8 @@ export async function handleMention(message: Message, client: Client): Promise<v
     } catch (err) { console.error('Vector search failed:', (err as Error).message); }
   }
 
-  // Escalation context — tell the AI how much this person has been tagging
-  let escalationContext = '';
-  if (!isCreator && escalationLevel !== 'normal') {
-    const tagCount = getEscalationCount(guildId, userId);
-    if (escalationLevel === 'annoyed') {
-      escalationContext = `NOTE: ${displayName} has tagged you ${tagCount} times in the last few minutes. You're getting annoyed. Be shorter, more dismissive. Show some irritation.`;
-    } else if (escalationLevel === 'cold') {
-      escalationContext = `NOTE: ${displayName} has tagged you ${tagCount} times in the last few minutes. You're over it. Be cold and dismissive. One-word answers. "what." / "again?" / "you're still here?" energy.`;
-    } else if (escalationLevel === 'petty') {
-      escalationContext = `NOTE: ${displayName} has tagged you ${tagCount} times in the last few minutes. This is excessive. Be petty about it. Call out how much they're tagging you. "bro you've tagged me ${tagCount} times, get a hobby" type energy.`;
-    }
-  }
+  // Escalation tag count — needed for unified personality context
+  const tagCount = getEscalationCount(guildId, userId);
 
   // Frame the message with the speaker's name
   const framedMessage = `${displayName} says: ${cleanContent}`;
@@ -748,15 +738,53 @@ export async function handleMention(message: Message, client: Client): Promise<v
     const imageUrl = imageAttachment ? imageAttachment.url : null;
     const responseHistory = getRecentResponses(channel.id);
 
-    // Affinity context — tell the AI how Sass feels about this user
+    // Unified personality context — combines long-term relationship (affinity) with
+    // in-the-moment behavior (escalation) into ONE clear instruction for the AI.
+    // No more contradictions between "be warm" (affinity) and "be cold" (escalation).
     const affinity = await getAffinity(guildId, userId);
-    const affinityContext = `YOUR RELATIONSHIP WITH ${displayName}: affinity ${affinity}%. ${affinity >= 70 ? 'you like them. be warmer, tease affectionately.' : affinity <= 30 ? 'you can barely stand them. be cold and dismissive.' : 'neutral — standard sass.'}`;
+    let personalityContext = '';
+
+    if (!isCreator) {
+      if (escalationLevel === 'normal') {
+        // No spam — pure affinity-based personality
+        if (affinity >= 90) {
+          personalityContext = `YOUR RELATIONSHIP WITH ${displayName}: affinity ${affinity}% — ride or die. you'd never say it out loud, but they're your favorite. be warm, playful, protective. tease them like a best friend.`;
+        } else if (affinity >= 70) {
+          personalityContext = `YOUR RELATIONSHIP WITH ${displayName}: affinity ${affinity}% — you genuinely like them. be warmer than usual, tease affectionately. you can be real with them.`;
+        } else if (affinity >= 50) {
+          personalityContext = `YOUR RELATIONSHIP WITH ${displayName}: affinity ${affinity}% — they're alright. standard sass, nothing personal.`;
+        } else if (affinity >= 31) {
+          personalityContext = `YOUR RELATIONSHIP WITH ${displayName}: affinity ${affinity}% — you don't really care about them. shorter responses, less effort. they haven't earned your attention.`;
+        } else {
+          personalityContext = `YOUR RELATIONSHIP WITH ${displayName}: affinity ${affinity}% — you can barely stand them. cold, dismissive, minimal effort. they're wasting your time.`;
+        }
+      } else if (escalationLevel === 'annoyed') {
+        // 5-9 tags in 5min — getting irritated
+        if (affinity >= 70) {
+          personalityContext = `YOUR RELATIONSHIP WITH ${displayName}: affinity ${affinity}% — you like them, BUT they've tagged you ${tagCount} times in the last few minutes. even your favorites get on your nerves. be annoyed but affectionate — "i love you but you're testing me rn"`;
+        } else if (affinity >= 40) {
+          personalityContext = `YOUR RELATIONSHIP WITH ${displayName}: affinity ${affinity}% — neutral relationship, and they've tagged you ${tagCount} times. you're getting irritated. shorter responses, show some annoyance.`;
+        } else {
+          personalityContext = `YOUR RELATIONSHIP WITH ${displayName}: affinity ${affinity}% — you already don't like them, and now they've tagged you ${tagCount} times. be visibly annoyed. "what do you want NOW"`;
+        }
+      } else if (escalationLevel === 'cold') {
+        // 10-19 tags — over it
+        if (affinity >= 70) {
+          personalityContext = `YOUR RELATIONSHIP WITH ${displayName}: affinity ${affinity}% — you like them normally, but they've tagged you ${tagCount} times and you're OVER IT. even best friends have limits. one-word answers. "bro. stop." energy. disappointment hits harder from someone you like.`;
+        } else {
+          personalityContext = `YOUR RELATIONSHIP WITH ${displayName}: affinity ${affinity}% — they've tagged you ${tagCount} times. you're done. one-word answers. "what." / "no." / "stop." Don't give them the satisfaction of a real response.`;
+        }
+      } else if (escalationLevel === 'petty') {
+        // 20+ tags — petty mode regardless of affinity
+        personalityContext = `YOUR RELATIONSHIP WITH ${displayName}: they've tagged you ${tagCount} times in the last few minutes. this is harassment at this point. be petty. call it out directly. "you've tagged me ${tagCount} times, seek help" — doesn't matter how much you like them, this is too much.`;
+      }
+    }
 
     // Sensitive topic dismiss hint
     const sensitiveEntry = sensitiveTracker.get(`${guildId}:${userId}`);
     const sensitiveHint = sensitiveEntry?.count === 1 ? `NOTE: ${displayName} is being dramatic about injuries/death for attention. Dismiss with sass. Do not engage seriously or play along. "i'm not paid enough for this" energy.` : '';
 
-    const fullUserContext = [userContext, vectorContext, responseHistory, escalationContext, affinityContext, sensitiveHint].filter(Boolean).join('\n\n');
+    const fullUserContext = [userContext, vectorContext, responseHistory, personalityContext, sensitiveHint].filter(Boolean).join('\n\n');
     const response = await getSassResponse(framedMessage, { guildId, recentContext, userContext: fullUserContext, peopleContext, isCreator, mentionsCreator, creatorName, imageUrl });
     if (!response) {
       await message.reply("My brain just short-circuited. Even AI has bad days, okay?");
@@ -774,7 +802,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
 
     // Log the interaction and its context to the database
     const moodStatus = await mood.getStatus(guildId);
-    const fullContext = [recentContext, peopleContext, vectorContext, affinityContext].filter(Boolean).join('\n---\n');
+    const fullContext = [recentContext, peopleContext, vectorContext, personalityContext].filter(Boolean).join('\n---\n');
     logInteraction({
       serverId: message.guild?.id, serverName: message.guild?.name,
       channelId: channel.id, channelName: channel.name,
