@@ -113,7 +113,7 @@ function hashPair(id1: string, id2: string): number {
  */
 export async function getShipScore(guildId: string, userId1: string, userId2: string): Promise<number> {
   const hash = hashPair(userId1, userId2);
-  const baseScore = 5 + (hash % 71);
+  const baseScore = 15 + (hash % 61);
 
   const interactions = getPairInteractions(guildId, userId1, userId2);
   const interactionBoost = Math.min(interactions * INTERACTION_BOOST_PER, MAX_INTERACTION_BOOST);
