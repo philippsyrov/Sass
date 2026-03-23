@@ -57,18 +57,29 @@ export function buildHelpPages(botAvatar: string | null | undefined): EmbedBuild
         { name: '\u{1F440} Status', value: '`/status @user`\nroast someone\'s Discord activity.', inline: true },
       ),
 
-    // Page 5 — Battle & Daily
+    // Page 5 — Battle & Beef
     new EmbedBuilder()
       .setColor(0xFF4D6D)
-      .setAuthor({ name: 'Sass \u2014 Battle & Daily', iconURL: botAvatar ?? undefined })
+      .setAuthor({ name: 'Sass \u2014 Battle & Beef', iconURL: botAvatar ?? undefined })
       .addFields(
         { name: '\u2694\uFE0F Roast Battle', value: '`/roastbattle @user`\nPvP in a thread. 3 rounds. AI judged. 2 min per turn or forfeit.', inline: false },
         { name: '\u200b', value: '\u200b', inline: false },
-        { name: '\u{1F3B2} Dare', value: '`/dare @user`\nunhinged dare. once per day.', inline: true },
-        { name: '\u{1F64A} Confess', value: '`/confess @user <text>`\nanonymous confession. once per day.', inline: true },
-        { name: '\u200b', value: '\u200b', inline: false },
-        { name: '\u{1F52E} Predict', value: '`/predict @user`\nfuture prediction. never good. once per day.', inline: true },
         { name: '\u{1F969} Beef', value: '`/beef @u1 @u2`\ncheck beef history between two people.', inline: true },
+        { name: '\u{1F3C6} Best Of', value: '`/bestof`\nmy greatest hits, ranked by your reactions.', inline: true },
+      ),
+
+    // Page 6 — Affinity & Ship Guide
+    new EmbedBuilder()
+      .setColor(0xFF4D6D)
+      .setAuthor({ name: 'Sass \u2014 How Ship Works', iconURL: botAvatar ?? undefined })
+      .setDescription("relationships are earned, not given. here's how it works.")
+      .addFields(
+        { name: '\u{1F498} You x Sass', value: '`@Sass` talk to me \u2014 **+0.5** (10min cooldown)\nreact \u{1F44D} to my messages \u2014 **+0.25**\ninsult me \u2014 **-5**\nspam me \u2014 **-3**\nnegative react \u2014 **-2**', inline: false },
+        { name: '\u200b', value: '\u200b', inline: false },
+        { name: '\u{1F465} User x User', value: 'reply to each other \u2014 **+0.5** per reply\nbeef (hostile @mention/reply) \u2014 **-3**', inline: false },
+        { name: '\u200b', value: '\u200b', inline: false },
+        { name: '\u23F1\uFE0F Time to 100%', value: '50\u219260% \u2014 ~3 days (full gains)\n60\u219275% \u2014 ~9 days (half speed)\n75\u219290% \u2014 ~17 days (quarter speed)\n90\u2192100% \u2014 ~29 days (grind mode)\n**total: ~2 months of dedication**', inline: true },
+        { name: '\u{1F4C9} Decay', value: "don't talk to me for 3 days?\n**-1/day** until you come back.\nfloor: 30% (i won't forget you entirely).", inline: true },
       ),
   ];
 
