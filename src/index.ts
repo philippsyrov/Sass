@@ -187,6 +187,30 @@ client.on('messageCreate', async (message) => {
     } catch (_err) { /* message might be deleted */ }
   }
 
+  // Beef detection — track hostility in ALL messages (not just auto-sass context)
+  const lowerText = message.content.toLowerCase();
+  const fightPatterns = /\b(stfu|fight me|you'?re wrong|shut up|no one asked|cope|L take|ratio|fuck you|fuck off|kys|you suck|trash|garbage|clown|loser|idiot|stupid|dumb|cringe|weirdo|delusional|dog ?water|skill ?issue|get good|no bitches|maidenless|touch grass|stay mad|seethe|cry about it|die mad|bozo|you'?re cooked|get rekt|sit down|go away|nobody likes|embarrassing|pathetic|brain ?dead|you fell off)\b/i;
+  if (fightPatterns.test(lowerText)) {
+    // Check @mentioned users
+    const mentionedUsers = message.mentions.users.filter((u) => !u.bot && u.id !== message.author.id);
+    for (const [, mentionedUser] of mentionedUsers) {
+      const topic = message.content.slice(0, 50);
+      userMemory.addBeef(guildId, message.author.id, mentionedUser.id, topic)
+        .catch((err) => console.error('Add beef failed:', (err as Error).message));
+    }
+    // Check if replying to someone
+    if (message.reference?.messageId) {
+      try {
+        const repliedTo = await message.channel.messages.fetch(message.reference.messageId);
+        if (repliedTo?.author && !repliedTo.author.bot && repliedTo.author.id !== message.author.id) {
+          const topic = message.content.slice(0, 50);
+          userMemory.addBeef(guildId, message.author.id, repliedTo.author.id, topic)
+            .catch((err) => console.error('Add beef failed:', (err as Error).message));
+        }
+      } catch { /* message might be deleted */ }
+    }
+  }
+
   // Skip if we already processed this message (Discord can send duplicates)
   if (isDuplicate(message.id)) return;
 
