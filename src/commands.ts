@@ -136,6 +136,11 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
   const { commandName } = interaction;
   const guildId = interaction.guild?.id ?? '';
 
+  if (!interaction.guild) {
+    await interaction.reply({ content: "i only work in servers, not DMs 💅", ephemeral: true }).catch((err) => console.error('DM reply failed:', (err as Error).message));
+    return;
+  }
+
   // Global slash command rate limit (skip for ping/help)
   if (commandName !== 'ping' && commandName !== 'help') {
     const limitResult = checkSlashRateLimit(interaction.user.id);
@@ -444,10 +449,11 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
     }
 
     case 'favorite': {
+      await interaction.deferReply();
       const board = await userMemory.getLeaderboard(guildId, 1);
       const fav = board[0];
       if (!fav || fav.timesRoasted === 0) {
-        await interaction.reply("i don't have a favorite yet. nobody's earned it. or deserved it.");
+        await interaction.editReply("i don't have a favorite yet. nobody's earned it. or deserved it.");
         break;
       }
       const responses = [
@@ -456,18 +462,19 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
         `gotta be **${fav.name}**. they've been roasted ${fav.timesRoasted} times and still haven't learned.`,
       ];
       const favResponse = responses[Math.floor(Math.random() * responses.length)] ?? '';
-      await interaction.reply(favResponse);
+      await interaction.editReply(favResponse);
       break;
     }
 
     case 'halloffame': {
+      await interaction.deferReply();
       const quotes = await userMemory.getWildQuotes(guildId, 10);
       if (quotes.length === 0) {
-        await interaction.reply("nobody's said anything wild enough yet. disappointing but not surprising.");
+        await interaction.editReply("nobody's said anything wild enough yet. disappointing but not surprising.");
         break;
       }
       const lines = quotes.map((q, i) => `**${i + 1}.** "${q.quote}" — *${q.name}*`);
-      await interaction.reply(`🏆 **hall of fame — wildest things said here**\n\n${lines.join('\n')}`);
+      await interaction.editReply(`🏆 **hall of fame — wildest things said here**\n\n${lines.join('\n')}`);
       break;
     }
 
@@ -675,10 +682,11 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
     case 'beef': {
       const user1 = interaction.options.getUser('user1', true);
       const user2 = interaction.options.getUser('user2', true);
+      await interaction.deferReply();
       const beef = await userMemory.getBeef(guildId, user1.id, user2.id);
 
       if (!beef || beef.incidents === 0) {
-        await interaction.reply(`${user1.displayName} and ${user2.displayName} have no beef on record. boring.`);
+        await interaction.editReply(`${user1.displayName} and ${user2.displayName} have no beef on record. boring.`);
         break;
       }
 
@@ -692,7 +700,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           { name: 'Latest Beef', value: beef.lastTopic ?? 'classified', inline: false },
         )
         .setFooter({ text: 'sass intelligence agency — beef division' });
-      await interaction.reply({ embeds: [embed] });
+      await interaction.editReply({ embeds: [embed] });
       break;
     }
 

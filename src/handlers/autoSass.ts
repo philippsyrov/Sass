@@ -58,6 +58,8 @@ export async function handleAutoSass(message: Message, _client: Client, options:
   const { heardName = false } = options;
   const guildId = message.guild?.id ?? '';
 
+  if (!message.guild) return;
+
   // Never auto-sass the creator (unless they said her name)
   if (message.author.id === process.env.CREATOR_ID && !heardName) return;
 
@@ -105,7 +107,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
           const topic = text.slice(0, 50);
           userMemory.addBeef(guildId, message.author.id, repliedTo.author.id, topic).catch((err) => console.error('Add beef failed:', (err as Error).message));
         }
-      } catch (_err) { /* message might be deleted */ }
+      } catch (err) { console.error('Fetch message failed:', (err as Error).message); }
     }
     // Record beef ONLY if they @mentioned another user with hostile language
     const mentionedUsers = message.mentions.users.filter((u) => !u.bot && u.id !== message.author.id && u.id !== _client.user?.id);
@@ -193,7 +195,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
               const oldest = activityRoastCooldowns.keys().next().value;
               if (oldest) activityRoastCooldowns.delete(oldest);
             }
-            await channel.sendTyping();
+            await channel.sendTyping().catch((err) => console.error('sendTyping failed:', (err as Error).message));
             const delay = 1000 + Math.random() * 2000;
             await new Promise((resolve) => setTimeout(resolve, delay));
             const activityRoastMsg = `👀 hey <@${target.user.id}>, ${roast}`;
@@ -313,7 +315,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
 
       if (joinRemark && joinRemark.trim().toUpperCase() !== 'SKIP') {
         setAutoSassCooldown(channelId);
-        await channel.sendTyping();
+        await channel.sendTyping().catch((err) => console.error('sendTyping failed:', (err as Error).message));
         const delay = 1000 + Math.random() * 2000;
         await new Promise((resolve) => setTimeout(resolve, delay));
         await channel.send(joinRemark).catch((err) => console.error('Channel send failed:', (err as Error).message));
@@ -339,7 +341,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
     if (!remark || remark.trim().toUpperCase() === 'SKIP') return;
 
     setAutoSassCooldown(channelId);
-    await channel.sendTyping();
+    await channel.sendTyping().catch((err) => console.error('sendTyping failed:', (err as Error).message));
     const delay = 1000 + Math.random() * 2000;
     await new Promise((resolve) => setTimeout(resolve, delay));
 

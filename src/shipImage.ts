@@ -43,9 +43,9 @@ export async function generateShipImage(avatarUrl1: string, avatarUrl2: string, 
 
   // Load template and avatars in parallel
   const [template, img1, img2] = await Promise.all([
-    loadImage(TEMPLATE_PATH).catch(() => null),
-    loadImage(avatarUrl1).catch(() => null),
-    loadImage(avatarUrl2).catch(() => null),
+    loadImage(TEMPLATE_PATH).catch((err) => { console.error('Image load failed:', (err as Error).message); return null; }),
+    loadImage(avatarUrl1).catch((err) => { console.error('Image load failed:', (err as Error).message); return null; }),
+    loadImage(avatarUrl2).catch((err) => { console.error('Image load failed:', (err as Error).message); return null; }),
   ]);
 
   // Step 1: Draw avatars first (they go behind the template)

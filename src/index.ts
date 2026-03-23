@@ -53,7 +53,7 @@ async function sendToFirstChannel(guild: Guild, text: string): Promise<void> {
   const channel = guild.channels.cache.find(
     (ch) => ch.isTextBased() && !ch.isVoiceBased() && ch.permissionsFor(me)?.has('SendMessages')
   ) as TextChannel | undefined;
-  if (channel) await channel.send(text);
+  if (channel) await channel.send(text).catch((err) => console.error('Guild join send failed:', (err as Error).message));
 }
 
 // Guild join — announce arrival
@@ -85,7 +85,7 @@ client.on('interactionCreate', async (interaction) => {
     await interaction.reply({
       content: cooldownResponses[Math.floor(Math.random() * cooldownResponses.length)] as string,
       ephemeral: true,
-    });
+    }).catch((err) => console.error('Cooldown reply failed:', (err as Error).message));
     return;
   }
   setSlashCooldown(userId);
@@ -96,7 +96,7 @@ client.on('interactionCreate', async (interaction) => {
     await interaction.reply({
       content: "you just shipped someone. give the matchmaking gods a moment.",
       ephemeral: true,
-    });
+    }).catch((err) => console.error('Cooldown reply failed:', (err as Error).message));
     return;
   }
   if (commandName === 'ship') setShipCooldown(userId);
@@ -196,7 +196,7 @@ client.on('messageCreate', async (message) => {
       if (repliedTo?.author && !repliedTo.author.bot && repliedTo.author.id !== message.author.id) {
         recordPairInteraction(guildId, message.author.id, repliedTo.author.id);
       }
-    } catch (_err) { /* message might be deleted */ }
+    } catch (err) { console.error('Fetch message failed:', (err as Error).message); }
   }
 
   // Beef detection — only real fights with direct targeting (@mention or reply + hostile language)
@@ -219,7 +219,7 @@ client.on('messageCreate', async (message) => {
           userMemory.addBeef(guildId, message.author.id, repliedTo.author.id, topic)
             .catch((err) => console.error('Add beef failed:', (err as Error).message));
         }
-      } catch { /* message might be deleted */ }
+      } catch (err) { console.error('Fetch message failed:', (err as Error).message); }
     }
   }
 
@@ -265,7 +265,7 @@ client.on('messageCreate', async (message) => {
           }
         }
       }
-    } catch { /* replied message might be deleted */ }
+    } catch (err) { console.error('Fetch replied message failed:', (err as Error).message); }
   }
 
   // 2. Someone said "sass" without @ — she heard her name
@@ -297,10 +297,10 @@ client.on('messageReactionAdd', async (reaction, user) => {
   try {
     // Fetch partial reactions/messages
     if (reaction.partial) {
-      try { await reaction.fetch(); } catch (_err) { return; }
+      try { await reaction.fetch(); } catch (err) { console.error('Reaction fetch failed:', (err as Error).message); return; }
     }
     if (reaction.message.partial) {
-      try { await reaction.message.fetch(); } catch (_err) { return; }
+      try { await reaction.message.fetch(); } catch (err) { console.error('Reaction message fetch failed:', (err as Error).message); return; }
     }
 
     // Ignore bot reactions

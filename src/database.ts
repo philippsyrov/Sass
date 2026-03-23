@@ -530,16 +530,16 @@ export async function logCommand({ serverId, userId, commandName, commandType }:
 /**
  * Get stats for analytics.
  */
-export async function getStats(): Promise<StatsResult | null> {
+export async function getStats(guildId: string): Promise<StatsResult | null> {
   if (!isConnected || !pool) return null;
 
   try {
     const [total, byTrigger, topUsers, topCommands, recent] = await Promise.all([
-      pool.query('SELECT COUNT(*) as count FROM interactions'),
-      pool.query('SELECT trigger_type, COUNT(*) as count FROM interactions GROUP BY trigger_type ORDER BY count DESC'),
-      pool.query('SELECT username, COUNT(*) as count FROM interactions WHERE username IS NOT NULL GROUP BY username ORDER BY count DESC LIMIT 10'),
-      pool.query('SELECT command_name, COUNT(*) as count FROM command_usage GROUP BY command_name ORDER BY count DESC LIMIT 10'),
-      pool.query('SELECT COUNT(*) as count FROM interactions WHERE timestamp > NOW() - INTERVAL \'24 hours\''),
+      pool.query('SELECT COUNT(*) as count FROM interactions WHERE server_id = $1', [guildId]),
+      pool.query('SELECT trigger_type, COUNT(*) as count FROM interactions WHERE server_id = $1 GROUP BY trigger_type ORDER BY count DESC', [guildId]),
+      pool.query('SELECT username, COUNT(*) as count FROM interactions WHERE server_id = $1 AND username IS NOT NULL GROUP BY username ORDER BY count DESC LIMIT 10', [guildId]),
+      pool.query('SELECT command_name, COUNT(*) as count FROM command_usage WHERE server_id = $1 GROUP BY command_name ORDER BY count DESC LIMIT 10', [guildId]),
+      pool.query('SELECT COUNT(*) as count FROM interactions WHERE server_id = $1 AND timestamp > NOW() - INTERVAL \'24 hours\'', [guildId]),
     ]);
 
     return {

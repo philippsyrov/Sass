@@ -19,7 +19,8 @@ Message: "${userMessage}"`;
     const result = await queryAI(prompt, { systemPrompt: UTILITY_PROMPT });
     if (!result || result.trim().toUpperCase() === 'SKIP') return null;
     return result.trim().replace(/^["']|["']$/g, '');
-  } catch (_err) {
+  } catch (err) {
+    console.error('extractStatement failed:', (err as Error).message);
     return null;
   }
 }
@@ -55,7 +56,8 @@ If no clear contradiction, say "CLEAN".`;
 
     const oldStatement = result.replace('CAUGHT:', '').trim();
     return { oldStatement, newStatement };
-  } catch (_err) {
+  } catch (err) {
+    console.error('checkContradiction failed:', (err as Error).message);
     return null;
   }
 }
@@ -74,7 +76,8 @@ Write a short, brutal callout catching them in this contradiction. You caught th
       systemPrompt: 'You are Sass, a sassy Discord bot. You just caught someone contradicting themselves. Be petty and specific about what they said before vs now. Lowercase. Devastating.',
     });
     return result;
-  } catch (_err) {
+  } catch (err) {
+    console.error('generate4kCallout failed:', (err as Error).message);
     return null;
   }
 }

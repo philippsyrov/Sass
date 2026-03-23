@@ -91,6 +91,8 @@ export async function handleMention(message: Message, client: Client): Promise<v
   const displayName = message.author.displayName || message.author.username;
   const guildId = message.guild?.id ?? '';
 
+  if (!message.guild) return;
+
   // Cooldown — don't spam-reply to the same user
   if (isOnMentionCooldown(userId)) return;
   setMentionCooldown(userId);
@@ -154,7 +156,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
       // Soft-ban expired — check-in message
       sensitiveTracker.delete(sensitiveKey);
       const channel = message.channel as TextChannel;
-      await channel.sendTyping();
+      await channel.sendTyping().catch((err) => console.error('sendTyping failed:', (err as Error).message));
       const checkIn = await queryAI(`${displayName} was being dramatic earlier about injuries/death. They just messaged again. Give a short sassy check-in like "you good now?" or "you better? i need proof." Keep it under 10 words, be sassy but not mean.`, { temperature: 1.0 });
       if (checkIn) {
         await message.reply(checkIn).catch((err) => console.error('Reply failed:', (err as Error).message));
@@ -248,7 +250,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
 
     // Fetch recent messages from this channel by the target user
     try {
-      await channel.sendTyping();
+      await channel.sendTyping().catch((err) => console.error('sendTyping failed:', (err as Error).message));
       const fetched = await channel.messages.fetch({ limit: 100 });
       const userMsgs = fetched
         .filter((m) => m.author.id === targetId && !m.author.bot)
@@ -321,7 +323,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
     const id1 = shipMatch[1]; const id2 = shipMatch[2];
     if (!id1 || !id2) return;
     try {
-      await channel.sendTyping();
+      await channel.sendTyping().catch((err) => console.error('sendTyping failed:', (err as Error).message));
       const member1 = await message.guild?.members.fetch(id1);
       const member2 = await message.guild?.members.fetch(id2);
       if (!member1 || !member2) {
@@ -383,7 +385,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
     }
 
     try {
-      await channel.sendTyping();
+      await channel.sendTyping().catch((err) => console.error('sendTyping failed:', (err as Error).message));
       const member = await message.guild?.members.fetch(conspiracyTargetId);
       if (!member) {
         await message.reply("my investigation was compromised. suspicious.");
@@ -418,7 +420,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
     const complimentTargetId = complimentMatch[1];
     if (!complimentTargetId) return;
     try {
-      await channel.sendTyping();
+      await channel.sendTyping().catch((err) => console.error('sendTyping failed:', (err as Error).message));
       const member = await message.guild?.members.fetch(complimentTargetId);
       if (!member) {
         await message.reply("i tried to compliment them but even i couldn't find anything.");
@@ -460,7 +462,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
       return;
     }
     try {
-      await channel.sendTyping();
+      await channel.sendTyping().catch((err) => console.error('sendTyping failed:', (err as Error).message));
       const member = await message.guild?.members.fetch(roastTargetId);
       if (!member) {
         await message.reply("even they couldn't find the words. that's how bad it is.");
@@ -682,7 +684,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
   const framedMessage = `${displayName} says: ${cleanContent}`;
 
   try {
-    await channel.sendTyping();
+    await channel.sendTyping().catch((err) => console.error('sendTyping failed:', (err as Error).message));
 
     // Caught in 4K — check for contradictions before responding (non-creator only)
     if (!isCreator && cleanContent && cleanContent.length > 15) {
