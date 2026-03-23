@@ -3,11 +3,7 @@
  *
  * Draws avatars first, then overlays the template image on top.
  * The template has transparent circle cutouts where avatars show through.
- *
- * Visual enhancements:
- * - Dynamic background tint (warm pink for high %, cool blue for low %)
- * - Glow ring around avatars (color matches energy)
- * - Drop shadow on percentage text
+ * Percentage text rendered below the heart in the center.
  */
 
 import { createCanvas, loadImage, registerFont } from 'canvas';
@@ -38,86 +34,41 @@ const PERCENT_X = 724;
 const PERCENT_Y = 370;
 
 /**
- * Get the energy color based on ship percentage.
- * High % = warm pink/red, Low % = cool blue/purple.
- */
-function getEnergyColor(percent: number): { r: number; g: number; b: number } {
-  const t = percent / 100;
-  return {
-    r: Math.round(107 + (255 - 107) * t),
-    g: Math.round(139 + (107 - 139) * t),
-    b: Math.round(255 + (157 - 255) * t),
-  };
-}
-
-/**
  * Generate a ship card by drawing avatars behind the template.
  * Returns a PNG buffer ready to attach to a Discord embed.
  */
-export async function generateShipImage(
-  avatarUrl1: string,
-  avatarUrl2: string,
-  percent: number,
-): Promise<Buffer> {
+export async function generateShipImage(avatarUrl1: string, avatarUrl2: string, percent: number): Promise<Buffer> {
   const canvas = createCanvas(CANVAS_WIDTH, CANVAS_HEIGHT);
   const ctx = canvas.getContext('2d');
 
+  // Load template and avatars in parallel
   const [template, img1, img2] = await Promise.all([
     loadImage(TEMPLATE_PATH).catch(() => null),
     loadImage(avatarUrl1).catch(() => null),
     loadImage(avatarUrl2).catch(() => null),
   ]);
 
-  // Step 1: Dynamic background tint
-  const energy = getEnergyColor(percent);
-  ctx.fillStyle = `rgba(${energy.r}, ${energy.g}, ${energy.b}, 0.35)`;
-  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
-  // Step 2: Avatar glow rings
-  const glowColor = `rgba(${energy.r}, ${energy.g}, ${energy.b}, 0.6)`;
-  drawAvatarGlow(ctx, AVATAR1_CX, AVATAR1_CY, AVATAR1_RADIUS, glowColor);
-  drawAvatarGlow(ctx, AVATAR2_CX, AVATAR2_CY, AVATAR2_RADIUS, glowColor);
-
-  // Step 3: Draw avatars (behind template)
+  // Step 1: Draw avatars first (they go behind the template)
   drawCircularAvatar(ctx, img1, AVATAR1_CX, AVATAR1_CY, AVATAR1_RADIUS);
   drawCircularAvatar(ctx, img2, AVATAR2_CX, AVATAR2_CY, AVATAR2_RADIUS);
 
-  // Step 4: Draw template on top — transparent cutouts reveal avatars
+  // Step 2: Draw template on top — transparent cutouts reveal avatars
   if (template) {
     ctx.drawImage(template, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
   }
 
-  // Step 5: Percentage text with drop shadow
+  // Step 3: Percentage text with drop shadow
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font = 'bold 64px ShipFont';
 
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
-  ctx.fillText(`${percent}%`, PERCENT_X + 3, PERCENT_Y + 3);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+  ctx.fillText(`${percent}%`, PERCENT_X + 2, PERCENT_Y + 2);
 
-  const mainColor = `rgb(${Math.round(energy.r * 0.7)}, ${Math.round(energy.g * 0.4)}, ${Math.round(energy.b * 0.5)})`;
-  ctx.fillStyle = mainColor;
+  ctx.fillStyle = '#C44078';
   ctx.fillText(`${percent}%`, PERCENT_X, PERCENT_Y);
 
   return canvas.toBuffer('image/png');
-}
-
-/**
- * Draw a glowing ring behind an avatar circle.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function drawAvatarGlow(ctx: any, cx: number, cy: number, radius: number, color: string): void {
-  ctx.save();
-  const glowRadius = radius + 40;
-  const gradient = ctx.createRadialGradient(cx, cy, radius - 5, cx, cy, glowRadius);
-  gradient.addColorStop(0, color);
-  gradient.addColorStop(0.5, color.replace('0.6)', '0.3)'));
-  gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-  ctx.fillStyle = gradient;
-  ctx.beginPath();
-  ctx.arc(cx, cy, glowRadius, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
 }
 
 /**

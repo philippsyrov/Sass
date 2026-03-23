@@ -352,7 +352,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           const filled = Math.round(percent / 5);
           const progressBar = '█'.repeat(filled) + '░'.repeat(20 - filled);
 
-          hint = `\n\n──────────── ✿ ────────────\n\n` +
+          hint = `\n\n═══════════════ ✿ ═══════════════\n\n` +
             `${tierEmoji} **${tierName}**\n` +
             `*"${tierQuote}"*\n\n` +
             `\`${progressBar}\` **${percent}%**` +
@@ -379,12 +379,12 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
         const embed = new EmbedBuilder()
           .setColor(0xFF4D6D)
           .setDescription(
-            `🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸\n\n` +
+            `🌸✿🌸✿🌸✿🌸✿🌸✿🌸✿🌸✿🌸✿🌸✿🌸✿🌸✿🌸\n\n` +
             `💘 **${user1.displayName}** x **${user2.displayName}**\n` +
             `ship name: **${shipName}**\n` +
             `${bar} **${percent}%**\n\n` +
             `*${verdict}*${hint}\n\n` +
-            `🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸 ✿ 🌸`
+            `🌸✿🌸✿🌸✿🌸✿🌸✿🌸✿🌸✿🌸✿🌸✿🌸✿🌸✿🌸`
           );
 
         if (files.length > 0) {
