@@ -647,26 +647,25 @@ export async function updateAffinity(guildId: string, userId: string, delta: num
   if (!isConnected || !pool) return;
   try {
     // For positive gains, apply diminishing returns based on current level
+    let effectiveDelta = delta;
     if (delta > 0) {
       const current = await getAffinity(guildId, userId);
       let multiplier = 1;
       if (current >= 90) multiplier = 0.1;
       else if (current >= 75) multiplier = 0.25;
       else if (current >= 50) multiplier = 0.5;
-      const adjustedDelta = Math.max(0.1, delta * multiplier);
-      await pool.query(
-        `UPDATE users SET affinity = GREATEST(0, LEAST(100, COALESCE(affinity, 50) + $3))
-         WHERE server_id = $1 AND user_id = $2`,
-        [guildId, userId, adjustedDelta]
-      );
-    } else {
-      // Negatives apply at full strength
-      await pool.query(
-        `UPDATE users SET affinity = GREATEST(0, LEAST(100, COALESCE(affinity, 50) + $3))
-         WHERE server_id = $1 AND user_id = $2`,
-        [guildId, userId, delta]
-      );
+      effectiveDelta = Math.max(0.1, delta * multiplier);
     }
+
+    // Upsert: create user row if it doesn't exist, update affinity + last_seen
+    await pool.query(
+      `INSERT INTO users (server_id, user_id, name, affinity, last_seen)
+       VALUES ($1, $2, '', GREATEST(0, LEAST(100, 50 + $3)), NOW())
+       ON CONFLICT (server_id, user_id) DO UPDATE SET
+         affinity = GREATEST(0, LEAST(100, COALESCE(users.affinity, 50) + $3)),
+         last_seen = NOW()`,
+      [guildId, userId, effectiveDelta]
+    );
   } catch (err) {
     console.error('Failed to update affinity:', (err as Error).message);
   }
