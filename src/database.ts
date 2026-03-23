@@ -610,7 +610,7 @@ export async function updateAffinity(guildId: string, userId: string, delta: num
       let multiplier = 1;
       if (current >= 90) multiplier = 0.1;
       else if (current >= 75) multiplier = 0.25;
-      else if (current >= 50) multiplier = 0.5;
+      else if (current >= 60) multiplier = 0.5;
       effectiveDelta = Math.max(0.1, delta * multiplier);
     }
 
