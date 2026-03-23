@@ -348,9 +348,18 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           else if (percent >= 16) { tierEmoji = '😒'; tierName = 'nuisance'; tierQuote = "oh, you're still here."; nextTier = 'acquaintance (31%)'; }
           else { nextTier = 'nuisance (16%)'; }
 
-          // Visual progress bar (20 segments)
-          const filled = Math.round(percent / 5);
-          const progressBar = '█'.repeat(filled) + '░'.repeat(20 - filled);
+          // Visual progress bar (30 segments with tier milestone markers)
+          const totalSegments = 30;
+          const filledCount = Math.round((percent / 100) * totalSegments);
+          const milestones = [16, 31, 51, 71, 86, 96].map(m => Math.round((m / 100) * totalSegments));
+          let progressBar = '';
+          for (let i = 0; i < totalSegments; i++) {
+            if (milestones.includes(i)) {
+              progressBar += '|';
+            } else {
+              progressBar += i < filledCount ? '█' : '░';
+            }
+          }
 
           hint = `\n\n─────────────── ✿ ───────────────\n\n` +
             `${tierEmoji} **${tierName}**\n` +
