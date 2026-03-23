@@ -674,15 +674,47 @@ export async function updateAffinity(guildId: string, userId: string, delta: num
 
 /**
  * Get a user's affinity score (default 50 if not set).
+ * Applies lazy decay: -1 per day of inactivity after a 3-day grace period.
+ * Floor at 30 (never drops below acquaintance tier).
  */
+const AFFINITY_DECAY_PER_DAY = 1;
+const AFFINITY_DECAY_GRACE_DAYS = 3;
+const AFFINITY_DECAY_FLOOR = 30;
+
 export async function getAffinity(guildId: string, userId: string): Promise<number> {
   if (!isConnected || !pool) return 50;
   try {
     const result = await pool.query(
-      'SELECT affinity FROM users WHERE server_id = $1 AND user_id = $2',
+      'SELECT affinity, last_seen FROM users WHERE server_id = $1 AND user_id = $2',
       [guildId, userId]
     );
-    return (result.rows[0]?.affinity as number) ?? 50;
+    const row = result.rows[0];
+    if (!row) return 50;
+
+    let affinity = (row.affinity as number) ?? 50;
+    const lastSeen = row.last_seen ? new Date(row.last_seen as string) : null;
+
+    // Apply decay if inactive beyond grace period
+    if (lastSeen && affinity > AFFINITY_DECAY_FLOOR) {
+      const daysSinceLastSeen = (Date.now() - lastSeen.getTime()) / (1000 * 60 * 60 * 24);
+      if (daysSinceLastSeen > AFFINITY_DECAY_GRACE_DAYS) {
+        const decayDays = daysSinceLastSeen - AFFINITY_DECAY_GRACE_DAYS;
+        const decayAmount = Math.floor(decayDays * AFFINITY_DECAY_PER_DAY);
+        if (decayAmount > 0) {
+          const decayed = Math.max(AFFINITY_DECAY_FLOOR, affinity - decayAmount);
+          if (decayed !== affinity) {
+            // Persist the decayed value so it doesn't recalculate the same decay next time
+            await pool.query(
+              'UPDATE users SET affinity = $3 WHERE server_id = $1 AND user_id = $2',
+              [guildId, userId, decayed]
+            ).catch((err: Error) => console.error('Failed to persist affinity decay:', err.message));
+            affinity = decayed;
+          }
+        }
+      }
+    }
+
+    return affinity;
   } catch (err) {
     console.error('Failed to get affinity:', (err as Error).message);
     return 50;
