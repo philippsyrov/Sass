@@ -660,9 +660,13 @@ export async function getAffinity(guildId: string, userId: string): Promise<numb
       [guildId, userId]
     );
     const row = result.rows[0];
-    if (!row) return 50;
+    if (!row) {
+      console.log(`[AFFINITY READ] guild=${guildId.slice(-4)} user=${userId.slice(-4)} NO ROW → default 50`);
+      return 50;
+    }
 
     let affinity = (row.affinity as number) ?? 50;
+    console.log(`[AFFINITY READ] guild=${guildId.slice(-4)} user=${userId.slice(-4)} raw=${row.affinity} affinity=${affinity}`);
     const lastSeen = row.last_seen ? new Date(row.last_seen as string) : null;
 
     // Apply decay if inactive beyond grace period
