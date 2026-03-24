@@ -118,21 +118,35 @@ export function getEscalationCount(guildId: string, userId: string): number {
   return entry.tags.filter((ts) => now - ts < ESCALATION_WINDOW_MS).length;
 }
 
+const MAX_COOLDOWN_ENTRIES = 500;
+
+// FIFO eviction helper — evict oldest entries until size <= max
+function evictOldest(map: Map<string, unknown>, max: number): void {
+  while (map.size > max) {
+    const oldest = map.keys().next().value;
+    if (oldest !== undefined) map.delete(oldest); else break;
+  }
+}
+
 // Periodic cleanup of expired cooldowns and escalation data
 setInterval(() => {
   const now = Date.now();
   for (const [id, ts] of userCooldowns) {
     if (now - ts > MENTION_COOLDOWN_MS) userCooldowns.delete(id);
   }
+  evictOldest(userCooldowns as Map<string, unknown>, MAX_COOLDOWN_ENTRIES);
   for (const [id, ts] of channelCooldowns) {
     if (now - ts > AUTO_SASS_COOLDOWN_MS) channelCooldowns.delete(id);
   }
+  evictOldest(channelCooldowns as Map<string, unknown>, MAX_COOLDOWN_ENTRIES);
   for (const [id, ts] of slashCooldowns) {
     if (now - ts > SLASH_COOLDOWN_MS) slashCooldowns.delete(id);
   }
+  evictOldest(slashCooldowns as Map<string, unknown>, MAX_COOLDOWN_ENTRIES);
   for (const [id, ts] of shipCooldowns) {
     if (now - ts > SHIP_COOLDOWN_MS) shipCooldowns.delete(id);
   }
+  evictOldest(shipCooldowns as Map<string, unknown>, MAX_COOLDOWN_ENTRIES);
   for (const [id, entry] of escalationTracker) {
     entry.tags = entry.tags.filter((ts) => now - ts < ESCALATION_WINDOW_MS);
     if (entry.tags.length === 0) escalationTracker.delete(id);

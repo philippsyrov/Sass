@@ -23,19 +23,38 @@ const reactionAffinityCooldowns = new Map<string, number>();
 const REACTION_AFFINITY_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
 const MAX_REACTION_COOLDOWNS = 500;
 
+// Periodic cleanup for all index.ts Maps (every 30 min)
 setInterval(() => {
+  const now = Date.now();
+  // Reaction affinity tracker — FIFO eviction
   if (reactionAffinityTracker.size > MAX_REACTION_AFFINITY_ENTRIES) {
     const entries = [...reactionAffinityTracker.keys()];
     const toDelete = entries.slice(0, entries.length - MAX_REACTION_AFFINITY_ENTRIES);
     for (const key of toDelete) reactionAffinityTracker.delete(key);
   }
-  const now = Date.now();
+  // Reaction affinity cooldowns — time-based + FIFO
   for (const [key, ts] of reactionAffinityCooldowns) {
     if (now - ts > REACTION_AFFINITY_COOLDOWN_MS) reactionAffinityCooldowns.delete(key);
   }
   while (reactionAffinityCooldowns.size > MAX_REACTION_COOLDOWNS) {
     const oldest = reactionAffinityCooldowns.keys().next().value;
     if (oldest !== undefined) reactionAffinityCooldowns.delete(oldest); else break;
+  }
+  // recentUserReplies — time-based + size cap (prevents unbounded growth)
+  for (const [id, ts] of recentUserReplies) {
+    if (now - ts > USER_REPLY_COOLDOWN_MS * 2) recentUserReplies.delete(id);
+  }
+  while (recentUserReplies.size > MAX_RECENT_TRACKED) {
+    const oldest = recentUserReplies.keys().next().value;
+    if (oldest !== undefined) recentUserReplies.delete(oldest); else break;
+  }
+  // recentUserMessages — time-based + size cap (prevents unbounded growth)
+  for (const [id, data] of recentUserMessages) {
+    if (now - data.timestamp > SPAM_WINDOW_MS * 2) recentUserMessages.delete(id);
+  }
+  while (recentUserMessages.size > MAX_RECENT_TRACKED) {
+    const oldest = recentUserMessages.keys().next().value;
+    if (oldest !== undefined) recentUserMessages.delete(oldest); else break;
   }
 }, REACTION_AFFINITY_CLEANUP_MS);
 
@@ -137,6 +156,7 @@ const recentUserMessages = new Map<string, { content: string; count: number; tim
 const USER_REPLY_COOLDOWN_MS = 3000; // 3 second cooldown per user
 const SPAM_WINDOW_MS = 60_000; // 1 minute window for spam detection
 const SPAM_THRESHOLD = 2; // ignore after 2 similar messages in the window
+const MAX_RECENT_TRACKED = 500; // cap for recentUserReplies + recentUserMessages
 
 function isDuplicate(messageId: string): boolean {
   if (processedMessages.has(messageId)) return true;
