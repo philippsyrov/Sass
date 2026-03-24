@@ -16,11 +16,26 @@ dotenv.config();
 const reactionAffinityTracker = new Map<string, Set<string>>();
 const REACTION_AFFINITY_CLEANUP_MS = 30 * 60 * 1000; // 30 min
 const MAX_REACTION_AFFINITY_ENTRIES = 500;
+
+// Time-based cooldown for reaction affinity — same 10-min cooldown as mentions
+// Prevents bulk-reacting to old messages to farm affinity
+const reactionAffinityCooldowns = new Map<string, number>();
+const REACTION_AFFINITY_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
+const MAX_REACTION_COOLDOWNS = 500;
+
 setInterval(() => {
   if (reactionAffinityTracker.size > MAX_REACTION_AFFINITY_ENTRIES) {
     const entries = [...reactionAffinityTracker.keys()];
     const toDelete = entries.slice(0, entries.length - MAX_REACTION_AFFINITY_ENTRIES);
     for (const key of toDelete) reactionAffinityTracker.delete(key);
+  }
+  const now = Date.now();
+  for (const [key, ts] of reactionAffinityCooldowns) {
+    if (now - ts > REACTION_AFFINITY_COOLDOWN_MS) reactionAffinityCooldowns.delete(key);
+  }
+  while (reactionAffinityCooldowns.size > MAX_REACTION_COOLDOWNS) {
+    const oldest = reactionAffinityCooldowns.keys().next().value;
+    if (oldest !== undefined) reactionAffinityCooldowns.delete(oldest); else break;
   }
 }, REACTION_AFFINITY_CLEANUP_MS);
 
@@ -352,17 +367,33 @@ client.on('messageReactionAdd', async (reaction, user) => {
       isPositive,
     }).catch((err) => console.error('Reaction log failed:', (err as Error).message));
 
-    // Update affinity — only once per user per message (prevent spam-reacting to farm)
-    const affinityKey = `${reactionGuildId}:${reaction.message.id}`;
-    if (!reactionAffinityTracker.has(affinityKey)) {
-      reactionAffinityTracker.set(affinityKey, new Set());
+    // Update affinity — per-message dedup + 10-min time cooldown (same as mentions)
+    // Negative reactions always apply (no cooldown for penalties)
+    const msgAffinityKey = `${reactionGuildId}:${reaction.message.id}`;
+    if (!reactionAffinityTracker.has(msgAffinityKey)) {
+      reactionAffinityTracker.set(msgAffinityKey, new Set());
     }
-    const reactedUsers = reactionAffinityTracker.get(affinityKey);
-    if (reactedUsers && !reactedUsers.has(user.id)) {
+    const reactedUsers = reactionAffinityTracker.get(msgAffinityKey);
+    const alreadyReactedThisMsg = reactedUsers?.has(user.id) ?? false;
+    if (reactedUsers && !alreadyReactedThisMsg) {
       reactedUsers.add(user.id);
-      // +0.25 for positive (slow gains), -2 for negative (harsh penalties)
-      updateAffinity(reactionGuildId, user.id, isPositive ? 0.25 : -2)
-        .catch((err) => console.error('Affinity update failed:', (err as Error).message));
+    }
+
+    if (!alreadyReactedThisMsg) {
+      if (!isPositive) {
+        // Negative reactions always apply — no cooldown for penalties
+        updateAffinity(reactionGuildId, user.id, -2)
+          .catch((err) => console.error('Affinity update failed:', (err as Error).message));
+      } else {
+        // Positive reactions: 10-min cooldown per user (same limit as mentions)
+        const cooldownKey = `${reactionGuildId}:${user.id}`;
+        const lastReactionGain = reactionAffinityCooldowns.get(cooldownKey) ?? 0;
+        if (Date.now() - lastReactionGain > REACTION_AFFINITY_COOLDOWN_MS) {
+          reactionAffinityCooldowns.set(cooldownKey, Date.now());
+          updateAffinity(reactionGuildId, user.id, 0.5)
+            .catch((err) => console.error('Affinity update failed:', (err as Error).message));
+        }
+      }
     }
   } catch (err) {
     console.error('Reaction handler error:', (err as Error).message);

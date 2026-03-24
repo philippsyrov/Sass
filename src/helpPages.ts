@@ -72,11 +72,11 @@ export function buildHelpPages(botAvatar: string | null | undefined): EmbedBuild
       .setAuthor({ name: 'Sass \u2014 How Ship Works', iconURL: botAvatar ?? undefined })
       .setDescription("relationships are earned, not given. here's how it works.")
       .addFields(
-        { name: '\u{1F498} You x Sass', value: '`@Sass` talk to me \u2014 **+0.5** (10min cooldown)\nreact \u{1F44D} to my messages \u2014 **+0.25**\ninsult me \u2014 **-5**\nspam me \u2014 **-3**\nnegative react \u2014 **-2**', inline: false },
+        { name: '\u{1F498} You x Sass', value: '`@Sass` talk to me \u2014 **+0.5** (10min cooldown)\nreact \u{1F44D} to my messages \u2014 **+0.5** (10min cooldown)\ninsult me \u2014 **-5**\nspam me \u2014 **-3**\nnegative react \u2014 **-2**\n**daily cap: +3/day** (no grinding allowed)', inline: false },
         { name: '\u200b', value: '\u200b', inline: false },
         { name: '\u{1F465} User x User', value: 'reply to each other \u2014 **+0.5** per reply\nbeef (hostile @mention/reply) \u2014 **-3**', inline: false },
         { name: '\u200b', value: '\u200b', inline: false },
-        { name: '\u23F1\uFE0F Time to 100%', value: '50\u219260% \u2014 ~3 days (full gains)\n60\u219275% \u2014 ~9 days (half speed)\n75\u219290% \u2014 ~17 days (quarter speed)\n90\u2192100% \u2014 ~29 days (grind mode)\n**total: ~2 months of dedication**', inline: true },
+        { name: '\u23F1\uFE0F Time to 100%', value: '50\u219260% \u2014 ~4 days\n60\u219275% \u2014 ~10 days (half speed)\n75\u219290% \u2014 ~20 days (quarter speed)\n90\u219296% \u2014 ~12 days (grind mode)\n**total: ~46 days minimum**', inline: true },
         { name: '\u{1F4C9} Decay', value: "don't talk to me for 3 days?\n**-1/day** until you come back.\nfloor: 30% (i won't forget you entirely).", inline: true },
       ),
   ];

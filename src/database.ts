@@ -373,6 +373,8 @@ async function createTables(): Promise<void> {
     );
 
     ALTER TABLE users ADD COLUMN IF NOT EXISTS affinity REAL DEFAULT 50.0;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS affinity_gained_today REAL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS affinity_gain_date DATE DEFAULT CURRENT_DATE;
 
     CREATE TABLE IF NOT EXISTS wild_quotes (
       id SERIAL PRIMARY KEY,
@@ -623,34 +625,81 @@ export async function getPairInteractionCountDB(guildId: string, userId1: string
 /**
  * Update a user's affinity score with diminishing returns (clamped 0-100).
  * Positive gains slow down as affinity increases:
- *   0-50: full gains, 50-75: ×0.5, 75-90: ×0.25, 90-100: ×0.1
+ *   0-60: full gains, 60-75: ×0.5, 75-90: ×0.25, 90-100: ×0.1
  * Negative changes always apply at full strength.
+ * Daily cap: max +3.0 positive affinity per user per day (DB-tracked, survives deploys).
  */
+const DAILY_AFFINITY_CAP = 3.0;
+
 export async function updateAffinity(guildId: string, userId: string, delta: number): Promise<void> {
   if (!isConnected || !pool) return;
   try {
-    // For positive gains, apply diminishing returns based on current level
+    // For positive gains, apply diminishing returns + daily cap
     let effectiveDelta = delta;
     if (delta > 0) {
-      const current = await getAffinity(guildId, userId);
+      // Check daily cap first (DB-tracked so it survives deploys)
+      const capCheck = await pool.query(
+        `SELECT affinity, affinity_gained_today, affinity_gain_date
+         FROM users WHERE server_id = $1 AND user_id = $2`,
+        [guildId, userId]
+      );
+      const row = capCheck.rows[0];
+      const current = (row?.affinity as number) ?? 50;
+      const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+      const gainDate = row?.affinity_gain_date ? new Date(row.affinity_gain_date as string).toISOString().slice(0, 10) : null;
+      const gainedToday = (gainDate === today) ? ((row?.affinity_gained_today as number) ?? 0) : 0;
+
+      // Already hit daily cap — skip entirely
+      if (gainedToday >= DAILY_AFFINITY_CAP) {
+        console.log(`[AFFINITY CAP] guild=${guildId.slice(-4)} user=${userId.slice(-4)} daily cap reached (${gainedToday.toFixed(2)}/${DAILY_AFFINITY_CAP})`);
+        return;
+      }
+
+      // Apply diminishing returns based on current level
       let multiplier = 1;
       if (current >= 90) multiplier = 0.1;
       else if (current >= 75) multiplier = 0.25;
       else if (current >= 60) multiplier = 0.5;
-      effectiveDelta = Math.max(0.1, delta * multiplier);
+      effectiveDelta = delta * multiplier;
+
+      // Clamp to remaining daily budget
+      const remaining = DAILY_AFFINITY_CAP - gainedToday;
+      if (effectiveDelta > remaining) {
+        effectiveDelta = remaining;
+      }
     }
 
-    // Upsert: create user row if it doesn't exist, update affinity + last_seen
-    const result = await pool.query(
-      `INSERT INTO users (server_id, user_id, name, affinity, last_seen)
-       VALUES ($1, $2, '', GREATEST(0, LEAST(100, 50.0 + $3::REAL)), NOW())
-       ON CONFLICT (server_id, user_id) DO UPDATE SET
-         affinity = GREATEST(0, LEAST(100, COALESCE(users.affinity, 50.0) + $3::REAL)),
-         last_seen = NOW()
-       RETURNING affinity`,
-      [guildId, userId, effectiveDelta]
-    );
-    console.log(`[AFFINITY DEBUG] guild=${guildId.slice(-4)} user=${userId.slice(-4)} delta=${delta} effective=${effectiveDelta} result=${result.rows[0]?.affinity}`);
+    // Upsert: create user row if it doesn't exist, update affinity + last_seen + daily tracker
+    if (delta > 0) {
+      const today = new Date().toISOString().slice(0, 10);
+      const result = await pool.query(
+        `INSERT INTO users (server_id, user_id, name, affinity, last_seen, affinity_gained_today, affinity_gain_date)
+         VALUES ($1, $2, '', GREATEST(0, LEAST(100, 50.0 + $3::REAL)), NOW(), $3::REAL, $4::DATE)
+         ON CONFLICT (server_id, user_id) DO UPDATE SET
+           affinity = GREATEST(0, LEAST(100, COALESCE(users.affinity, 50.0) + $3::REAL)),
+           last_seen = NOW(),
+           affinity_gained_today = CASE
+             WHEN users.affinity_gain_date = $4::DATE THEN COALESCE(users.affinity_gained_today, 0) + $3::REAL
+             ELSE $3::REAL
+           END,
+           affinity_gain_date = $4::DATE
+         RETURNING affinity, affinity_gained_today`,
+        [guildId, userId, effectiveDelta, today]
+      );
+      console.log(`[AFFINITY DEBUG] guild=${guildId.slice(-4)} user=${userId.slice(-4)} delta=${delta} effective=${effectiveDelta.toFixed(3)} result=${result.rows[0]?.affinity} daily=${result.rows[0]?.affinity_gained_today?.toFixed(2)}/${DAILY_AFFINITY_CAP}`);
+    } else {
+      // Negative changes: no cap, no diminishing returns
+      const result = await pool.query(
+        `INSERT INTO users (server_id, user_id, name, affinity, last_seen)
+         VALUES ($1, $2, '', GREATEST(0, LEAST(100, 50.0 + $3::REAL)), NOW())
+         ON CONFLICT (server_id, user_id) DO UPDATE SET
+           affinity = GREATEST(0, LEAST(100, COALESCE(users.affinity, 50.0) + $3::REAL)),
+           last_seen = NOW()
+         RETURNING affinity`,
+        [guildId, userId, effectiveDelta]
+      );
+      console.log(`[AFFINITY DEBUG] guild=${guildId.slice(-4)} user=${userId.slice(-4)} delta=${delta} effective=${effectiveDelta} result=${result.rows[0]?.affinity}`);
+    }
   } catch (err) {
     console.error('Failed to update affinity:', (err as Error).message);
   }
