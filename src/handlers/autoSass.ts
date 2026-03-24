@@ -10,25 +10,12 @@ import * as userMemory from '../userMemory.js';
 import { isOnAutoSassCooldown, setAutoSassCooldown } from '../cooldown.js';
 import { getActivityDescription } from '../shared/commandUtils.js';
 import * as mood from '../mood.js';
-import { logInteraction } from '../database.js';
+import { logInteraction, wasActivityRoastedRecently, setActivityRoasted } from '../database.js';
 import { recordResponse, getRecentResponses } from '../responseMemory.js';
 
 // Track message count per channel since last auto-sass
 const messageCounters = new Map<string, number>();
 const MAX_TRACKED_CHANNELS = 500;
-
-// Track activity roasts per user — max once per 24h
-const activityRoastCooldowns = new Map<string, number>();
-const ACTIVITY_ROAST_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
-const MAX_ACTIVITY_COOLDOWNS = 500;
-
-// Clean up expired activity roast cooldowns every 30 min
-setInterval(() => {
-  const now = Date.now();
-  for (const [id, ts] of activityRoastCooldowns) {
-    if (now - ts > ACTIVITY_ROAST_COOLDOWN_MS) activityRoastCooldowns.delete(id);
-  }
-}, 30 * 60 * 1000);
 
 const AUTO_SASS_CHANCE = parseFloat(process.env.AUTO_SASS_CHANCE ?? '0.55') || 0.55;
 const MIN_MESSAGES = parseInt(process.env.AUTO_SASS_MIN_MESSAGES ?? '2', 10) || 2;
@@ -163,14 +150,11 @@ export async function handleAutoSass(message: Message, _client: Client, options:
         const members = guild.members.cache;
         const now = Date.now();
         const MIN_PLAY_MINUTES = 60; // Only roast if playing for 1+ hours
-        const gamers = members.filter((m: GuildMember) => {
+        // Sync filter: basic eligibility (activity, playtime)
+        const candidates = members.filter((m: GuildMember) => {
           if (m.user.bot || m.user.id === process.env.CREATOR_ID) return false;
-          // Skip users already activity-roasted in last 24h
-          const lastRoasted = activityRoastCooldowns.get(`${guildId}:${m.user.id}`);
-          if (lastRoasted && now - lastRoasted < ACTIVITY_ROAST_COOLDOWN_MS) return false;
           const activity = getActivityDescription(m.presence);
           if (!activity || activity.startsWith('custom status')) return false;
-          // Only roast long gaming sessions — 8 minutes isn't roast-worthy
           const playingActivity = m.presence?.activities?.find(a => a.type === 0 && a.timestamps?.start);
           if (playingActivity?.timestamps?.start) {
             const elapsed = Math.floor((now - playingActivity.timestamps.start.getTime()) / 60000);
@@ -178,8 +162,14 @@ export async function handleAutoSass(message: Message, _client: Client, options:
           }
           return true;
         });
-        if (gamers.size > 0) {
-          const target = gamers.random();
+        // Async filter: check DB for 24h cooldown (survives deploys)
+        const eligible: GuildMember[] = [];
+        for (const [, m] of candidates) {
+          const recentlyRoasted = await wasActivityRoastedRecently(guildId, m.user.id);
+          if (!recentlyRoasted) eligible.push(m);
+        }
+        if (eligible.length > 0) {
+          const target = eligible[Math.floor(Math.random() * eligible.length)];
           if (!target) return;
           const activity = getActivityDescription(target.presence);
           if (!activity) return;
@@ -189,17 +179,13 @@ export async function handleAutoSass(message: Message, _client: Client, options:
           );
           if (roast && roast.trim().toUpperCase() !== 'SKIP') {
             setAutoSassCooldown(channelId);
-            // Track this user so they don't get activity-roasted again for 24h
-            activityRoastCooldowns.set(`${guildId}:${target.user.id}`, Date.now());
-            if (activityRoastCooldowns.size > MAX_ACTIVITY_COOLDOWNS) {
-              const oldest = activityRoastCooldowns.keys().next().value;
-              if (oldest) activityRoastCooldowns.delete(oldest);
-            }
+            // Track in DB so it survives deploys
+            setActivityRoasted(guildId, target.user.id).catch((err) => console.error('Set activity roast failed:', (err as Error).message));
             await channel.sendTyping().catch((err) => console.error('sendTyping failed:', (err as Error).message));
             const delay = 1000 + Math.random() * 2000;
             await new Promise((resolve) => setTimeout(resolve, delay));
             const activityRoastMsg = `👀 hey <@${target.user.id}>, ${roast}`;
-            await channel.send(activityRoastMsg);
+            await channel.send(activityRoastMsg).catch((err) => console.error('Activity roast send failed:', (err as Error).message));
             recordResponse(channelId, roast);
             userMemory.recordRoast(guildId, target.user.id).catch((err) => console.error('Record roast failed:', (err as Error).message));
             const moodInfo = await mood.getStatus(guildId);

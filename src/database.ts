@@ -375,6 +375,7 @@ async function createTables(): Promise<void> {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS affinity REAL DEFAULT 50.0;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS affinity_gained_today REAL DEFAULT 0;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS affinity_gain_date DATE DEFAULT CURRENT_DATE;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS last_activity_roast TIMESTAMPTZ;
 
     CREATE TABLE IF NOT EXISTS wild_quotes (
       id SERIAL PRIMARY KEY,
@@ -755,6 +756,45 @@ export async function getAffinity(guildId: string, userId: string): Promise<numb
   } catch (err) {
     console.error('Failed to get affinity:', (err as Error).message);
     return 50;
+  }
+}
+
+/**
+ * Check if a user was activity-roasted within the last 24 hours (DB-tracked, survives deploys).
+ */
+const ACTIVITY_ROAST_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+
+export async function wasActivityRoastedRecently(guildId: string, userId: string): Promise<boolean> {
+  if (!isConnected || !pool) return false;
+  try {
+    const result = await pool.query(
+      'SELECT last_activity_roast FROM users WHERE server_id = $1 AND user_id = $2',
+      [guildId, userId]
+    );
+    const lastRoast = result.rows[0]?.last_activity_roast;
+    if (!lastRoast) return false;
+    return Date.now() - new Date(lastRoast as string).getTime() < ACTIVITY_ROAST_COOLDOWN_MS;
+  } catch (err) {
+    console.error('Failed to check activity roast:', (err as Error).message);
+    return false;
+  }
+}
+
+/**
+ * Mark a user as activity-roasted (DB-tracked, survives deploys).
+ */
+export async function setActivityRoasted(guildId: string, userId: string): Promise<void> {
+  if (!isConnected || !pool) return;
+  try {
+    await pool.query(
+      `INSERT INTO users (server_id, user_id, name, last_activity_roast)
+       VALUES ($1, $2, '', NOW())
+       ON CONFLICT (server_id, user_id) DO UPDATE SET
+         last_activity_roast = NOW()`,
+      [guildId, userId]
+    );
+  } catch (err) {
+    console.error('Failed to set activity roast:', (err as Error).message);
   }
 }
 
