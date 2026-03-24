@@ -173,7 +173,6 @@ async function main(): Promise<void> {
       // Dynamic import to avoid crash if better-sqlite3 isn't installed
       try {
         // Dynamic require — better-sqlite3 must be temporarily installed: npm i better-sqlite3
-        // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
         const { default: Database } = await (Function('return import("better-sqlite3")')() as Promise<{ default: new (path: string, opts: { readonly: boolean }) => {
           prepare(sql: string): { all(): Array<{ userId: string; type: string; content: string; embedding: string; createdAt: number }> };
           close(): void;

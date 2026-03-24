@@ -508,7 +508,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           await btn.update({ content: buildPage(currentPage), components: [buttons] });
         });
         collector.on('end', async () => {
-          try { await reply.edit({ components: [] }); } catch (_err) { /* message deleted */ }
+          try { await reply.edit({ components: [] }); } catch { /* message deleted */ }
         });
       }
       break;
