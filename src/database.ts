@@ -643,9 +643,9 @@ export async function updateAffinity(guildId: string, userId: string, delta: num
     // Upsert: create user row if it doesn't exist, update affinity + last_seen
     const result = await pool.query(
       `INSERT INTO users (server_id, user_id, name, affinity, last_seen)
-       VALUES ($1, $2, '', GREATEST(0, LEAST(100, 50 + $3)), NOW())
+       VALUES ($1, $2, '', GREATEST(0, LEAST(100, 50.0 + $3::REAL)), NOW())
        ON CONFLICT (server_id, user_id) DO UPDATE SET
-         affinity = GREATEST(0, LEAST(100, COALESCE(users.affinity, 50) + $3)),
+         affinity = GREATEST(0, LEAST(100, COALESCE(users.affinity, 50.0) + $3::REAL)),
          last_seen = NOW()
        RETURNING affinity`,
       [guildId, userId, effectiveDelta]
