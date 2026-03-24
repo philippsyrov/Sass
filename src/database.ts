@@ -368,11 +368,11 @@ async function createTables(): Promise<void> {
       cold_shoulder_attempts_needed INTEGER DEFAULT 0,
       cold_shoulder_attempts_made INTEGER DEFAULT 0,
       gender TEXT,
-      affinity REAL DEFAULT 50,
+      affinity REAL DEFAULT 50.0,
       PRIMARY KEY (server_id, user_id)
     );
 
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS affinity REAL DEFAULT 50;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS affinity REAL DEFAULT 50.0;
 
     CREATE TABLE IF NOT EXISTS wild_quotes (
       id SERIAL PRIMARY KEY,
@@ -693,7 +693,7 @@ export async function getAffinity(guildId: string, userId: string): Promise<numb
           if (decayed !== affinity) {
             // Persist the decayed value so it doesn't recalculate the same decay next time
             await pool.query(
-              'UPDATE users SET affinity = $3 WHERE server_id = $1 AND user_id = $2',
+              'UPDATE users SET affinity = $3::REAL WHERE server_id = $1 AND user_id = $2',
               [guildId, userId, decayed]
             ).catch((err: Error) => console.error('Failed to persist affinity decay:', err.message));
             affinity = decayed;
