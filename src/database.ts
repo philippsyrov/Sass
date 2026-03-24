@@ -373,8 +373,6 @@ async function createTables(): Promise<void> {
     );
 
     ALTER TABLE users ADD COLUMN IF NOT EXISTS affinity REAL DEFAULT 50;
-    -- Migrate INTEGER → REAL so fractional gains accumulate (was silently truncating to 0)
-    ALTER TABLE users ALTER COLUMN affinity TYPE REAL;
 
     CREATE TABLE IF NOT EXISTS wild_quotes (
       id SERIAL PRIMARY KEY,
@@ -418,6 +416,13 @@ async function createTables(): Promise<void> {
       last_decay TIMESTAMPTZ DEFAULT NOW()
     );
   `);
+
+  // Migrate affinity column INTEGER → REAL (separate query to avoid rollback if main block ever fails)
+  try {
+    await pool.query('ALTER TABLE users ALTER COLUMN affinity TYPE REAL');
+  } catch (err) {
+    console.error('Affinity column migration failed (non-fatal):', (err as Error).message);
+  }
 
   // Deduplicate wild quotes then add unique index (separate step to avoid breaking schema init)
   try {
