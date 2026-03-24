@@ -628,14 +628,16 @@ export async function updateAffinity(guildId: string, userId: string, delta: num
     }
 
     // Upsert: create user row if it doesn't exist, update affinity + last_seen
-    await pool.query(
+    const result = await pool.query(
       `INSERT INTO users (server_id, user_id, name, affinity, last_seen)
        VALUES ($1, $2, '', GREATEST(0, LEAST(100, 50 + $3)), NOW())
        ON CONFLICT (server_id, user_id) DO UPDATE SET
          affinity = GREATEST(0, LEAST(100, COALESCE(users.affinity, 50) + $3)),
-         last_seen = NOW()`,
+         last_seen = NOW()
+       RETURNING affinity`,
       [guildId, userId, effectiveDelta]
     );
+    console.log(`[AFFINITY DEBUG] guild=${guildId.slice(-4)} user=${userId.slice(-4)} delta=${delta} effective=${effectiveDelta} result=${result.rows[0]?.affinity}`);
   } catch (err) {
     console.error('Failed to update affinity:', (err as Error).message);
   }
