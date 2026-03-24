@@ -419,9 +419,17 @@ async function createTables(): Promise<void> {
 
   // Migrate affinity column INTEGER → REAL (separate query to avoid rollback if main block ever fails)
   try {
-    await pool.query('ALTER TABLE users ALTER COLUMN affinity TYPE REAL');
+    const typeCheck = await pool.query(
+      `SELECT data_type FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'affinity'`
+    );
+    const currentType = typeCheck.rows[0]?.data_type;
+    console.log(`[SCHEMA] affinity column type: ${currentType}`);
+    if (currentType === 'integer') {
+      await pool.query('ALTER TABLE users ALTER COLUMN affinity TYPE REAL USING affinity::REAL');
+      console.log('[SCHEMA] affinity column migrated INTEGER → REAL');
+    }
   } catch (err) {
-    console.error('Affinity column migration failed (non-fatal):', (err as Error).message);
+    console.error('Affinity column migration failed:', (err as Error).message);
   }
 
   // Deduplicate wild quotes then add unique index (separate step to avoid breaking schema init)
