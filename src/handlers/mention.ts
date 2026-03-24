@@ -183,7 +183,8 @@ export async function handleMention(message: Message, client: Client): Promise<v
     let currentPage = 0;
     const firstPage = pages[0];
     if (!firstPage) return;
-    const reply = await message.reply({ embeds: [firstPage], components: [buttons] });
+    const reply = await message.reply({ embeds: [firstPage], components: [buttons] }).catch((err) => { console.error('Help reply failed:', (err as Error).message); return null; });
+    if (!reply) return;
 
     const collector = reply.createMessageComponentCollector({
       componentType: ComponentType.Button,
@@ -196,7 +197,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
         : (currentPage < pages.length - 1 ? currentPage + 1 : 0);
       const page = pages[currentPage];
       if (!page) return;
-      await btn.update({ embeds: [page], components: [buttons] });
+      await btn.update({ embeds: [page], components: [buttons] }).catch((err) => console.error('Help page update failed:', (err as Error).message));
     });
 
     collector.on('end', () => {
@@ -250,7 +251,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
     const systemPrompt = personas[personaKey];
     if (!systemPrompt) {
       const available = Object.keys(personas).join(', ');
-      await message.reply(`i don't do that persona. try: ${available}`);
+      await message.reply(`i don't do that persona. try: ${available}`).catch((err) => console.error('Persona list reply failed:', (err as Error).message));
       return;
     }
     try {
@@ -615,6 +616,6 @@ export async function handleMention(message: Message, client: Client): Promise<v
     console.error('Sass brain malfunction:', (err as Error).message);
     await message.reply(
       "My brain just short-circuited. Even AI has bad days, okay?"
-    );
+    ).catch((replyErr) => console.error('Error fallback reply failed:', (replyErr as Error).message));
   }
 }

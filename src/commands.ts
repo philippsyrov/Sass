@@ -134,13 +134,13 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
 
     if (limitResult === 'already-banned') {
       const msg = SOFT_BAN_ATTEMPT_RESPONSES[Math.floor(Math.random() * SOFT_BAN_ATTEMPT_RESPONSES.length)] as string;
-      await interaction.reply({ content: msg, ephemeral: true });
+      await interaction.reply({ content: msg, ephemeral: true }).catch((err) => console.error('Soft ban attempt reply failed:', (err as Error).message));
       return;
     }
 
     if (limitResult === 'soft-banned') {
       const msg = SOFT_BAN_RESPONSES[Math.floor(Math.random() * SOFT_BAN_RESPONSES.length)] as string;
-      await interaction.reply({ content: msg, ephemeral: true });
+      await interaction.reply({ content: msg, ephemeral: true }).catch((err) => console.error('Soft ban reply failed:', (err as Error).message));
       // Always publicly shame on soft ban
       const channel = interaction.channel;
       if (channel && 'send' in channel) {
@@ -153,7 +153,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
 
     if (limitResult === 'limited') {
       const msg = SLASH_RATE_LIMIT_RESPONSES[Math.floor(Math.random() * SLASH_RATE_LIMIT_RESPONSES.length)] as string;
-      await interaction.reply({ content: msg, ephemeral: true });
+      await interaction.reply({ content: msg, ephemeral: true }).catch((err) => console.error('Rate limit reply failed:', (err as Error).message));
 
       // 30% chance to publicly call them out
       if (Math.random() < 0.30) {
@@ -197,14 +197,15 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
       let helpPage = 0;
       const firstPage = helpPages[0];
       if (!firstPage) break;
-      const helpReply = await interaction.reply({ embeds: [firstPage], components: [helpButtons], fetchReply: true });
+      const helpReply = await interaction.reply({ embeds: [firstPage], components: [helpButtons], fetchReply: true }).catch((err) => { console.error('Help reply failed:', (err as Error).message); return null; });
+      if (!helpReply) break;
       const helpCollector = helpReply.createMessageComponentCollector({ componentType: ComponentType.Button, time: 120_000 });
       helpCollector.on('collect', async (btn) => {
         helpPage = btn.customId === 'help_prev'
           ? (helpPage > 0 ? helpPage - 1 : helpPages.length - 1)
           : (helpPage < helpPages.length - 1 ? helpPage + 1 : 0);
         const currentPage = helpPages[helpPage];
-        if (currentPage) await btn.update({ embeds: [currentPage], components: [helpButtons] });
+        if (currentPage) await btn.update({ embeds: [currentPage], components: [helpButtons] }).catch((err) => console.error('Help page update failed:', (err as Error).message));
       });
       helpCollector.on('end', () => {
         const disabled = new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -218,7 +219,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
 
     case 'fortune': {
       const fortune = FORTUNES[Math.floor(Math.random() * FORTUNES.length)] ?? 'your future is... uncertain.';
-      await interaction.reply(`🥠 ${fortune}`);
+      await interaction.reply(`🥠 ${fortune}`).catch((err) => console.error('Fortune reply failed:', (err as Error).message));
       break;
     }
 
@@ -505,7 +506,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
         collector.on('collect', async (btn) => {
           if (btn.customId === 'bestof_prev') currentPage = (currentPage - 1 + totalPages) % totalPages;
           else if (btn.customId === 'bestof_next') currentPage = (currentPage + 1) % totalPages;
-          await btn.update({ content: buildPage(currentPage), components: [buttons] });
+          await btn.update({ content: buildPage(currentPage), components: [buttons] }).catch((err) => console.error('Bestof page update failed:', (err as Error).message));
         });
         collector.on('end', async () => {
           try { await reply.edit({ components: [] }); } catch { /* message deleted */ }
@@ -532,7 +533,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
 
     case 'horoscope': {
       if (hasUsedToday(guildId, interaction.user.id, 'horoscope')) {
-        await interaction.reply("you already got your daily reading. the stars don't refresh on demand.");
+        await interaction.reply("you already got your daily reading. the stars don't refresh on demand.").catch((err) => console.error('Horoscope cooldown reply failed:', (err as Error).message));
         break;
       }
       await interaction.deferReply();
@@ -555,18 +556,18 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
     case 'roastbattle': {
       const opponent = interaction.options.getUser('opponent', true);
       if (opponent.bot) {
-        await interaction.reply("i'm not fighting another bot. i have standards. barely, but still.");
+        await interaction.reply("i'm not fighting another bot. i have standards. barely, but still.").catch((err) => console.error('Battle bot reply failed:', (err as Error).message));
         break;
       }
       if (opponent.id === interaction.user.id) {
-        await interaction.reply("you wanna roast battle yourself? the self-awareness is refreshing but also sad.");
+        await interaction.reply("you wanna roast battle yourself? the self-awareness is refreshing but also sad.").catch((err) => console.error('Battle self reply failed:', (err as Error).message));
         break;
       }
 
       // Create a thread for the battle
       const channel = interaction.channel;
       if (!channel || !('threads' in channel)) {
-        await interaction.reply("can't start a battle here. find a text channel.");
+        await interaction.reply("can't start a battle here. find a text channel.").catch((err) => console.error('Battle channel reply failed:', (err as Error).message));
         break;
       }
       const thread = await channel.threads.create({
@@ -597,7 +598,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           `**${interaction.user.displayName}** has challenged **${opponent.displayName}**!\n\n` +
           `Head to ${thread} to watch or participate.`
         );
-      await interaction.reply({ embeds: [embed] });
+      await interaction.reply({ embeds: [embed] }).catch((err) => console.error('Battle challenge reply failed:', (err as Error).message));
 
       const rulesEmbed = new EmbedBuilder()
         .setColor(0xFF4D6D)
@@ -612,7 +613,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
           `${opponent}, type **"accept"** to begin. you have 60 seconds before i call you a coward.`
         )
         .setFooter({ text: 'may the sassiest win' });
-      await thread.send({ embeds: [rulesEmbed] });
+      await thread.send({ embeds: [rulesEmbed] }).catch((err) => console.error('Battle rules send failed:', (err as Error).message));
 
       // Timeout after 60s
       const timeout = setTimeout(() => {
@@ -656,7 +657,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
     case 'dare': {
       const targetUser = interaction.options.getUser('user', true);
       if (hasUsedToday(guildId, interaction.user.id, 'dare')) {
-        await interaction.reply({ content: "you already dared someone today. one chaos event per day is enough.", ephemeral: true });
+        await interaction.reply({ content: "you already dared someone today. one chaos event per day is enough.", ephemeral: true }).catch((err) => console.error('Dare cooldown reply failed:', (err as Error).message));
         break;
       }
       await interaction.deferReply();
@@ -694,20 +695,20 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
       const confession = interaction.options.getString('confession') ?? '';
 
       if (targetUser.id === interaction.user.id) {
-        await interaction.reply({ content: "you can't confess to yourself. that's just thinking.", ephemeral: true });
+        await interaction.reply({ content: "you can't confess to yourself. that's just thinking.", ephemeral: true }).catch((err) => console.error('Confess self reply failed:', (err as Error).message));
         break;
       }
       if (targetUser.bot) {
-        await interaction.reply({ content: "confessing to a bot? down bad doesn't even begin to cover it.", ephemeral: true });
+        await interaction.reply({ content: "confessing to a bot? down bad doesn't even begin to cover it.", ephemeral: true }).catch((err) => console.error('Confess bot reply failed:', (err as Error).message));
         break;
       }
       if (hasUsedToday(guildId, interaction.user.id, 'confess')) {
-        await interaction.reply({ content: "one confession per day. you're not a priest.", ephemeral: true });
+        await interaction.reply({ content: "one confession per day. you're not a priest.", ephemeral: true }).catch((err) => console.error('Confess cooldown reply failed:', (err as Error).message));
         break;
       }
 
       // Ephemeral ack to confessor
-      await interaction.reply({ content: "got it. your secret's safe with me... for now 👀", ephemeral: true });
+      await interaction.reply({ content: "got it. your secret's safe with me... for now 👀", ephemeral: true }).catch((err) => console.error('Confess ack reply failed:', (err as Error).message));
 
       try {
         const commentary = await queryAI(
@@ -716,7 +717,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
         );
         const channel = interaction.channel;
         if (channel && 'send' in channel) {
-          await channel.send(`📩 **ANONYMOUS CONFESSION** for <@${targetUser.id}>:\n\n> *"${confession}"*\n\n${commentary ?? "someone couldn't find the guts to say this themselves. shocking."}`);
+          await channel.send(`📩 **ANONYMOUS CONFESSION** for <@${targetUser.id}>:\n\n> *"${confession}"*\n\n${commentary ?? "someone couldn't find the guts to say this themselves. shocking."}`).catch((err) => console.error('Confess message send failed:', (err as Error).message));
           markUsedToday(guildId, interaction.user.id, 'confess');
           logInteraction({
             serverId: interaction.guild?.id ?? '',
@@ -744,7 +745,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
       const targetUser = interaction.options.getUser('user') ?? interaction.user;
       const targetKey = `${targetUser.id}:predict`;
       if (hasUsedToday(guildId, interaction.user.id, targetKey)) {
-        await interaction.reply(`you already got ${targetUser.id === interaction.user.id ? 'your' : 'their'} prediction today. the future hasn't changed in the last 5 minutes.`);
+        await interaction.reply(`you already got ${targetUser.id === interaction.user.id ? 'your' : 'their'} prediction today. the future hasn't changed in the last 5 minutes.`).catch((err) => console.error('Predict cooldown reply failed:', (err as Error).message));
         break;
       }
       await interaction.deferReply();
@@ -871,7 +872,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
     }
 
     default:
-      await interaction.reply("i don't know that command. impressive, you broke something that simple.");
+      await interaction.reply("i don't know that command. impressive, you broke something that simple.").catch((err) => console.error('Unknown command reply failed:', (err as Error).message));
   }
 }
 

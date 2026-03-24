@@ -139,7 +139,7 @@ export async function handleBattleMessage(message: Message): Promise<boolean> {
       .setColor(0xFF4D6D)
       .setTitle('⚔️ ROUND 1/3')
       .setDescription(`**${battle.challenger.displayName}**, you challenged — you go first.\n\ndrop your best roast.`);
-    await threadChannel.send({ embeds: [roundEmbed] });
+    await threadChannel.send({ embeds: [roundEmbed] }).catch((err) => console.error('Battle round start send failed:', (err as Error).message));
     startTurnTimer(message.channel.id, threadChannel);
     return true;
   }
@@ -173,7 +173,7 @@ export async function handleBattleMessage(message: Message): Promise<boolean> {
     if (authorScores) authorScores.push(score);
 
     const scoreBar = getScoreBar(score);
-    await message.reply(`${scoreBar} **${score}/10**\n*${reaction}*`);
+    await message.reply(`${scoreBar} **${score}/10**\n*${reaction}*`).catch((err) => console.error('Battle score reply failed:', (err as Error).message));
 
     // Switch turns or advance round — always runs even if scoring fell back
     const otherId = message.author.id === battle.challenger.id ? battle.opponent.id : battle.challenger.id;
@@ -182,7 +182,7 @@ export async function handleBattleMessage(message: Message): Promise<boolean> {
     const otherScores = battle.scores[otherId];
     if (otherScores && otherScores.length < battle.round) {
       battle.currentTurn = otherId;
-      await threadChannel.send(`**${otherName}**, your turn. fire back.`);
+      await threadChannel.send(`**${otherName}**, your turn. fire back.`).catch((err) => console.error('Battle turn prompt failed:', (err as Error).message));
       startTurnTimer(battleId, threadChannel);
     } else {
       battle.round++;
@@ -194,7 +194,7 @@ export async function handleBattleMessage(message: Message): Promise<boolean> {
           .setTitle(`⚔️ ROUND ${battle.round}/${battle.maxRounds}`)
           .setDescription(`**${battle.challenger.displayName}**, you're up.`);
         battle.currentTurn = battle.challenger.id;
-        await threadChannel.send({ embeds: [roundEmbed] });
+        await threadChannel.send({ embeds: [roundEmbed] }).catch((err) => console.error('Battle round embed failed:', (err as Error).message));
         startTurnTimer(battleId, threadChannel);
       }
     }
