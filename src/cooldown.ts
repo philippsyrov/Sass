@@ -6,6 +6,7 @@
  */
 const MENTION_COOLDOWN_MS = 3000;   // 3s between replies to same user
 const AUTO_SASS_COOLDOWN_MS = 30000; // 30s between auto-sass in same channel
+const GUILD_AUTO_SASS_COOLDOWN_MS = 15000; // 15s between auto-sass across ALL channels in a guild
 const SLASH_COOLDOWN_MS = 5000;     // 5s between slash commands per user
 const SHIP_COOLDOWN_MS = 15000;    // 15s between /ship per user (AI call each time)
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // clean up every 5 min
@@ -23,6 +24,7 @@ interface EscalationEntry {
 
 const userCooldowns = new Map<string, number>();
 const channelCooldowns = new Map<string, number>();
+const guildAutoSassCooldowns = new Map<string, number>();
 const slashCooldowns = new Map<string, number>();
 const shipCooldowns = new Map<string, number>();
 const escalationTracker = new Map<string, EscalationEntry>();
@@ -43,6 +45,15 @@ export function isOnAutoSassCooldown(channelId: string): boolean {
 
 export function setAutoSassCooldown(channelId: string): void {
   channelCooldowns.set(channelId, Date.now());
+}
+
+export function isOnGuildAutoSassCooldown(guildId: string): boolean {
+  const last = guildAutoSassCooldowns.get(guildId) || 0;
+  return Date.now() - last < GUILD_AUTO_SASS_COOLDOWN_MS;
+}
+
+export function setGuildAutoSassCooldown(guildId: string): void {
+  guildAutoSassCooldowns.set(guildId, Date.now());
 }
 
 export function isOnSlashCooldown(userId: string): boolean {
@@ -139,6 +150,10 @@ setInterval(() => {
     if (now - ts > AUTO_SASS_COOLDOWN_MS) channelCooldowns.delete(id);
   }
   evictOldest(channelCooldowns as Map<string, unknown>, MAX_COOLDOWN_ENTRIES);
+  for (const [id, ts] of guildAutoSassCooldowns) {
+    if (now - ts > GUILD_AUTO_SASS_COOLDOWN_MS) guildAutoSassCooldowns.delete(id);
+  }
+  evictOldest(guildAutoSassCooldowns as Map<string, unknown>, MAX_COOLDOWN_ENTRIES);
   for (const [id, ts] of slashCooldowns) {
     if (now - ts > SLASH_COOLDOWN_MS) slashCooldowns.delete(id);
   }

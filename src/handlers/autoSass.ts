@@ -7,7 +7,7 @@ import {
 import { getAutoSassDecision, getReactionDecision, getConversationJoin, queryAI, pickCustomReaction } from '../ai.js';
 import { messageBuffer } from '../messageBuffer.js';
 import * as userMemory from '../userMemory.js';
-import { isOnAutoSassCooldown, setAutoSassCooldown } from '../cooldown.js';
+import { isOnAutoSassCooldown, setAutoSassCooldown, isOnGuildAutoSassCooldown, setGuildAutoSassCooldown } from '../cooldown.js';
 import { getActivityDescription } from '../shared/commandUtils.js';
 import * as mood from '../mood.js';
 import { logInteraction, wasActivityRoastedRecently, setActivityRoasted } from '../database.js';
@@ -143,7 +143,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
     if (wordCount < 4) return;
 
     // Channel cooldown — don't auto-sass too frequently
-    if (isOnAutoSassCooldown(channelId)) return;
+    if (isOnAutoSassCooldown(channelId) || isOnGuildAutoSassCooldown(guildId)) return;
 
     // Roll the dice
     if (Math.random() > AUTO_SASS_CHANCE) return;
@@ -189,6 +189,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
           );
           if (roast && roast.trim().toUpperCase() !== 'SKIP') {
             setAutoSassCooldown(channelId);
+            setGuildAutoSassCooldown(guildId);
             // Track in DB so it survives deploys
             setActivityRoasted(guildId, target.user.id).catch((err) => console.error('Set activity roast failed:', (err as Error).message));
             await channel.sendTyping().catch((err) => console.error('sendTyping failed:', (err as Error).message));
@@ -236,6 +237,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
         try {
           await message.react(customEmoji);
           setAutoSassCooldown(channelId);
+            setGuildAutoSassCooldown(guildId);
           return;
         } catch (err) {
           console.error('Custom emoji react failed:', (err as Error).message);
@@ -246,6 +248,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
         try {
           await message.react(emoji);
           setAutoSassCooldown(channelId);
+            setGuildAutoSassCooldown(guildId);
         } catch (err) {
           console.error('Emoji react failed:', (err as Error).message);
         }
@@ -270,6 +273,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
               try {
                 await target.react(emoji);
                 setAutoSassCooldown(channelId);
+            setGuildAutoSassCooldown(guildId);
               } catch (err) {
                 console.error('Lurk emoji react failed:', (err as Error).message);
               }
@@ -287,6 +291,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
       const reaction = SHORT_REACTIONS[Math.floor(Math.random() * SHORT_REACTIONS.length)];
       if (reaction) {
         setAutoSassCooldown(channelId);
+            setGuildAutoSassCooldown(guildId);
         const delay = 500 + Math.random() * 1500;
         await new Promise((resolve) => setTimeout(resolve, delay));
         await message.reply(reaction).catch((err) => console.error('Reply failed:', (err as Error).message));
@@ -311,6 +316,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
 
       if (joinRemark && joinRemark.trim().toUpperCase() !== 'SKIP') {
         setAutoSassCooldown(channelId);
+            setGuildAutoSassCooldown(guildId);
         await channel.sendTyping().catch((err) => console.error('sendTyping failed:', (err as Error).message));
         const delay = 1000 + Math.random() * 2000;
         await new Promise((resolve) => setTimeout(resolve, delay));
@@ -337,6 +343,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
     if (!remark || remark.trim().toUpperCase() === 'SKIP') return;
 
     setAutoSassCooldown(channelId);
+            setGuildAutoSassCooldown(guildId);
     await channel.sendTyping().catch((err) => console.error('sendTyping failed:', (err as Error).message));
     const delay = 1000 + Math.random() * 2000;
     await new Promise((resolve) => setTimeout(resolve, delay));
