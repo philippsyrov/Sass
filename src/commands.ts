@@ -25,19 +25,6 @@ import { getActivityDescription, hasUsedToday, markUsedToday } from './shared/co
 import { FORTUNES, QUOTE_AUTHORS } from './commandDefinitions.js';
 import { activeBattles } from './roastBattle.js';
 
-// --- Conspiracy cooldown — 30 min per user per target ---
-const conspiracyCooldowns = new Map<string, number>();
-const CONSPIRACY_COOLDOWN_MS = 30 * 60 * 1000;
-const MAX_CONSPIRACY_COOLDOWNS = 500;
-
-// Clean up conspiracy cooldowns every 15 min
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, ts] of conspiracyCooldowns) {
-    if (now - ts > CONSPIRACY_COOLDOWN_MS) conspiracyCooldowns.delete(key);
-  }
-}, 15 * 60 * 1000);
-
 // --- Global slash command rate limit per user with soft ban escalation ---
 const slashCmdTracker = new Map<string, number[]>();
 const slashCmdStrikes = new Map<string, { count: number; bannedUntil: number }>();
@@ -523,61 +510,6 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
         collector.on('end', async () => {
           try { await reply.edit({ components: [] }); } catch (_err) { /* message deleted */ }
         });
-      }
-      break;
-    }
-
-    case 'conspiracy': {
-      const targetUser = interaction.options.getUser('user', true);
-      const conspiracyKey = `${guildId}:${interaction.user.id}:${targetUser.id}`;
-      const lastConspiracy = conspiracyCooldowns.get(conspiracyKey);
-      if (lastConspiracy && Date.now() - lastConspiracy < CONSPIRACY_COOLDOWN_MS) {
-        await interaction.reply({ content: "i already investigated, the case is closed.", ephemeral: true });
-        break;
-      }
-      await interaction.deferReply();
-      const userContext = await userMemory.getContext(guildId, targetUser.id);
-      const facts = await userMemory.getFacts(guildId, targetUser.id);
-      const member = interaction.guild?.members.cache.get(targetUser.id) ?? await interaction.guild?.members.fetch(targetUser.id).catch(() => null);
-      const activity = member?.presence?.activities?.[0];
-      const activityInfo = activity ? `Currently: ${activity.type === 0 ? 'Playing' : activity.type === 1 ? 'Streaming' : activity.type === 2 ? 'Listening to' : activity.type === 3 ? 'Watching' : 'Doing'} ${activity.name}${activity.state ? ` (${activity.state})` : ''}` : '';
-
-      // Fallback: grab recent messages from the channel by this user (like profile does)
-      const channel = interaction.channel;
-      let recentMsgs: string[] = [];
-      if (channel && 'messages' in channel) {
-        const fetched = await channel.messages.fetch({ limit: 100 }).catch(() => null);
-        if (fetched) {
-          recentMsgs = fetched
-            .filter((m) => m.author.id === targetUser.id && !m.author.bot)
-            .map((m) => m.content)
-            .filter((c) => c.length > 5)
-            .slice(0, 10);
-        }
-      }
-
-      const evidence: string[] = [];
-      if (facts.length > 0) evidence.push(`Known facts: ${facts.slice(0, 3).join(', ')}`);
-      if (activityInfo) evidence.push(activityInfo);
-      if (userContext) evidence.push(userContext);
-      if (recentMsgs.length > 0) evidence.push(`Recent things they said: "${recentMsgs.slice(0, 5).join('", "')}"`);
-      console.log(`[conspiracy] ${targetUser.displayName}: facts=${facts.length}, context=${userContext ? 'yes' : 'no'}, activity=${activityInfo ? 'yes' : 'no'}, msgs=${recentMsgs.length}, evidence=${evidence.length}`);
-
-      try {
-        const response = await queryAI(
-          `Create an absurd, funny conspiracy theory about a Discord user named "${targetUser.displayName}". Use their name specifically. 2-3 sentences max. Sound like a deranged detective presenting evidence.\n\n${evidence.length > 0 ? `USE THIS REAL INTEL to make the conspiracy personal and specific:\n${evidence.join('\n')}` : 'You have no intel on them yet — make it about how suspiciously clean their record is.'}`,
-          { systemPrompt: 'You generate absurd conspiracy theories about people. Be creative and unhinged but not mean-spirited. Lowercase. Weave in any real facts/activity as "evidence." Each conspiracy should be wildly different — never repeat the same format or structure.' }
-        );
-        const conspiracyText = response?.trim() || `${targetUser.displayName} has zero digital footprint. no evidence, no trail, nothing. that's more suspicious than anything i could've found.`;
-        await interaction.editReply(`🕵️ **CLASSIFIED INTEL ON ${targetUser.displayName.toUpperCase()}**\n\n${conspiracyText}`);
-        conspiracyCooldowns.set(conspiracyKey, Date.now());
-        if (conspiracyCooldowns.size > MAX_CONSPIRACY_COOLDOWNS) {
-          const oldest = conspiracyCooldowns.keys().next().value;
-          if (oldest !== undefined) conspiracyCooldowns.delete(oldest);
-        }
-      } catch (err) {
-        console.error('Conspiracy command failed:', (err as Error).message);
-        await interaction.editReply(`🕵️ i tried to investigate ${targetUser.displayName} but my files were mysteriously deleted. suspicious.`);
       }
       break;
     }

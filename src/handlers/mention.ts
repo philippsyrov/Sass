@@ -223,11 +223,6 @@ export async function handleMention(message: Message, client: Client): Promise<v
     return;
   }
 
-  // Conspiracy — moved to /conspiracy slash command
-  if (cleanContent.match(/^conspiracy\s+<@/i)) {
-    await message.reply("conspiracy is a slash command! use `/conspiracy @user` instead.").catch((err) => console.error('Reply failed:', (err as Error).message));
-    return;
-  }
 
   // Compliment command — moved to /compliment slash command
   if (lowerClean.match(/^compliment\s/)) {

@@ -44,11 +44,6 @@ export const commands = [
     .setDescription('Show help information about SassyBot'),
 
   new SlashCommandBuilder()
-    .setName('conspiracy')
-    .setDescription('Generate an absurd conspiracy theory about someone')
-    .addUserOption((opt) => opt.setName('user').setDescription('The suspect').setRequired(true)),
-
-  new SlashCommandBuilder()
     .setName('compliment')
     .setDescription('Give someone a backhanded compliment')
     .addUserOption((opt) => opt.setName('user').setDescription('The lucky recipient').setRequired(true)),

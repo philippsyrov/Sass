@@ -50,9 +50,8 @@ export function buildHelpPages(botAvatar: string | null | undefined): EmbedBuild
       .setAuthor({ name: 'Sass \u2014 More Fun', iconURL: botAvatar ?? undefined })
       .addFields(
         { name: '\u2648 Horoscope', value: '`/horoscope <sign>`\nastrology but mean. once per day.', inline: true },
-        { name: '\u{1F575}\uFE0F Conspiracy', value: '`/conspiracy @user`\nabsurd theory using real intel.', inline: true },
-        { name: '\u200b', value: '\u200b', inline: false },
         { name: '\u{1F490} Compliment', value: '`/compliment @user`\nbackhanded. sounds nice, stings later.', inline: true },
+        { name: '\u200b', value: '\u200b', inline: false },
         { name: '\u{1F440} Status', value: '`/status @user`\nroast someone\'s Discord activity.', inline: true },
       ),
 
