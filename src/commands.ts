@@ -106,7 +106,7 @@ function checkSlashRateLimit(userId: string): RateLimitResult {
   return 'limited';
 }
 
-// Cleanup trackers
+// Cleanup trackers + FIFO eviction at size cap
 setInterval(() => {
   const now = Date.now();
   for (const [id, timestamps] of slashCmdTracker) {
@@ -114,8 +114,16 @@ setInterval(() => {
     if (recent.length === 0) slashCmdTracker.delete(id);
     else slashCmdTracker.set(id, recent);
   }
+  while (slashCmdTracker.size > SLASH_CMD_MAX_TRACKED) {
+    const oldest = slashCmdTracker.keys().next().value;
+    if (oldest !== undefined) slashCmdTracker.delete(oldest); else break;
+  }
   for (const [id, strike] of slashCmdStrikes) {
     if (strike.bannedUntil < now) slashCmdStrikes.delete(id);
+  }
+  while (slashCmdStrikes.size > SLASH_CMD_MAX_TRACKED) {
+    const oldest = slashCmdStrikes.keys().next().value;
+    if (oldest !== undefined) slashCmdStrikes.delete(oldest); else break;
   }
 }, 5 * 60 * 1000);
 
