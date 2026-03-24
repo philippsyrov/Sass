@@ -14,8 +14,17 @@ import { logInteraction, wasActivityRoastedRecently, setActivityRoasted } from '
 import { recordResponse, getRecentResponses } from '../responseMemory.js';
 
 // Track message count per channel since last auto-sass
-const messageCounters = new Map<string, number>();
+const messageCounters = new Map<string, { count: number; lastSeen: number }>();
 const MAX_TRACKED_CHANNELS = 500;
+const STALE_CHANNEL_MS = 60 * 60 * 1000; // 1 hour — remove inactive channels
+
+// Periodic cleanup of stale channel counters (every 30 min)
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, entry] of messageCounters) {
+    if (now - entry.lastSeen > STALE_CHANNEL_MS) messageCounters.delete(id);
+  }
+}, 30 * 60 * 1000);
 
 const AUTO_SASS_CHANCE = parseFloat(process.env.AUTO_SASS_CHANCE ?? '0.55') || 0.55;
 const MIN_MESSAGES = parseInt(process.env.AUTO_SASS_MIN_MESSAGES ?? '2', 10) || 2;
@@ -111,8 +120,9 @@ export async function handleAutoSass(message: Message, _client: Client, options:
   const channelId = channel.id;
 
   // Increment counter (cap tracked channels to prevent memory leak)
-  const count = (messageCounters.get(channelId) || 0) + 1;
-  messageCounters.set(channelId, count);
+  const existing = messageCounters.get(channelId);
+  const count = (existing?.count ?? 0) + 1;
+  messageCounters.set(channelId, { count, lastSeen: Date.now() });
   if (messageCounters.size > MAX_TRACKED_CHANNELS) {
     const toDelete = messageCounters.size - MAX_TRACKED_CHANNELS;
     let deleted = 0;
@@ -140,7 +150,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
   }
 
   // Reset counter regardless of outcome
-  messageCounters.set(channelId, 0);
+  messageCounters.set(channelId, { count: 0, lastSeen: Date.now() });
 
   // 10% chance to roast someone's gaming activity instead of conversation
   if (Math.random() < 0.10) {
