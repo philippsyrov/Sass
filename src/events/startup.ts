@@ -1,0 +1,50 @@
+import type { Client, Guild, TextChannel } from 'discord.js';
+import { initDatabase, closeDatabase } from '../database/index.js';
+import * as userMemory from '../userMemory.js';
+
+// Send a message to the first available text channel in a guild
+async function sendToFirstChannel(guild: Guild, text: string): Promise<void> {
+  const me = guild.members.me;
+  if (!me) return;
+  const channel = guild.channels.cache.find(
+    (ch) => ch.isTextBased() && !ch.isVoiceBased() && ch.permissionsFor(me)?.has('SendMessages')
+  ) as TextChannel | undefined;
+  if (channel) await channel.send(text).catch((err) => console.error('Guild join send failed:', (err as Error).message));
+}
+
+export function setupStartup(client: Client): void {
+  client.once('ready', async () => {
+    if (!client.user) return;
+    console.log(`Sass is online as ${client.user.tag}`);
+    console.log(`AI Provider: ${process.env.AI_PROVIDER || 'ollama'}`);
+    console.log(`Auto-sass chance: ${(parseFloat(process.env.AUTO_SASS_CHANCE ?? '0.4') || 0.4) * 100}%`);
+    console.log(`Creator ID: ${process.env.CREATOR_ID || 'not set'}`);
+
+    // Initialize database (fails silently if no DATABASE_URL)
+    await initDatabase();
+  });
+
+  // Guild join — announce arrival
+  client.on('guildCreate', (guild: Guild) => {
+    const intros = [
+      "i'm here. you're welcome.",
+      "alright who invited me. doesn't matter, i'm staying.",
+      "new server new victims",
+      "hey. i'm sass. i'm going to be a problem.",
+      "somebody called for chaos? no? too bad.",
+    ];
+    void sendToFirstChannel(guild, intros[Math.floor(Math.random() * intros.length)] as string);
+  });
+}
+
+export function setupShutdown(client: Client): void {
+  async function shutdown(signal: string): Promise<void> {
+    console.log(`\n${signal} received — shutting down gracefully...`);
+    await userMemory.shutdownUserMemory();
+    await client.destroy();
+    await closeDatabase();
+    process.exit(0);
+  }
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+  process.on('SIGINT', () => void shutdown('SIGINT'));
+}
