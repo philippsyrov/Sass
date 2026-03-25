@@ -4,7 +4,7 @@ import {
   type GuildMember,
   type TextChannel,
 } from 'discord.js';
-import { getAutoSassDecision, getReactionDecision, getConversationJoin, queryAI, pickCustomReaction } from '../ai/index.js';
+import { getAutoSassDecision, getReactionDecision, getConversationJoin, queryAI, queryAIWithUsage, pickCustomReaction } from '../ai/index.js';
 import { messageBuffer } from '../messageBuffer.js';
 import * as userMemory from '../userMemory.js';
 import { isOnAutoSassCooldown, setAutoSassCooldown, isOnGuildAutoSassCooldown, setGuildAutoSassCooldown } from '../cooldown.js';
@@ -234,10 +234,11 @@ export async function handleAutoSass(message: Message, _client: Client, options:
           if (!target) return;
           const activity = getActivityDescription(target.presence);
           if (!activity) return;
-          const roast = await queryAI(
+          const activityResult = await queryAIWithUsage(
             `You caught ${target.displayName} ${activity}. Call them out. ONE sentence, max 15 words. Be specific about the game/app.`,
             { systemPrompt: 'You publicly shame Discord activity. ONE short sentence. Max 15 words. Lowercase. No metaphors, no essays. Talk like a 20-year-old texting.' }
           );
+          const roast = activityResult.text;
           if (roast && roast.trim().toUpperCase() !== 'SKIP') {
             setAutoSassCooldown(channelId);
             setGuildAutoSassCooldown(guildId);
@@ -260,6 +261,8 @@ export async function handleAutoSass(message: Message, _client: Client, options:
               userMessage: activity, sassResponse: roast,
               mood: moodInfo.mood, moodIntensity: moodInfo.intensity,
               affinity: targetAffinity,
+              promptTokens: activityResult.promptTokens,
+              completionTokens: activityResult.completionTokens,
             }).catch((err) => console.error('DB log failed:', (err as Error).message));
             return;
           }
@@ -368,7 +371,8 @@ export async function handleAutoSass(message: Message, _client: Client, options:
     // 25% — Join conversation (not a roast)
     if (roll >= 0.40 && roll < 0.65) {
       const contextWithPeople = [peopleContext, affinityContext, recentContext].filter(Boolean).join('\n\n');
-      const joinRemark = await getConversationJoin(contextWithPeople, responseHistory);
+      const joinResult = await getConversationJoin(contextWithPeople, responseHistory);
+      const joinRemark = joinResult.text;
 
       if (joinRemark && joinRemark.trim().toUpperCase() !== 'SKIP') {
         // Quality gate — skip filler responses
@@ -391,6 +395,8 @@ export async function handleAutoSass(message: Message, _client: Client, options:
           userMessage: message.content, sassResponse: joinRemark,
           mood: moodStatus.mood, moodIntensity: moodStatus.intensity,
           affinity: joinAffinity,
+          promptTokens: joinResult.promptTokens,
+          completionTokens: joinResult.completionTokens,
         }).catch((err) => console.error('DB log failed:', (err as Error).message));
         return;
       }
@@ -399,7 +405,8 @@ export async function handleAutoSass(message: Message, _client: Client, options:
 
     // 35% — Classic roast (default / fallthrough)
     const contextWithPeople = [peopleContext, affinityContext, recentContext].filter(Boolean).join('\n\n');
-    const remark = await getAutoSassDecision(contextWithPeople, responseHistory);
+    const roastResult = await getAutoSassDecision(contextWithPeople, responseHistory);
+    const remark = roastResult.text;
 
     if (!remark || remark.trim().toUpperCase() === 'SKIP') return;
 
@@ -427,6 +434,8 @@ export async function handleAutoSass(message: Message, _client: Client, options:
       mood: moodStatus.mood, moodIntensity: moodStatus.intensity,
       context: [recentContext, peopleContext, affinityContext].filter(Boolean).join('\n---\n'),
       affinity: roastAffinity,
+      promptTokens: roastResult.promptTokens,
+      completionTokens: roastResult.completionTokens,
     }).catch((err) => console.error('DB log failed:', (err as Error).message));
   } catch (err) {
     console.error('Auto-sass failed:', (err as Error).message);
