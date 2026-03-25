@@ -402,39 +402,54 @@ export async function handleEntertainmentCommand(
     case 'conspiracy': {
       await interaction.deferReply();
       const topic = interaction.options.getString('topic');
+      const userName = interaction.user.displayName || interaction.user.username;
 
       try {
         // Pull semantic connections from vector memory
-        const searchQuery = topic ?? 'secrets drama relationships lies connections suspicious';
-        const memories = await searchMemories(searchQuery, { guildId, limit: 8 });
+        const searchQuery = topic ?? `${userName} secrets suspicious`;
+        const memories = await searchMemories(searchQuery, { guildId, userId: topic ? null : interaction.user.id, limit: 8 });
 
-        // Get active users for name material
+        // Get active users for name material (only when topic is provided)
         const guild = interaction.guild;
-        const members = guild?.members.cache
-          .filter((m) => !m.user.bot)
-          .map((m) => m.displayName)
-          .slice(0, 15) ?? [];
+        const members = topic
+          ? (guild?.members.cache
+              .filter((m) => !m.user.bot)
+              .map((m) => m.displayName)
+              .slice(0, 15) ?? [])
+          : [];
 
         const memoryContext = memories.length > 0
-          ? `Known facts from this server's memory:\n${memories.map((m) => `- ${m.content} (about user ${m.userId})`).join('\n')}`
+          ? `Known facts from memory:\n${memories.map((m) => `- ${m.content}`).join('\n')}`
           : '';
 
-        const prompt = [
-          `Generate an unhinged conspiracy theory connecting people in this Discord server.`,
-          topic ? `Seed topic: "${topic}"` : null,
-          members.length > 0 ? `Server members you can use: ${members.join(', ')}` : null,
-          memoryContext,
-          `Rules:`,
-          `- Use REAL member names from the list above`,
-          `- Connect at least 3 people in the theory`,
-          `- Reference any relevant facts from memory if available`,
-          `- Make it absurd but specific — not generic`,
-          `- 3-5 sentences max`,
-          `- End with a dramatic "coincidence? i think not." or similar`,
-        ].filter(Boolean).join('\n');
+        // User-focused (no topic) vs server-wide (with topic)
+        const prompt = topic
+          ? [
+              `Generate an unhinged conspiracy theory connecting people in this Discord server.`,
+              `Seed topic: "${topic}"`,
+              members.length > 0 ? `Server members you can use: ${members.join(', ')}` : null,
+              memoryContext,
+              `Rules:`,
+              `- Use REAL member names from the list above`,
+              `- Connect at least 3 people in the theory`,
+              `- Reference any relevant facts from memory if available`,
+              `- Make it absurd but specific — not generic`,
+              `- 3-5 sentences max`,
+              `- End with a dramatic "coincidence? i think not." or similar`,
+            ].filter(Boolean).join('\n')
+          : [
+              `Generate an unhinged conspiracy theory about ${userName} based on what you know about them.`,
+              memoryContext,
+              `Rules:`,
+              `- Focus on ${userName} specifically — what are they REALLY up to?`,
+              `- Use their known facts/memories as "evidence"`,
+              `- Make it absurd but specific to them — not generic`,
+              `- 3-5 sentences max`,
+              `- End with a dramatic "coincidence? i think not." or similar`,
+            ].filter(Boolean).join('\n');
 
         const response = await queryAI(prompt, {
-          systemPrompt: 'You are Sass, a conspiracy theorist bot. Generate unhinged but funny conspiracy theories about Discord server members. Use their real names. Lowercase. Be specific and creative. Reference facts when available.',
+          systemPrompt: 'You are Sass, a conspiracy theorist bot. Generate unhinged but funny conspiracy theories. Use real names. Lowercase. Be specific and creative. Reference facts when available.',
           maxTokens: 250,
         });
 
@@ -442,7 +457,7 @@ export async function handleEntertainmentCommand(
 
         const embed = new EmbedBuilder()
           .setColor(0x2F3136)
-          .setTitle(`🕵️ CONSPIRACY — ${topic?.toUpperCase() ?? 'CLASSIFIED'}`)
+          .setTitle(`🕵️ CONSPIRACY — ${topic?.toUpperCase() ?? userName.toUpperCase()}`)
           .setDescription(response)
           .setFooter({ text: 'sass intelligence agency — classified document' })
           .setTimestamp();
