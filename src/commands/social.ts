@@ -3,7 +3,7 @@ import {
   AttachmentBuilder,
   type ChatInputCommandInteraction,
 } from 'discord.js';
-import { queryAI, analyzeProfile } from '../ai.js';
+import { queryAI, analyzeProfile } from '../ai/index.js';
 import * as userMemory from '../userMemory.js';
 import { logCommand, getAffinity } from '../database/index.js';
 import { getShipScore, getPairInteractions, warmPairCache } from '../shipScore.js';

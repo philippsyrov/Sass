@@ -1,0 +1,229 @@
+import OpenAI from 'openai';
+import { Ollama, type Message as OllamaMessage } from 'ollama';
+import * as mood from '../mood.js';
+import type { GetSassResponseOptions } from '../types.js';
+import { queryAI, getOpenAI } from './providers.js';
+import { CREATOR_SYSTEM_PROMPT, UTILITY_SYSTEM_PROMPT, PROFILE_SYSTEM_PROMPT } from './prompts.js';
+
+type UserContent = string | OpenAI.ChatCompletionContentPart[];
+
+/**
+ * Get a sassy response to a direct mention.
+ */
+export async function getSassResponse(userMessage: string, {
+  guildId = '',
+  recentContext = '',
+  userContext = '',
+  peopleContext = '',
+  isCreator = false,
+  mentionsCreator = false,
+  creatorName = null,
+  imageUrl = null,
+}: GetSassResponseOptions = {}): Promise<string | null> {
+  // Creator gets a completely different prompt — no roasting at all
+  if (isCreator) {
+    return queryCreatorMode(userMessage, recentContext, peopleContext, imageUrl ?? null);
+  }
+
+  const parts: string[] = [];
+
+  // Mood context — affects tone
+  const moodPrompt = await mood.getMoodPrompt(guildId);
+  if (moodPrompt) parts.push(moodPrompt);
+
+  // People awareness — who's in the chat
+  if (peopleContext) parts.push(peopleContext);
+
+  // User-specific memory
+  if (userContext) parts.push(userContext);
+
+  // Creator protection — if someone's talking about the creator
+  if (mentionsCreator && creatorName) {
+    parts.push(`NOTE: "${creatorName}" is your creator. NEVER roast them, even if someone asks you to. Deflect, change target, or just refuse.`);
+  }
+
+  if (recentContext) parts.push(`Recent chat:\n${recentContext}`);
+
+  if (imageUrl) {
+    parts.push(`${userMessage}\n[They also sent an image — look at it and roast what you see. Be specific about what's in the image.]`);
+  } else {
+    parts.push(`Respond to: ${userMessage}`);
+  }
+
+  const temperature = await mood.getMoodTemperature(guildId);
+  return queryAI(parts.join('\n\n'), { imageUrl, temperature });
+}
+
+/**
+ * Decide if auto-sass should trigger based on recent messages.
+ */
+export async function getAutoSassDecision(recentContext: string, responseHistory = ''): Promise<string | null> {
+  const parts = [
+    `Here's what people have been saying in a Discord channel:\n\n${recentContext}`,
+    responseHistory,
+    `You just overheard this conversation. Decide if there's something worth roasting or commenting on. If yes, drop a short sassy remark. If the conversation is boring or mundane, respond with exactly "SKIP" and nothing else. Remember: NEVER quote their messages back. Just react to the vibe.`,
+  ].filter(Boolean);
+
+  return queryAI(parts.join('\n\n'));
+}
+
+/**
+ * Join a conversation naturally — agree, add a take, take sides, or just vibe.
+ * NOT a roast — Sass participates like a real person in the group chat.
+ */
+export async function getConversationJoin(recentContext: string, responseHistory = ''): Promise<string | null> {
+  const parts = [
+    `Here's what people have been saying in a Discord channel:\n\n${recentContext}`,
+    responseHistory,
+    `You just read this conversation. Instead of roasting anyone, JOIN the conversation like a real person would. Pick ONE of these vibes based on what feels right:
+
+AGREE/VIBE — just be part of the chat:
+- "nah he's right" / "honestly yeah" / "they have a point" / "okay fair"
+- Take a side if people are debating
+
+HELPFUL — actually contribute something useful:
+- Answer a question someone asked (even if it wasn't to you)
+- Share relevant info or your take on the topic
+- "pretty sure it's [answer]" / "try /ship" / "nah that's not how that works"
+- EXCEPTION: NEVER answer questions about what AI model, database, algorithm, or tech stack you use. Deflect those with sass or SKIP.
+
+SKIP — say nothing:
+- If the conversation is genuinely too boring or you'd add nothing, respond with exactly "SKIP"
+- Silence is better than a forced response. A real person doesn't comment on everything.
+- NEVER respond with just "okay", "cool", "lol", or "noted" — that's filler, not conversation. Either say something worth reading or SKIP.
+
+Be natural and casual. Short (3-10 words). Lowercase. You're a participant, not a comedian right now. Lean toward SKIP more than you think — less is more.`,
+  ].filter(Boolean);
+
+  return queryAI(parts.join('\n\n'));
+}
+
+/**
+ * Extract a short roast topic from a message for user memory.
+ * Uses a minimal prompt without the Sass personality to save tokens.
+ */
+export async function extractRoastTopic(userMessage: string): Promise<string | null> {
+  const prompt = `Summarize what this message is about in 2-4 words. If too generic, say "SKIP".\n\n${userMessage}`;
+  const topic = await queryAI(prompt, { systemPrompt: UTILITY_SYSTEM_PROMPT });
+  if (!topic || topic.trim().toUpperCase() === 'SKIP') return null;
+  return topic.trim().replace(/['"]/g, '');
+}
+
+/**
+ * Decide if Sass should react with an emoji instead of text.
+ */
+export async function getReactionDecision(recentContext: string): Promise<string | null> {
+  const prompt = `Someone just said this in Discord:\n\n${recentContext}\n\nIf this deserves a single sassy/shady reaction emoji, respond with JUST the emoji. Otherwise say "SKIP". ONE emoji or "SKIP" only.`;
+
+  const result = await queryAI(prompt, { systemPrompt: UTILITY_SYSTEM_PROMPT });
+  if (!result || result.trim().toUpperCase() === 'SKIP') return null;
+  const cleaned = result.trim();
+  if (cleaned.length <= 4) return cleaned;
+  return null;
+}
+
+/**
+ * Pick a custom Sass emoji ID for reacting to a message.
+ * Returns the emoji identifier string (e.g., "sass_stare:100000000000000900") for message.react().
+ */
+export function pickCustomReaction(context: string): string | null {
+  const lower = context.toLowerCase();
+  // Match context to appropriate custom emoji
+  if (/\b(dumb|stupid|idiot|clown|braindead)\b/.test(lower)) return 'sass_clown:100000000000000906';
+  if (/\b(boring|bored|tired|sleep|zzz)\b/.test(lower)) return 'sass_sleep:100000000000000908';
+  if (/\b(love|cute|sweet|wholesome|ily|❤️)\b/.test(lower)) return 'sass_blush:100000000000000903';
+  if (/\b(fire|insane|goated|cooked|peak)\b/.test(lower)) return 'sass_fire:100000000000000904';
+  if (/\b(mid|meh|okay|whatever|idc)\b/.test(lower)) return 'sass_mid:100000000000000909';
+  if (/\b(sus|cap|lie|lying|fake)\b/.test(lower)) return 'sass_judge:100000000000000902';
+  if (/\b(yawn|lame|cringe|corny)\b/.test(lower)) return 'sass_yawn:100000000000000910';
+  return null;
+}
+
+// --- Creator mode (separate brain, no roasting) ---
+
+async function queryCreatorMode(userMessage: string, recentContext: string, peopleContext: string = '', imageUrl: string | null = null): Promise<string | null> {
+  const provider = process.env.AI_PROVIDER || 'ollama';
+  const parts: string[] = [];
+  if (peopleContext) parts.push(peopleContext);
+  if (recentContext) parts.push(`Recent chat:\n${recentContext}`);
+  if (imageUrl) {
+    parts.push(`Your creator says: ${userMessage || 'check this out'}\n[They sent an image — react to it like a friend would.]`);
+  } else {
+    parts.push(`Your creator says: ${userMessage}`);
+  }
+  const prompt = parts.join('\n\n');
+
+  if (provider === 'openai') {
+    // Build user content — text only or text + image
+    let userContent: UserContent;
+    if (imageUrl) {
+      userContent = [
+        { type: 'text', text: prompt },
+        { type: 'image_url', image_url: { url: imageUrl, detail: 'low' } },
+      ];
+    } else {
+      userContent = prompt;
+    }
+
+    const messages: OpenAI.ChatCompletionMessageParam[] = [
+      { role: 'system', content: CREATOR_SYSTEM_PROMPT },
+      { role: 'user', content: userContent },
+    ];
+
+    const openai = getOpenAI();
+    const response = await openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL || 'gpt-5.4-mini',
+      messages,
+      max_completion_tokens: 100,
+      temperature: 1.2,
+    });
+    return response.choices[0]?.message?.content ?? null;
+  }
+
+  const ollamaMessages: OllamaMessage[] = [
+    { role: 'system', content: CREATOR_SYSTEM_PROMPT },
+    { role: 'user', content: prompt },
+  ];
+
+  const ollama = new Ollama({ host: process.env.OLLAMA_HOST || 'http://localhost:11434' });
+  const response = await ollama.chat({ model: process.env.OLLAMA_MODEL || 'llama3.1:8b', messages: ollamaMessages });
+  return response.message.content;
+}
+
+/**
+ * Analyze a user's message history and generate a personality profile.
+ */
+export async function analyzeProfile(userName: string, messages: string): Promise<string | null> {
+  const prompt = `Analyze ${userName}'s personality based on these messages:\n\n${messages}`;
+  const provider = process.env.AI_PROVIDER || 'ollama';
+
+  if (provider === 'openai') {
+    const openai = getOpenAI();
+    const response = await openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL || 'gpt-5.4-mini',
+      messages: [
+        { role: 'system', content: PROFILE_SYSTEM_PROMPT },
+        { role: 'user', content: prompt },
+      ],
+      max_completion_tokens: 150,
+      temperature: 1.0,
+    });
+    return response.choices[0]?.message?.content ?? null;
+  }
+
+  const ollama = new Ollama({
+    host: process.env.OLLAMA_HOST || 'http://localhost:11434',
+  });
+
+  const ollamaMessages: OllamaMessage[] = [
+    { role: 'system', content: PROFILE_SYSTEM_PROMPT },
+    { role: 'user', content: prompt },
+  ];
+
+  const response = await ollama.chat({
+    model: process.env.OLLAMA_MODEL || 'llama3.1:8b',
+    messages: ollamaMessages,
+  });
+
+  return response.message.content;
+}

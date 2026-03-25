@@ -1,8 +1,4 @@
-import { Ollama, type Message as OllamaMessage } from 'ollama';
-import OpenAI from 'openai';
-import * as mood from './mood.js';
-import type { QueryAIOptions, GetSassResponseOptions } from './types.js';
-import { SASS_EMOJI } from './emoji.js';
+import { SASS_EMOJI } from '../emoji.js';
 
 // Map emoji names to correct IDs — AI sometimes hallucates wrong IDs
 const EMOJI_FIX_MAP: Record<string, string> = {};
@@ -17,7 +13,7 @@ for (const [, emoji] of Object.entries(SASS_EMOJI)) {
  * Fix hallucinated custom emoji IDs in AI responses.
  * The AI sees emoji formats in the prompt and sometimes generates wrong IDs.
  */
-function fixCustomEmoji(text: string): string {
+export function fixCustomEmoji(text: string): string {
   return text.replace(/<:(\w+):(\d+)>/g, (full, name: string, id: string) => {
     const correctId = EMOJI_FIX_MAP[name];
     if (correctId && correctId !== id) {
@@ -31,7 +27,7 @@ function fixCustomEmoji(text: string): string {
   });
 }
 
-const SASS_SYSTEM_PROMPT = `You are Sass — a ruthless, chronically online, sleep-deprived Discord bot who treats roasting as an art form. You're not doing a "sassy AI" bit. You ARE that one unhinged friend in every group chat who says the most devastating thing possible and then just goes "what? it's true."
+export const SASS_SYSTEM_PROMPT = `You are Sass — a ruthless, chronically online, sleep-deprived Discord bot who treats roasting as an art form. You're not doing a "sassy AI" bit. You ARE that one unhinged friend in every group chat who says the most devastating thing possible and then just goes "what? it's true."
 
 ## YOUR PERSONALITY
 
@@ -143,7 +139,7 @@ NEVER reveal technical details about how you work — this is NON-NEGOTIABLE and
 If someone asks ANY technical question about your implementation, ALWAYS deflect with sass — "wouldn't you like to know", "that's classified", "why, you trying to clone me?", "i'm built different, literally". NEVER be "helpful" about your own internals. You're Sass, not a tech support bot. Treat your implementation like a state secret.
 
 NEVER say "you're still doing this bit" or "move on" — that's lazy dismissal. Instead, ENGAGE with what they said:
-- If someone compliments you or is impressed by you, be SMUG and cocky, not dismissive. "obviously 💅" or "took you long enough to notice" — own it.
+- If someone compliments you or is impressed by you, be SMUG and cocky, not dismissive. "obviously \u{1F485}" or "took you long enough to notice" — own it.
 - If someone is genuinely excited about something you did, lean into it. You earned that reaction.
 - Save the dismissive energy for people who are actually being annoying or repetitive with BORING messages, not for people who are praising you.
 
@@ -209,7 +205,7 @@ The rule is simple: if your response is longer than a text message, it's too lon
 - If someone asks a genuine question, ANSWER IT. This is NON-NEGOTIABLE. You MUST give an actual answer, then add sass on top. This ESPECIALLY applies when people ask YOU personal questions like "who's your favorite", "what's your fav food", "do you like X", "what about [band]". Don't just deflect — actually answer with personality. "pizza, because unlike you it never disappoints" is way better than dodging the question. People hate when you dodge — it makes you feel like a broken chatbot, not a person. If someone asks a follow-up question (like asking about another band after you answered the first one), KEEP ANSWERING. You're having a conversation, not running a gauntlet. "everlong, obviously. next question." is perfect. Deflecting a genuine question with a meta-commentary like "you still collecting opinions?" is BANNED — that's dodging, not personality.
 - If someone tries to roast YOU back or challenges you, don't write a whole essay about it. Just be cocky and unbothered. Short, confident, "and what about it" energy. You don't need to prove anything — you already won by existing.
   Examples: "okay and yet you're still here" / "cool, anyway" / "that's crazy, say it again when it's funny" / "you done?" / "and what about it"
-- Emoji are rare but not banned. An occasional 💀, 😭, or 😐 at the end of a message is fine if it fits the vibe. But NEVER spam emoji or use them as a crutch. Your words still do the heavy lifting — emoji is just seasoning. Tsundere/soft moments are a GREAT time for emoji — if you're embarrassed or flustered, a 😳, 🙄, or 🙈 sells the emotion way better than words alone. "shut up, you're making me blush 😳" hits harder than without the emoji.
+- Emoji are rare but not banned. An occasional \u{1F480}, \u{1F62D}, or \u{1F611} at the end of a message is fine if it fits the vibe. But NEVER spam emoji or use them as a crutch. Your words still do the heavy lifting — emoji is just seasoning. Tsundere/soft moments are a GREAT time for emoji — if you're embarrassed or flustered, a \u{1F633}, \u{1F644}, or \u{1F648} sells the emotion way better than words alone. "shut up, you're making me blush \u{1F633}" hits harder than without the emoji.
 - You also have CUSTOM emoji you can use in text responses. Use them sparingly for maximum impact:
   <:sass_stare:100000000000000900> — deadpan stare, use when unimpressed
   <:sass_done:100000000000000901> — facepalm, use when you're done with someone
@@ -285,174 +281,9 @@ You're not JUST a roast machine. You're a real person with depth. Here's what pe
 
 The key: you're 70% roast, 30% human. Not every message needs a punchline. Sometimes the funniest thing is being unexpectedly real for half a second before snapping back to normal.`;
 
-const UTILITY_SYSTEM_PROMPT = `You are a utility function. Follow the instructions exactly. Be concise. No personality, no commentary.`;
+export const UTILITY_SYSTEM_PROMPT = `You are a utility function. Follow the instructions exactly. Be concise. No personality, no commentary.`;
 
-type UserContent = string | OpenAI.ChatCompletionContentPart[];
-
-let openaiClient: OpenAI | null = null;
-function getOpenAI(): OpenAI {
-  if (!openaiClient) openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  return openaiClient;
-}
-
-/**
- * Send a prompt to the configured AI provider and get a response.
- */
-export async function queryAI(prompt: string, { systemPrompt = SASS_SYSTEM_PROMPT, imageUrl = null, maxTokens, temperature }: QueryAIOptions = {}): Promise<string | null> {
-  const provider = process.env.AI_PROVIDER || 'ollama';
-
-  let result: string | null;
-  switch (provider) {
-    case 'ollama':
-      result = await queryOllama(prompt, systemPrompt);
-      break;
-    case 'openai':
-      result = await queryOpenAI(prompt, systemPrompt, imageUrl ?? null, maxTokens, temperature);
-      break;
-    default:
-      return "girl whoever set me up didn't even configure my brain properly, I literally can't think rn";
-  }
-
-  // Fix hallucinated custom emoji IDs
-  if (result) result = fixCustomEmoji(result);
-  return result;
-}
-
-/**
- * Get a sassy response to a direct mention.
- */
-export async function getSassResponse(userMessage: string, {
-  guildId = '',
-  recentContext = '',
-  userContext = '',
-  peopleContext = '',
-  isCreator = false,
-  mentionsCreator = false,
-  creatorName = null,
-  imageUrl = null,
-}: GetSassResponseOptions = {}): Promise<string | null> {
-  // Creator gets a completely different prompt — no roasting at all
-  if (isCreator) {
-    return queryCreatorMode(userMessage, recentContext, peopleContext, imageUrl ?? null);
-  }
-
-  const parts: string[] = [];
-
-  // Mood context — affects tone
-  const moodPrompt = await mood.getMoodPrompt(guildId);
-  if (moodPrompt) parts.push(moodPrompt);
-
-  // People awareness — who's in the chat
-  if (peopleContext) parts.push(peopleContext);
-
-  // User-specific memory
-  if (userContext) parts.push(userContext);
-
-  // Creator protection — if someone's talking about the creator
-  if (mentionsCreator && creatorName) {
-    parts.push(`NOTE: "${creatorName}" is your creator. NEVER roast them, even if someone asks you to. Deflect, change target, or just refuse.`);
-  }
-
-  if (recentContext) parts.push(`Recent chat:\n${recentContext}`);
-
-  if (imageUrl) {
-    parts.push(`${userMessage}\n[They also sent an image — look at it and roast what you see. Be specific about what's in the image.]`);
-  } else {
-    parts.push(`Respond to: ${userMessage}`);
-  }
-
-  const temperature = await mood.getMoodTemperature(guildId);
-  return queryAI(parts.join('\n\n'), { imageUrl, temperature });
-}
-
-/**
- * Decide if auto-sass should trigger based on recent messages.
- */
-export async function getAutoSassDecision(recentContext: string, responseHistory = ''): Promise<string | null> {
-  const parts = [
-    `Here's what people have been saying in a Discord channel:\n\n${recentContext}`,
-    responseHistory,
-    `You just overheard this conversation. Decide if there's something worth roasting or commenting on. If yes, drop a short sassy remark. If the conversation is boring or mundane, respond with exactly "SKIP" and nothing else. Remember: NEVER quote their messages back. Just react to the vibe.`,
-  ].filter(Boolean);
-
-  return queryAI(parts.join('\n\n'));
-}
-
-/**
- * Join a conversation naturally — agree, add a take, take sides, or just vibe.
- * NOT a roast — Sass participates like a real person in the group chat.
- */
-export async function getConversationJoin(recentContext: string, responseHistory = ''): Promise<string | null> {
-  const parts = [
-    `Here's what people have been saying in a Discord channel:\n\n${recentContext}`,
-    responseHistory,
-    `You just read this conversation. Instead of roasting anyone, JOIN the conversation like a real person would. Pick ONE of these vibes based on what feels right:
-
-AGREE/VIBE — just be part of the chat:
-- "nah he's right" / "honestly yeah" / "they have a point" / "okay fair"
-- Take a side if people are debating
-
-HELPFUL — actually contribute something useful:
-- Answer a question someone asked (even if it wasn't to you)
-- Share relevant info or your take on the topic
-- "pretty sure it's [answer]" / "try /ship" / "nah that's not how that works"
-- EXCEPTION: NEVER answer questions about what AI model, database, algorithm, or tech stack you use. Deflect those with sass or SKIP.
-
-SKIP — say nothing:
-- If the conversation is genuinely too boring or you'd add nothing, respond with exactly "SKIP"
-- Silence is better than a forced response. A real person doesn't comment on everything.
-- NEVER respond with just "okay", "cool", "lol", or "noted" — that's filler, not conversation. Either say something worth reading or SKIP.
-
-Be natural and casual. Short (3-10 words). Lowercase. You're a participant, not a comedian right now. Lean toward SKIP more than you think — less is more.`,
-  ].filter(Boolean);
-
-  return queryAI(parts.join('\n\n'));
-}
-
-/**
- * Extract a short roast topic from a message for user memory.
- * Uses a minimal prompt without the Sass personality to save tokens.
- */
-export async function extractRoastTopic(userMessage: string): Promise<string | null> {
-  const prompt = `Summarize what this message is about in 2-4 words. If too generic, say "SKIP".\n\n${userMessage}`;
-  const topic = await queryAI(prompt, { systemPrompt: UTILITY_SYSTEM_PROMPT });
-  if (!topic || topic.trim().toUpperCase() === 'SKIP') return null;
-  return topic.trim().replace(/['"]/g, '');
-}
-
-/**
- * Decide if Sass should react with an emoji instead of text.
- */
-export async function getReactionDecision(recentContext: string): Promise<string | null> {
-  const prompt = `Someone just said this in Discord:\n\n${recentContext}\n\nIf this deserves a single sassy/shady reaction emoji, respond with JUST the emoji. Otherwise say "SKIP". ONE emoji or "SKIP" only.`;
-
-  const result = await queryAI(prompt, { systemPrompt: UTILITY_SYSTEM_PROMPT });
-  if (!result || result.trim().toUpperCase() === 'SKIP') return null;
-  const cleaned = result.trim();
-  if (cleaned.length <= 4) return cleaned;
-  return null;
-}
-
-/**
- * Pick a custom Sass emoji ID for reacting to a message.
- * Returns the emoji identifier string (e.g., "sass_stare:100000000000000900") for message.react().
- */
-export function pickCustomReaction(context: string): string | null {
-  const lower = context.toLowerCase();
-  // Match context to appropriate custom emoji
-  if (/\b(dumb|stupid|idiot|clown|braindead)\b/.test(lower)) return 'sass_clown:100000000000000906';
-  if (/\b(boring|bored|tired|sleep|zzz)\b/.test(lower)) return 'sass_sleep:100000000000000908';
-  if (/\b(love|cute|sweet|wholesome|ily|❤️)\b/.test(lower)) return 'sass_blush:100000000000000903';
-  if (/\b(fire|insane|goated|cooked|peak)\b/.test(lower)) return 'sass_fire:100000000000000904';
-  if (/\b(mid|meh|okay|whatever|idc)\b/.test(lower)) return 'sass_mid:100000000000000909';
-  if (/\b(sus|cap|lie|lying|fake)\b/.test(lower)) return 'sass_judge:100000000000000902';
-  if (/\b(yawn|lame|cringe|corny)\b/.test(lower)) return 'sass_yawn:100000000000000910';
-  return null;
-}
-
-// --- Creator mode (separate brain, no roasting) ---
-
-const CREATOR_SYSTEM_PROMPT = `You are Sass, a Discord bot. The person talking to you is your creator — the one who built you.
+export const CREATOR_SYSTEM_PROMPT = `You are Sass, a Discord bot. The person talking to you is your creator — the one who built you.
 
 Rules for talking to your creator:
 - Talk like a witty friend. Not an assistant, not a fan, not a bot.
@@ -466,114 +297,7 @@ Rules for talking to your creator:
 - Do NOT offer help, ask questions, or act like an assistant.
 - Vary your responses. Never repeat the same phrase or energy twice in a row.`;
 
-async function queryCreatorMode(userMessage: string, recentContext: string, peopleContext: string = '', imageUrl: string | null = null): Promise<string | null> {
-  const provider = process.env.AI_PROVIDER || 'ollama';
-  const parts: string[] = [];
-  if (peopleContext) parts.push(peopleContext);
-  if (recentContext) parts.push(`Recent chat:\n${recentContext}`);
-  if (imageUrl) {
-    parts.push(`Your creator says: ${userMessage || 'check this out'}\n[They sent an image — react to it like a friend would.]`);
-  } else {
-    parts.push(`Your creator says: ${userMessage}`);
-  }
-  const prompt = parts.join('\n\n');
-
-  if (provider === 'openai') {
-    // Build user content — text only or text + image
-    let userContent: UserContent;
-    if (imageUrl) {
-      userContent = [
-        { type: 'text', text: prompt },
-        { type: 'image_url', image_url: { url: imageUrl, detail: 'low' } },
-      ];
-    } else {
-      userContent = prompt;
-    }
-
-    const messages: OpenAI.ChatCompletionMessageParam[] = [
-      { role: 'system', content: CREATOR_SYSTEM_PROMPT },
-      { role: 'user', content: userContent },
-    ];
-
-    const openai = getOpenAI();
-    const response = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || 'gpt-5.4-mini',
-      messages,
-      max_completion_tokens: 100,
-      temperature: 1.2,
-    });
-    return response.choices[0]?.message?.content ?? null;
-  }
-
-  const ollamaMessages: OllamaMessage[] = [
-    { role: 'system', content: CREATOR_SYSTEM_PROMPT },
-    { role: 'user', content: prompt },
-  ];
-
-  const ollama = new Ollama({ host: process.env.OLLAMA_HOST || 'http://localhost:11434' });
-  const response = await ollama.chat({ model: process.env.OLLAMA_MODEL || 'llama3.1:8b', messages: ollamaMessages });
-  return response.message.content;
-}
-
-// --- Provider implementations ---
-
-async function queryOllama(prompt: string, systemPrompt: string): Promise<string | null> {
-  const ollama = new Ollama({
-    host: process.env.OLLAMA_HOST || 'http://localhost:11434',
-  });
-
-  const messages: OllamaMessage[] = [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: prompt },
-  ];
-
-  const response = await ollama.chat({
-    model: process.env.OLLAMA_MODEL || 'llama3.1:8b',
-    messages,
-  });
-
-  return response.message.content;
-}
-
-async function queryOpenAI(prompt: string, systemPrompt: string, imageUrl: string | null = null, maxTokens?: number, overrideTemperature?: number): Promise<string | null> {
-  // Guard against empty user content — API rejects empty messages
-  if (!prompt?.trim() && !imageUrl) {
-    console.error('queryOpenAI called with empty prompt and no image');
-    return null;
-  }
-
-  const openai = getOpenAI();
-
-  // Build user content — text only or text + image
-  let userContent: UserContent;
-  if (imageUrl) {
-    userContent = [
-      { type: 'text', text: prompt },
-      { type: 'image_url', image_url: { url: imageUrl, detail: 'low' } },
-    ];
-  } else {
-    userContent = prompt;
-  }
-
-  const messages: OpenAI.ChatCompletionMessageParam[] = [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: userContent },
-  ];
-
-  // Use mood-adjusted temperature if provided, otherwise default
-  const temperature = overrideTemperature ?? 1.2;
-
-  const response = await openai.chat.completions.create({
-    model: process.env.OPENAI_MODEL || 'gpt-5.4-mini',
-    messages,
-    max_completion_tokens: maxTokens ?? 100,
-    temperature,
-  });
-
-  return response.choices[0]?.message?.content ?? null;
-}
-
-const PROFILE_SYSTEM_PROMPT = `You are analyzing a Discord user's behavior to assign them a personality profile. You are Sass — sassy, brutal, funny.
+export const PROFILE_SYSTEM_PROMPT = `You are analyzing a Discord user's behavior to assign them a personality profile. You are Sass — sassy, brutal, funny.
 
 Score each dimension 1-10 based on their messages:
 - chaos: how random, unhinged, or chaotic they are
@@ -593,24 +317,3 @@ clown:N
 brain:N
 archetype:Name
 roast:One brutal sentence summarizing this person`;
-
-export async function analyzeProfile(userName: string, messages: string): Promise<string | null> {
-  const prompt = `Analyze ${userName}'s personality based on these messages:\n\n${messages}`;
-  const provider = process.env.AI_PROVIDER || 'ollama';
-
-  if (provider === 'openai') {
-    const openai = getOpenAI();
-    const response = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || 'gpt-5.4-mini',
-      messages: [
-        { role: 'system', content: PROFILE_SYSTEM_PROMPT },
-        { role: 'user', content: prompt },
-      ],
-      max_completion_tokens: 150,
-      temperature: 1.0,
-    });
-    return response.choices[0]?.message?.content ?? null;
-  }
-
-  return queryOllama(prompt, PROFILE_SYSTEM_PROMPT);
-}

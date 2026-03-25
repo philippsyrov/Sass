@@ -4,7 +4,7 @@ import {
   type GuildMember,
   type TextChannel,
 } from 'discord.js';
-import { getAutoSassDecision, getReactionDecision, getConversationJoin, queryAI, pickCustomReaction } from '../ai.js';
+import { getAutoSassDecision, getReactionDecision, getConversationJoin, queryAI, pickCustomReaction } from '../ai/index.js';
 import { messageBuffer } from '../messageBuffer.js';
 import * as userMemory from '../userMemory.js';
 import { isOnAutoSassCooldown, setAutoSassCooldown, isOnGuildAutoSassCooldown, setGuildAutoSassCooldown } from '../cooldown.js';

@@ -6,7 +6,7 @@ import {
   ComponentType,
   type ChatInputCommandInteraction,
 } from 'discord.js';
-import { queryAI } from '../ai.js';
+import { queryAI } from '../ai/index.js';
 import * as userMemory from '../userMemory.js';
 import { logInteraction, getTopReactions } from '../database/index.js';
 import * as mood from '../mood.js';

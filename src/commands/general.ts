@@ -5,7 +5,7 @@ import {
   ComponentType,
   type ChatInputCommandInteraction,
 } from 'discord.js';
-import { queryAI } from '../ai.js';
+import { queryAI } from '../ai/index.js';
 import { buildHelpPages } from '../helpPages.js';
 import { getActivityDescription } from '../shared/commandUtils.js';
 import { FORTUNES, QUOTE_AUTHORS } from '../commandDefinitions.js';

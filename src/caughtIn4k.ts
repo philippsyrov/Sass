@@ -1,4 +1,4 @@
-import { queryAI } from './ai.js';
+import { queryAI } from './ai/index.js';
 import { storeMemory, searchMemories } from './vectorMemory.js';
 import type { ContradictionResult } from './types.js';
 

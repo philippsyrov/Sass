@@ -3,7 +3,7 @@ import {
   type Message,
   type ThreadChannel,
 } from 'discord.js';
-import { queryAI } from './ai.js';
+import { queryAI } from './ai/index.js';
 import { getScoreBar } from './emoji.js';
 import type { BattleState } from './types.js';
 
