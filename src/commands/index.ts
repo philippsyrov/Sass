@@ -1,5 +1,5 @@
 import { type ChatInputCommandInteraction } from 'discord.js';
-import { logCommand } from '../database.js';
+import { logCommand } from '../database/index.js';
 import { handleGeneralCommand } from './general.js';
 import { handleSocialCommand } from './social.js';
 import { handleEntertainmentCommand } from './entertainment.js';

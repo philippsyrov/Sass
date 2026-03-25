@@ -5,7 +5,7 @@ import {
 } from 'discord.js';
 import { queryAI, analyzeProfile } from '../ai.js';
 import * as userMemory from '../userMemory.js';
-import { logCommand, getAffinity } from '../database.js';
+import { logCommand, getAffinity } from '../database/index.js';
 import { getShipScore, getPairInteractions, warmPairCache } from '../shipScore.js';
 import { generateShipImage } from '../shipImage.js';
 

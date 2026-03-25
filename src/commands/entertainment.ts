@@ -8,7 +8,7 @@ import {
 } from 'discord.js';
 import { queryAI } from '../ai.js';
 import * as userMemory from '../userMemory.js';
-import { logInteraction, getTopReactions } from '../database.js';
+import { logInteraction, getTopReactions } from '../database/index.js';
 import * as mood from '../mood.js';
 import { hasUsedToday, markUsedToday } from '../shared/commandUtils.js';
 import { activeBattles } from '../roastBattle.js';

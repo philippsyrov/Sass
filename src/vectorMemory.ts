@@ -7,7 +7,7 @@
  */
 
 import OpenAI from 'openai';
-import { getPool, isDatabaseConnected } from './database.js';
+import { getPool, isDatabaseConnected } from './database/index.js';
 import type { MemoryType, SearchResult, MemoryRow } from './types.js';
 
 let openaiClient: OpenAI | null = null;

@@ -5,7 +5,7 @@ import { handleAutoSass } from './handlers/autoSass.js';
 import { handleCommand, handleBattleMessage } from './commands/index.js';
 import { messageBuffer } from './messageBuffer.js';
 import * as userMemory from './userMemory.js';
-import { initDatabase, closeDatabase, logReaction, updateAffinity } from './database.js';
+import { initDatabase, closeDatabase, logReaction, updateAffinity } from './database/index.js';
 import { queryAI } from './ai.js';
 import { isOnSlashCooldown, setSlashCooldown, isOnShipCooldown, setShipCooldown } from './cooldown.js';
 import { recordPairInteraction } from './shipScore.js';

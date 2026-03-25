@@ -8,7 +8,7 @@
  * All other methods query/write directly.
  */
 
-import { getPool, isDatabaseConnected } from './database.js';
+import { getPool, isDatabaseConnected } from './database/index.js';
 import type {
   UserData, ColdShoulderStatus, WildQuote, BeefRecord,
   LeaderboardEntry, ServerStats, BufferEntry,

@@ -17,7 +17,7 @@ import { storeMemory, searchMemories } from '../vectorMemory.js';
 import { buildHelpPages } from '../helpPages.js';
 import * as mood from '../mood.js';
 import { extractStatement, checkContradiction, generate4kCallout, storeStatement } from '../caughtIn4k.js';
-import { logInteraction, updateAffinity, getAffinity } from '../database.js';
+import { logInteraction, updateAffinity, getAffinity } from '../database/index.js';
 import { recordResponse, getRecentResponses } from '../responseMemory.js';
 // Ship score imports removed — ship is now slash-only
 

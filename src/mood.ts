@@ -6,7 +6,7 @@
  * Decays over time toward neutral.
  */
 
-import { getPool, isDatabaseConnected } from './database.js';
+import { getPool, isDatabaseConnected } from './database/index.js';
 import type { MoodType, MoodEvent, MoodState, MoodStatus } from './types.js';
 
 // --- Per-guild lock to serialize read-modify-write mood shifts ---

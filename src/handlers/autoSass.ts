@@ -10,7 +10,7 @@ import * as userMemory from '../userMemory.js';
 import { isOnAutoSassCooldown, setAutoSassCooldown, isOnGuildAutoSassCooldown, setGuildAutoSassCooldown } from '../cooldown.js';
 import { getActivityDescription } from '../shared/commandUtils.js';
 import * as mood from '../mood.js';
-import { logInteraction, wasActivityRoastedRecently, setActivityRoasted } from '../database.js';
+import { logInteraction, wasActivityRoastedRecently, setActivityRoasted } from '../database/index.js';
 import { recordResponse, getRecentResponses } from '../responseMemory.js';
 
 // Track message count per channel since last auto-sass
