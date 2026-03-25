@@ -106,6 +106,8 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
     case 'dare':
     case 'confess':
     case 'predict':
+    case 'forgetme':
+    case 'conspiracy':
       return handleEntertainmentCommand(interaction, commandName, guildId);
 
     default:

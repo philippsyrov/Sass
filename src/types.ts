@@ -131,6 +131,9 @@ export interface InteractionLog {
   mood: string;
   moodIntensity: number;
   context?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  affinity?: number;
 }
 
 export interface MoodLog {

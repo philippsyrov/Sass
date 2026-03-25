@@ -341,6 +341,7 @@ export async function handleMention(message: Message, client: Client): Promise<v
       userMessage: cleanContent, sassResponse: response,
       mood: moodStatus.mood, moodIntensity: moodStatus.intensity,
       context: fullContext,
+      affinity,
     }).catch((err) => console.error('Log interaction failed:', (err as Error).message));
 
     // Bump affinity for genuine exchange (+0.5, max once per 10 min per user)

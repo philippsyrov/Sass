@@ -8,6 +8,8 @@ import * as userMemory from '../userMemory.js';
 import { logCommand, getAffinity } from '../database/index.js';
 import { getShipScore, getPairInteractions, warmPairCache } from '../shipScore.js';
 import { generateShipImage } from '../shipImage.js';
+import { messageBuffer } from '../messageBuffer.js';
+import { getUserMemories } from '../vectorMemory.js';
 
 export async function handleSocialCommand(
   interaction: ChatInputCommandInteraction,
@@ -153,6 +155,13 @@ export async function handleSocialCommand(
         }
 
         await interaction.editReply({ embeds: [embed], files });
+
+        // Inject into message buffer so Sass can see slash command results
+        const channelId = interaction.channelId;
+        const tierLabel = isShipWithSass
+          ? (percent >= 96 ? 'ride or die' : percent >= 86 ? 'favorite' : percent >= 71 ? 'liked' : percent >= 51 ? 'familiar' : 'acquaintance')
+          : (percent >= 80 ? 'power couple' : percent >= 60 ? 'close' : percent >= 40 ? 'friends' : 'acquaintances');
+        messageBuffer.injectBotMessage(channelId, `[Sass /ship result: ${user1.displayName} x ${user2.displayName} = ${percent}%, tier: ${tierLabel}]`);
       } catch (err) {
         console.error('Ship command failed:', (err as Error).message);
         await interaction.editReply(
@@ -219,8 +228,27 @@ export async function handleSocialCommand(
           .slice(0, 30);
 
         if (userMsgs.length < 3) {
-          await interaction.editReply(`${targetName} barely talks. can't profile a ghost.`);
-          break;
+          // Supplement with vector memory + stored facts
+          const [memories, facts] = await Promise.all([
+            getUserMemories(guildId, targetId),
+            userMemory.getFacts(guildId, targetId),
+          ]);
+
+          const supplementLines: string[] = [...userMsgs];
+          for (const mem of memories) {
+            supplementLines.push(`[memory] ${mem.content}`);
+          }
+          for (const fact of facts) {
+            supplementLines.push(`[fact] ${fact}`);
+          }
+
+          if (supplementLines.length < 3) {
+            await interaction.editReply(`${targetName} barely talks. can't profile a ghost.`);
+            break;
+          }
+
+          // Use supplemented data instead
+          userMsgs.push(...supplementLines.slice(userMsgs.length));
         }
 
         const raw = await analyzeProfile(targetName, userMsgs.join('\n'));
@@ -260,6 +288,7 @@ export async function handleSocialCommand(
           `*${roast}*`,
         ];
         await interaction.editReply(profile.join('\n'));
+        messageBuffer.injectBotMessage(interaction.channelId, `[Sass /profile result: ${targetName} — archetype: ${archetype}, roast: ${roast}]`);
         logCommand({ serverId: guildId, userId: interaction.user.id, commandName: 'profile', commandType: 'slash' }).catch((err) => console.error('Log command failed:', (err as Error).message));
       } catch (err) {
         console.error('Profile command failed:', (err as Error).message);

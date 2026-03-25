@@ -9,6 +9,7 @@ import { queryAI } from '../ai/index.js';
 import { buildHelpPages } from '../helpPages.js';
 import { getActivityDescription } from '../shared/commandUtils.js';
 import { FORTUNES, QUOTE_AUTHORS } from '../commandDefinitions.js';
+import { messageBuffer } from '../messageBuffer.js';
 
 export async function handleGeneralCommand(
   interaction: ChatInputCommandInteraction,
@@ -78,6 +79,7 @@ export async function handleGeneralCommand(
           systemPrompt: 'You generate hot takes. ONE sentence max. Under 15 words. Controversial but not bigoted. Lowercase. No essays.',
         });
         await interaction.editReply(`\u{1F525} **hot take:**\n${response}`);
+        messageBuffer.injectBotMessage(interaction.channelId, `[Sass /hottake result: ${response}]`);
       } catch (err) {
         console.error('Hottake command failed:', (err as Error).message);
         await interaction.editReply("\u{1F525} **hot take:**\nthis command failing is still more interesting than your personality");

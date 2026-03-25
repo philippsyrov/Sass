@@ -8,10 +8,12 @@ import {
 } from 'discord.js';
 import { queryAI } from '../ai/index.js';
 import * as userMemory from '../userMemory.js';
-import { logInteraction, getTopReactions } from '../database/index.js';
+import { logInteraction, getTopReactions, deleteUserData, getAffinity } from '../database/index.js';
 import * as mood from '../mood.js';
 import { hasUsedToday, markUsedToday } from '../shared/commandUtils.js';
 import { activeBattles } from '../roastBattle.js';
+import { messageBuffer } from '../messageBuffer.js';
+import { searchMemories } from '../vectorMemory.js';
 
 // --- Zodiac emoji helper ---
 function getZodiacEmoji(sign: string): string {
@@ -43,6 +45,7 @@ export async function handleEntertainmentCommand(
         if (!response) throw new Error('Empty response');
         markUsedToday(guildId, interaction.user.id, 'horoscope');
         await interaction.editReply(`${getZodiacEmoji(sign)} **${sign}** \u2014 daily reading\n\n${response}`);
+        messageBuffer.injectBotMessage(interaction.channelId, `[Sass /horoscope result for ${sign}: ${response?.slice(0, 80)}...]`);
       } catch (err) {
         console.error('Horoscope command failed:', (err as Error).message);
         await interaction.editReply(`${getZodiacEmoji(sign)} **${sign}**: the stars tried to read your future but fell asleep. that's the reading.`);
@@ -276,6 +279,7 @@ export async function handleEntertainmentCommand(
         if (channel && 'send' in channel) {
           await channel.send(`\u{1F4E9} **ANONYMOUS CONFESSION** for <@${targetUser.id}>:\n\n> *"${confession}"*\n\n${commentary ?? "someone couldn't find the guts to say this themselves. shocking."}`).catch((err) => console.error('Confess message send failed:', (err as Error).message));
           markUsedToday(guildId, interaction.user.id, 'confess');
+          const confessAffinity = await getAffinity(guildId, interaction.user.id);
           logInteraction({
             serverId: interaction.guild?.id ?? '',
             serverName: interaction.guild?.name ?? '',
@@ -289,6 +293,7 @@ export async function handleEntertainmentCommand(
             sassResponse: commentary ?? '',
             mood: (await mood.getStatus(guildId)).mood,
             moodIntensity: (await mood.getStatus(guildId)).intensity,
+            affinity: confessAffinity,
           }).catch((err) => console.error('DB log failed:', err.message));
         }
       } catch (err) {
@@ -338,6 +343,115 @@ export async function handleEntertainmentCommand(
       } catch (err) {
         console.error('Predict command failed:', (err as Error).message);
         await interaction.editReply(`the crystal ball showed me ${targetUser.displayName}'s future and honestly? it cracked. that's the prediction.`);
+      }
+      break;
+    }
+
+    case 'forgetme': {
+      // Confirmation step using buttons
+      const confirmRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder().setCustomId('forgetme_confirm').setLabel('Yes, delete everything').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('forgetme_cancel').setLabel('Never mind').setStyle(ButtonStyle.Secondary),
+      );
+      const warning = await interaction.reply({
+        content: '⚠️ **are you sure?** this will permanently delete:\n' +
+          '- your affinity score (back to 50%)\n' +
+          '- all remembered facts about you\n' +
+          '- all vector memories\n' +
+          '- all beef records\n' +
+          '- all pair interactions\n' +
+          '- all wild quotes\n\n' +
+          '**this cannot be undone.**',
+        components: [confirmRow],
+        ephemeral: true,
+        fetchReply: true,
+      }).catch((err) => { console.error('Forgetme reply failed:', (err as Error).message); return null; });
+      if (!warning) break;
+
+      const collector = warning.createMessageComponentCollector({
+        componentType: ComponentType.Button,
+        time: 30_000,
+      });
+
+      collector.on('collect', async (btn) => {
+        if (btn.customId === 'forgetme_cancel') {
+          await btn.update({ content: 'smart choice. your data lives another day.', components: [] }).catch((err) => console.error('Forgetme cancel failed:', (err as Error).message));
+          return;
+        }
+        if (btn.customId === 'forgetme_confirm') {
+          const result = await deleteUserData(guildId, interaction.user.id);
+          if (result.deleted) {
+            await btn.update({
+              content: `done. wiped everything. ${result.tables.length > 0 ? `cleared: ${result.tables.join(', ')}` : 'nothing to delete — you were already a ghost.'}`,
+              components: [],
+            }).catch((err) => console.error('Forgetme confirm failed:', (err as Error).message));
+          } else {
+            await btn.update({ content: "something went wrong deleting your data. try again later.", components: [] }).catch((err) => console.error('Forgetme error failed:', (err as Error).message));
+          }
+        }
+      });
+
+      collector.on('end', async (collected) => {
+        if (collected.size === 0) {
+          try { await interaction.editReply({ content: 'timed out. your data is safe... for now.', components: [] }); } catch { /* expired */ }
+        }
+      });
+      break;
+    }
+
+    case 'conspiracy': {
+      await interaction.deferReply();
+      const topic = interaction.options.getString('topic');
+
+      try {
+        // Pull semantic connections from vector memory
+        const searchQuery = topic ?? 'secrets drama relationships lies connections suspicious';
+        const memories = await searchMemories(searchQuery, { guildId, limit: 8 });
+
+        // Get active users for name material
+        const guild = interaction.guild;
+        const members = guild?.members.cache
+          .filter((m) => !m.user.bot)
+          .map((m) => m.displayName)
+          .slice(0, 15) ?? [];
+
+        const memoryContext = memories.length > 0
+          ? `Known facts from this server's memory:\n${memories.map((m) => `- ${m.content} (about user ${m.userId})`).join('\n')}`
+          : '';
+
+        const prompt = [
+          `Generate an unhinged conspiracy theory connecting people in this Discord server.`,
+          topic ? `Seed topic: "${topic}"` : null,
+          members.length > 0 ? `Server members you can use: ${members.join(', ')}` : null,
+          memoryContext,
+          `Rules:`,
+          `- Use REAL member names from the list above`,
+          `- Connect at least 3 people in the theory`,
+          `- Reference any relevant facts from memory if available`,
+          `- Make it absurd but specific — not generic`,
+          `- 3-5 sentences max`,
+          `- End with a dramatic "coincidence? i think not." or similar`,
+        ].filter(Boolean).join('\n');
+
+        const response = await queryAI(prompt, {
+          systemPrompt: 'You are Sass, a conspiracy theorist bot. Generate unhinged but funny conspiracy theories about Discord server members. Use their real names. Lowercase. Be specific and creative. Reference facts when available.',
+          maxTokens: 250,
+        });
+
+        if (!response) throw new Error('Empty response');
+
+        const embed = new EmbedBuilder()
+          .setColor(0x2F3136)
+          .setTitle(`🕵️ CONSPIRACY — ${topic?.toUpperCase() ?? 'CLASSIFIED'}`)
+          .setDescription(response)
+          .setFooter({ text: 'sass intelligence agency — classified document' })
+          .setTimestamp();
+
+        await interaction.editReply({ embeds: [embed] });
+        messageBuffer.injectBotMessage(interaction.channelId, `[Sass /conspiracy result: ${response.slice(0, 80)}...]`);
+      } catch (err) {
+        console.error('Conspiracy command failed:', (err as Error).message);
+        await interaction.editReply("i tried to connect the dots but the dots filed a restraining order.");
       }
       break;
     }

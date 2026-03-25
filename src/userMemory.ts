@@ -350,7 +350,7 @@ export async function remember(guildId: string, userId: string, fact: string): P
          ON CONFLICT (server_id, user_id) DO UPDATE SET
            facts = (SELECT array_agg(f) FROM (
              SELECT unnest(array_append(users.facts, $3)) AS f
-           ) sub OFFSET GREATEST(0, array_length(array_append(users.facts, $3), 1) - 10)),
+           ) sub OFFSET GREATEST(0, array_length(array_append(users.facts, $3), 1) - 20)),
            gender = $4`,
         [guildId, userId, fact, gender]
       );
@@ -361,7 +361,7 @@ export async function remember(guildId: string, userId: string, fact: string): P
          ON CONFLICT (server_id, user_id) DO UPDATE SET
            facts = (SELECT array_agg(f) FROM (
              SELECT unnest(array_append(users.facts, $3)) AS f
-           ) sub OFFSET GREATEST(0, array_length(array_append(users.facts, $3), 1) - 10))`,
+           ) sub OFFSET GREATEST(0, array_length(array_append(users.facts, $3), 1) - 20))`,
         [guildId, userId, fact]
       );
     }

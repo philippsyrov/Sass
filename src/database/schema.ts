@@ -330,6 +330,10 @@ export async function createSchema(): Promise<void> {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS affinity_gain_date DATE DEFAULT CURRENT_DATE;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS last_activity_roast TIMESTAMPTZ;
 
+    ALTER TABLE interactions ADD COLUMN IF NOT EXISTS prompt_tokens INTEGER;
+    ALTER TABLE interactions ADD COLUMN IF NOT EXISTS completion_tokens INTEGER;
+    ALTER TABLE interactions ADD COLUMN IF NOT EXISTS affinity REAL;
+
     CREATE TABLE IF NOT EXISTS wild_quotes (
       id SERIAL PRIMARY KEY,
       server_id TEXT NOT NULL,

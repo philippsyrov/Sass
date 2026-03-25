@@ -60,6 +60,36 @@ class MessageBuffer {
     const buffer = this.channels.get(channelId) || [];
     return buffer.slice(-count);
   }
+
+  /**
+   * Inject a system/bot message into the buffer so Sass can see slash command results.
+   * Used after slash commands output embeds that Sass can't otherwise see.
+   */
+  injectBotMessage(channelId: string, summary: string): void {
+    if (!this.channels.has(channelId)) {
+      if (this.channels.size >= MAX_TRACKED_CHANNELS) {
+        const oldest = this.channels.keys().next().value;
+        if (oldest !== undefined) {
+          this.channels.delete(oldest);
+        }
+      }
+      this.channels.set(channelId, []);
+    }
+
+    const buffer = this.channels.get(channelId);
+    if (!buffer) return;
+    buffer.push({
+      authorId: 'system',
+      author: 'Sass',
+      content: summary,
+      timestamp: Date.now(),
+      isBot: true,
+    });
+
+    if (buffer.length > MAX_MESSAGES_PER_CHANNEL) {
+      buffer.shift();
+    }
+  }
 }
 
 export const messageBuffer = new MessageBuffer();

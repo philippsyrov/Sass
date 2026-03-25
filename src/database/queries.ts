@@ -103,6 +103,45 @@ export async function getTrainingData(limit = 1000): Promise<TrainingDataRow[]> 
 }
 
 /**
+ * Delete all data for a user in a guild — for /forgetme command.
+ * Removes from users, vector_memories, beefs, pair_interactions.
+ */
+export async function deleteUserData(guildId: string, userId: string): Promise<{ deleted: boolean; tables: string[] }> {
+  if (!isDatabaseConnected()) return { deleted: false, tables: [] };
+  const pool = getPool();
+  if (!pool) return { deleted: false, tables: [] };
+
+  const deletedTables: string[] = [];
+  try {
+    const userResult = await pool.query('DELETE FROM users WHERE server_id = $1 AND user_id = $2', [guildId, userId]);
+    if ((userResult.rowCount ?? 0) > 0) deletedTables.push('users');
+
+    const vmResult = await pool.query('DELETE FROM vector_memories WHERE server_id = $1 AND user_id = $2', [guildId, userId]);
+    if ((vmResult.rowCount ?? 0) > 0) deletedTables.push('vector_memories');
+
+    const beefResult = await pool.query(
+      'DELETE FROM beefs WHERE server_id = $1 AND (user1_id = $2 OR user2_id = $2)',
+      [guildId, userId]
+    );
+    if ((beefResult.rowCount ?? 0) > 0) deletedTables.push('beefs');
+
+    const pairResult = await pool.query(
+      'DELETE FROM pair_interactions WHERE server_id = $1 AND (user1_id = $2 OR user2_id = $2)',
+      [guildId, userId]
+    );
+    if ((pairResult.rowCount ?? 0) > 0) deletedTables.push('pair_interactions');
+
+    const wqResult = await pool.query('DELETE FROM wild_quotes WHERE server_id = $1 AND user_id = $2', [guildId, userId]);
+    if ((wqResult.rowCount ?? 0) > 0) deletedTables.push('wild_quotes');
+
+    return { deleted: true, tables: deletedTables };
+  } catch (err) {
+    console.error('deleteUserData failed:', (err as Error).message);
+    return { deleted: false, tables: [] };
+  }
+}
+
+/**
  * Get top reactions for Sass's messages — for /bestof command.
  */
 export async function getTopReactions(guildId: string, limit = 5): Promise<Array<{ sassResponse: string; userMessage: string; username: string; reactionCount: number }>> {

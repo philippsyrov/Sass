@@ -13,7 +13,7 @@
 import { getBeef } from './userMemory.js';
 import { recordPairInteractionDB, getPairInteractionCountDB, isDatabaseConnected } from './database/index.js';
 
-const BEEF_PENALTY_PER_INCIDENT = 3;  // each beef lowers score by 3%
+const BEEF_PENALTY_PER_INCIDENT = 2;  // each beef lowers score by 2%
 const MAX_BEEF_PENALTY = 30;          // cap so beefs don't zero out the score
 const INTERACTION_BOOST_PER = 0.5;    // each interaction boosts score by 0.5%
 const MAX_INTERACTION_BOOST = 40;     // cap boost at +40%

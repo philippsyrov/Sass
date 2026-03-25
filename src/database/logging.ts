@@ -14,12 +14,13 @@ export async function logInteraction({
   serverId, serverName, channelId, channelName,
   userId, username, triggerType, commandName,
   userMessage, sassResponse, mood, moodIntensity, context,
+  promptTokens, completionTokens, affinity,
 }: InteractionLog): Promise<void> {
   if (!isDatabaseConnected()) return;
   const pool = getPool();
   if (!pool) return;
 
-  // Rough token estimate: ~4 chars per token
+  // Rough token estimate: ~4 chars per token (fallback when real tokens not available)
   const tokensEstimate = Math.ceil(
     ((userMessage || '').length + (sassResponse || '').length) / 4
   );
@@ -28,10 +29,12 @@ export async function logInteraction({
     await pool.query(
       `INSERT INTO interactions
         (server_id, server_name, channel_id, channel_name, user_id, username,
-         trigger_type, command_name, user_message, sass_response, mood, mood_intensity, tokens_estimate, context)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+         trigger_type, command_name, user_message, sass_response, mood, mood_intensity,
+         tokens_estimate, context, prompt_tokens, completion_tokens, affinity)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
       [serverId, serverName, channelId, channelName, userId, username,
-       triggerType, commandName, userMessage, sassResponse, mood, moodIntensity, tokensEstimate, context]
+       triggerType, commandName, userMessage, sassResponse, mood, moodIntensity,
+       tokensEstimate, context, promptTokens ?? null, completionTokens ?? null, affinity ?? null]
     );
   } catch (err) {
     console.error('Failed to log interaction:', (err as Error).message);

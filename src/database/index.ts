@@ -15,7 +15,7 @@ export { closeDatabase, isDatabaseConnected, getPool } from './pool.js';
 export { logInteraction, logMoodShift, logCommand, logReaction } from './logging.js';
 
 // Re-export query functions
-export { recordPairInteractionDB, getPairInteractionCountDB, getStats, getTrainingData, getTopReactions } from './queries.js';
+export { recordPairInteractionDB, getPairInteractionCountDB, getStats, getTrainingData, getTopReactions, deleteUserData } from './queries.js';
 
 // Re-export affinity functions
 export { updateAffinity, getAffinity, wasActivityRoastedRecently, setActivityRoasted } from './affinity.js';

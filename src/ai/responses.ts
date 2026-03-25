@@ -61,7 +61,12 @@ export async function getAutoSassDecision(recentContext: string, responseHistory
   const parts = [
     `Here's what people have been saying in a Discord channel:\n\n${recentContext}`,
     responseHistory,
-    `You just overheard this conversation. Decide if there's something worth roasting or commenting on. If yes, drop a short sassy remark. If the conversation is boring or mundane, respond with exactly "SKIP" and nothing else. Remember: NEVER quote their messages back. Just react to the vibe.`,
+    `You just overheard this conversation. Decide if there's something worth roasting or commenting on. If yes, drop a short sassy remark. If the conversation is boring or mundane, respond with exactly "SKIP" and nothing else. Remember: NEVER quote their messages back. Just react to the vibe.
+
+IMPORTANT RULES:
+- If the conversation is mostly about images, attachments, or embeds you can't see, say "SKIP". You CANNOT see images in this mode — don't pretend you can or guess what they show.
+- NEVER start with filler words like "nah," "yeah," "honestly," "lol," "not gonna lie". Lead with personality.
+- If you don't know what "it" or "that" refers to, say "SKIP" rather than guessing.`,
   ].filter(Boolean);
 
   return queryAI(parts.join('\n\n'));
@@ -92,7 +97,9 @@ SKIP — say nothing:
 - Silence is better than a forced response. A real person doesn't comment on everything.
 - NEVER respond with just "okay", "cool", "lol", or "noted" — that's filler, not conversation. Either say something worth reading or SKIP.
 
-Be natural and casual. Short (3-10 words). Lowercase. You're a participant, not a comedian right now. Lean toward SKIP more than you think — less is more.`,
+Be natural and casual. Short (3-10 words). Lowercase. You're a participant, not a comedian right now. Lean toward SKIP more than you think — less is more.
+
+IMPORTANT: You CANNOT see images or embed content. If the conversation is mostly about images or things you can't see, say "SKIP". NEVER start with filler words like "nah," "yeah," "honestly," "lol". Lead with personality, not filler.`,
   ].filter(Boolean);
 
   return queryAI(parts.join('\n\n'));

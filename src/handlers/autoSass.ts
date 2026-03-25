@@ -10,8 +10,9 @@ import * as userMemory from '../userMemory.js';
 import { isOnAutoSassCooldown, setAutoSassCooldown, isOnGuildAutoSassCooldown, setGuildAutoSassCooldown } from '../cooldown.js';
 import { getActivityDescription } from '../shared/commandUtils.js';
 import * as mood from '../mood.js';
-import { logInteraction, wasActivityRoastedRecently, setActivityRoasted } from '../database/index.js';
+import { logInteraction, wasActivityRoastedRecently, setActivityRoasted, getAffinity } from '../database/index.js';
 import { recordResponse, getRecentResponses } from '../responseMemory.js';
+import { UTILITY_SYSTEM_PROMPT } from '../ai/prompts.js';
 
 // Track message count per channel since last auto-sass
 const messageCounters = new Map<string, { count: number; lastSeen: number }>();
@@ -25,6 +26,56 @@ setInterval(() => {
     if (now - entry.lastSeen > STALE_CHANNEL_MS) messageCounters.delete(id);
   }
 }, 30 * 60 * 1000);
+
+/**
+ * Quality gate: ask AI if a response is worth sending.
+ * Returns true if the response passes, false if it should be skipped.
+ */
+async function passesQualityGate(response: string): Promise<boolean> {
+  // Short responses that are clearly filler — skip without AI call
+  const lower = response.trim().toLowerCase();
+  const FILLER = ['sure', 'checks out', 'real', 'valid', 'that tracks', 'cool', 'okay', 'nice', 'true', 'fair', 'mood', 'same', 'lol'];
+  if (FILLER.includes(lower)) return false;
+
+  // Very short responses (1-2 words) that aren't punchy — skip
+  if (response.trim().split(/\s+/).length <= 2 && !/[!?]/.test(response)) {
+    return false;
+  }
+
+  try {
+    const verdict = await queryAI(
+      `Rate this Discord auto-sass response on a scale of 1-10 for being funny, witty, or adding to a conversation. Just respond with the number.\n\nResponse: "${response}"`,
+      { systemPrompt: UTILITY_SYSTEM_PROMPT, maxTokens: 5 }
+    );
+    const score = parseInt(verdict?.trim() ?? '0', 10);
+    return score >= 5;
+  } catch {
+    // If quality check fails, let it through
+    return true;
+  }
+}
+
+/**
+ * Build affinity context string for active users in a channel.
+ */
+async function buildAffinityContext(guildId: string, recentMessages: { authorId: string; author: string; isBot: boolean }[]): Promise<string> {
+  const seen = new Set<string>();
+  const parts: string[] = [];
+
+  for (const msg of recentMessages) {
+    if (msg.isBot || seen.has(msg.authorId)) continue;
+    seen.add(msg.authorId);
+    const affinity = await getAffinity(guildId, msg.authorId);
+    const tier = affinity >= 86 ? 'favorite — be warm/playful'
+      : affinity >= 71 ? 'liked — friendly teasing'
+      : affinity >= 51 ? 'familiar — standard sass'
+      : affinity >= 31 ? 'acquaintance — keep distance'
+      : 'cold — dismissive/short';
+    parts.push(`${msg.author}: ${Math.round(affinity)}% (${tier})`);
+  }
+
+  return parts.length > 0 ? `AFFINITY LEVELS:\n${parts.join('\n')}` : '';
+}
 
 const AUTO_SASS_CHANCE = parseFloat(process.env.AUTO_SASS_CHANCE ?? '0.55') || 0.55;
 const MIN_MESSAGES = parseInt(process.env.AUTO_SASS_MIN_MESSAGES ?? '2', 10) || 2;
@@ -200,6 +251,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
             recordResponse(channelId, roast);
             userMemory.recordRoast(guildId, target.user.id).catch((err) => console.error('Record roast failed:', (err as Error).message));
             const moodInfo = await mood.getStatus(guildId);
+            const targetAffinity = await getAffinity(guildId, target.user.id);
             logInteraction({
               serverId: message.guild?.id, serverName: message.guild?.name,
               channelId: channel.id, channelName: channel.name,
@@ -207,6 +259,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
               triggerType: 'auto-sass-activity', commandName: null,
               userMessage: activity, sassResponse: roast,
               mood: moodInfo.mood, moodIntensity: moodInfo.intensity,
+              affinity: targetAffinity,
             }).catch((err) => console.error('DB log failed:', (err as Error).message));
             return;
           }
@@ -224,6 +277,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
     (msg) => `${msg.author}${msg.isBot ? ' [BOT]' : ''}: ${msg.content}`
   ).join('\n');
   const peopleContext = await userMemory.buildPeopleContext(guildId, recentMessages);
+  const affinityContext = await buildAffinityContext(guildId, recentMessages);
   const responseHistory = getRecentResponses(channelId);
 
   // Roll for response type
@@ -297,6 +351,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
         await message.reply(reaction).catch((err) => console.error('Reply failed:', (err as Error).message));
         recordResponse(channelId, reaction);
         const moodStatus = await mood.getStatus(guildId);
+        const userAffinity = await getAffinity(guildId, message.author.id);
         logInteraction({
           serverId: message.guild?.id, serverName: message.guild?.name,
           channelId: channel.id, channelName: channel.name,
@@ -304,6 +359,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
           triggerType: 'auto-sass-short', commandName: null,
           userMessage: message.content, sassResponse: reaction,
           mood: moodStatus.mood, moodIntensity: moodStatus.intensity,
+          affinity: userAffinity,
         }).catch((err) => console.error('DB log failed:', (err as Error).message));
         return;
       }
@@ -311,18 +367,22 @@ export async function handleAutoSass(message: Message, _client: Client, options:
 
     // 25% — Join conversation (not a roast)
     if (roll >= 0.40 && roll < 0.65) {
-      const contextWithPeople = peopleContext ? `${peopleContext}\n\n${recentContext}` : recentContext;
+      const contextWithPeople = [peopleContext, affinityContext, recentContext].filter(Boolean).join('\n\n');
       const joinRemark = await getConversationJoin(contextWithPeople, responseHistory);
 
       if (joinRemark && joinRemark.trim().toUpperCase() !== 'SKIP') {
+        // Quality gate — skip filler responses
+        if (!(await passesQualityGate(joinRemark))) return;
+
         setAutoSassCooldown(channelId);
-            setGuildAutoSassCooldown(guildId);
+        setGuildAutoSassCooldown(guildId);
         await channel.sendTyping().catch((err) => console.error('sendTyping failed:', (err as Error).message));
         const delay = 1000 + Math.random() * 2000;
         await new Promise((resolve) => setTimeout(resolve, delay));
         await channel.send(joinRemark).catch((err) => console.error('Channel send failed:', (err as Error).message));
         recordResponse(channelId, joinRemark);
         const moodStatus = await mood.getStatus(guildId);
+        const joinAffinity = await getAffinity(guildId, message.author.id);
         logInteraction({
           serverId: message.guild?.id, serverName: message.guild?.name,
           channelId: channel.id, channelName: channel.name,
@@ -330,6 +390,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
           triggerType: 'auto-sass-join', commandName: null,
           userMessage: message.content, sassResponse: joinRemark,
           mood: moodStatus.mood, moodIntensity: moodStatus.intensity,
+          affinity: joinAffinity,
         }).catch((err) => console.error('DB log failed:', (err as Error).message));
         return;
       }
@@ -337,13 +398,16 @@ export async function handleAutoSass(message: Message, _client: Client, options:
     }
 
     // 35% — Classic roast (default / fallthrough)
-    const contextWithPeople = peopleContext ? `${peopleContext}\n\n${recentContext}` : recentContext;
+    const contextWithPeople = [peopleContext, affinityContext, recentContext].filter(Boolean).join('\n\n');
     const remark = await getAutoSassDecision(contextWithPeople, responseHistory);
 
     if (!remark || remark.trim().toUpperCase() === 'SKIP') return;
 
+    // Quality gate — skip filler responses
+    if (!(await passesQualityGate(remark))) return;
+
     setAutoSassCooldown(channelId);
-            setGuildAutoSassCooldown(guildId);
+    setGuildAutoSassCooldown(guildId);
     await channel.sendTyping().catch((err) => console.error('sendTyping failed:', (err as Error).message));
     const delay = 1000 + Math.random() * 2000;
     await new Promise((resolve) => setTimeout(resolve, delay));
@@ -353,6 +417,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
     userMemory.recordRoast(guildId, message.author.id).catch((err) => console.error('Record roast failed:', (err as Error).message));
 
     const moodStatus = await mood.getStatus(guildId);
+    const roastAffinity = await getAffinity(guildId, message.author.id);
     logInteraction({
       serverId: message.guild?.id, serverName: message.guild?.name,
       channelId: channel.id, channelName: channel.name,
@@ -360,7 +425,8 @@ export async function handleAutoSass(message: Message, _client: Client, options:
       triggerType: 'auto-sass', commandName: null,
       userMessage: message.content, sassResponse: remark,
       mood: moodStatus.mood, moodIntensity: moodStatus.intensity,
-      context: [recentContext, peopleContext].filter(Boolean).join('\n---\n'),
+      context: [recentContext, peopleContext, affinityContext].filter(Boolean).join('\n---\n'),
+      affinity: roastAffinity,
     }).catch((err) => console.error('DB log failed:', (err as Error).message));
   } catch (err) {
     console.error('Auto-sass failed:', (err as Error).message);
