@@ -402,12 +402,14 @@ export async function handleEntertainmentCommand(
     case 'conspiracy': {
       await interaction.deferReply();
       const topic = interaction.options.getString('topic');
-      const userName = interaction.user.displayName || interaction.user.username;
+      const targetUser = interaction.options.getUser('user');
+      const userName = targetUser?.displayName || interaction.user.displayName || interaction.user.username;
+      const targetId = targetUser?.id || interaction.user.id;
 
       try {
         // Pull semantic connections from vector memory
         const searchQuery = topic ?? `${userName} secrets suspicious`;
-        const memories = await searchMemories(searchQuery, { guildId, userId: topic ? null : interaction.user.id, limit: 8 });
+        const memories = await searchMemories(searchQuery, { guildId, userId: topic ? null : targetId, limit: 8 });
 
         // Get active users for name material (only when topic is provided)
         const guild = interaction.guild;

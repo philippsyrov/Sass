@@ -88,6 +88,7 @@ export const commands = [
   new SlashCommandBuilder()
     .setName('conspiracy')
     .setDescription('Generate a conspiracy theory connecting server members')
+    .addUserOption((opt) => opt.setName('user').setDescription('Target a specific user').setRequired(false))
     .addStringOption((opt) => opt.setName('topic').setDescription('Optional seed topic').setRequired(false)),
 
 ];
