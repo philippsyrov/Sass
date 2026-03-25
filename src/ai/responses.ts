@@ -1,8 +1,8 @@
 import OpenAI from 'openai';
 import { Ollama, type Message as OllamaMessage } from 'ollama';
 import * as mood from '../mood.js';
-import type { GetSassResponseOptions } from '../types.js';
-import { queryAI, getOpenAI } from './providers.js';
+import type { GetSassResponseOptions, AIResponse } from '../types.js';
+import { queryAI, queryAIWithUsage, getOpenAI } from './providers.js';
 import { CREATOR_SYSTEM_PROMPT, UTILITY_SYSTEM_PROMPT, PROFILE_SYSTEM_PROMPT } from './prompts.js';
 
 type UserContent = string | OpenAI.ChatCompletionContentPart[];
@@ -19,10 +19,11 @@ export async function getSassResponse(userMessage: string, {
   mentionsCreator = false,
   creatorName = null,
   imageUrl = null,
-}: GetSassResponseOptions = {}): Promise<string | null> {
+}: GetSassResponseOptions = {}): Promise<AIResponse> {
   // Creator gets a completely different prompt — no roasting at all
   if (isCreator) {
-    return queryCreatorMode(userMessage, recentContext, peopleContext, imageUrl ?? null);
+    const text = await queryCreatorMode(userMessage, recentContext, peopleContext, imageUrl ?? null);
+    return { text };
   }
 
   const parts: string[] = [];
@@ -51,7 +52,7 @@ export async function getSassResponse(userMessage: string, {
   }
 
   const temperature = await mood.getMoodTemperature(guildId);
-  return queryAI(parts.join('\n\n'), { imageUrl, temperature });
+  return queryAIWithUsage(parts.join('\n\n'), { imageUrl, temperature });
 }
 
 /**

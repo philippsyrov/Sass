@@ -1,6 +1,6 @@
 import { Ollama, type Message as OllamaMessage } from 'ollama';
 import OpenAI from 'openai';
-import type { QueryAIOptions } from '../types.js';
+import type { QueryAIOptions, AIResponse } from '../types.js';
 import { SASS_SYSTEM_PROMPT, fixCustomEmoji } from './prompts.js';
 
 type UserContent = string | OpenAI.ChatCompletionContentPart[];
@@ -12,26 +12,35 @@ export function getOpenAI(): OpenAI {
 }
 
 /**
- * Send a prompt to the configured AI provider and get a response.
+ * Send a prompt to the configured AI provider and get a response with token usage.
  */
-export async function queryAI(prompt: string, { systemPrompt = SASS_SYSTEM_PROMPT, imageUrl = null, maxTokens, temperature }: QueryAIOptions = {}): Promise<string | null> {
+export async function queryAIWithUsage(prompt: string, { systemPrompt = SASS_SYSTEM_PROMPT, imageUrl = null, maxTokens, temperature }: QueryAIOptions = {}): Promise<AIResponse> {
   const provider = process.env.AI_PROVIDER || 'ollama';
 
-  let result: string | null;
+  let result: AIResponse;
   switch (provider) {
     case 'ollama':
-      result = await queryOllama(prompt, systemPrompt);
+      result = { text: await queryOllama(prompt, systemPrompt) };
       break;
     case 'openai':
-      result = await queryOpenAI(prompt, systemPrompt, imageUrl ?? null, maxTokens, temperature);
+      result = await queryOpenAIWithUsage(prompt, systemPrompt, imageUrl ?? null, maxTokens, temperature);
       break;
     default:
-      return "girl whoever set me up didn't even configure my brain properly, I literally can't think rn";
+      return { text: "girl whoever set me up didn't even configure my brain properly, I literally can't think rn" };
   }
 
   // Fix hallucinated custom emoji IDs
-  if (result) result = fixCustomEmoji(result);
+  if (result.text) result.text = fixCustomEmoji(result.text);
   return result;
+}
+
+/**
+ * Send a prompt to the configured AI provider and get a response (text only).
+ * Convenience wrapper — use queryAIWithUsage when you need token counts.
+ */
+export async function queryAI(prompt: string, options: QueryAIOptions = {}): Promise<string | null> {
+  const result = await queryAIWithUsage(prompt, options);
+  return result.text;
 }
 
 // --- Provider implementations ---
@@ -54,11 +63,11 @@ async function queryOllama(prompt: string, systemPrompt: string): Promise<string
   return response.message.content;
 }
 
-async function queryOpenAI(prompt: string, systemPrompt: string, imageUrl: string | null = null, maxTokens?: number, overrideTemperature?: number): Promise<string | null> {
+async function queryOpenAIWithUsage(prompt: string, systemPrompt: string, imageUrl: string | null = null, maxTokens?: number, overrideTemperature?: number): Promise<AIResponse> {
   // Guard against empty user content — API rejects empty messages
   if (!prompt?.trim() && !imageUrl) {
     console.error('queryOpenAI called with empty prompt and no image');
-    return null;
+    return { text: null };
   }
 
   const openai = getOpenAI();
@@ -89,5 +98,9 @@ async function queryOpenAI(prompt: string, systemPrompt: string, imageUrl: strin
     temperature,
   });
 
-  return response.choices[0]?.message?.content ?? null;
+  return {
+    text: response.choices[0]?.message?.content ?? null,
+    promptTokens: response.usage?.prompt_tokens,
+    completionTokens: response.usage?.completion_tokens,
+  };
 }

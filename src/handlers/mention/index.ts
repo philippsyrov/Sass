@@ -315,7 +315,8 @@ export async function handleMention(message: Message, client: Client): Promise<v
     const sensitiveHint = getSensitiveHint(guildId, userId, displayName);
 
     const fullUserContext = [userContext, vectorContext, responseHistory, personalityContext, sensitiveHint].filter(Boolean).join('\n\n');
-    const response = await getSassResponse(framedMessage, { guildId, recentContext, userContext: fullUserContext, peopleContext, isCreator, mentionsCreator, creatorName, imageUrl });
+    const aiResult = await getSassResponse(framedMessage, { guildId, recentContext, userContext: fullUserContext, peopleContext, isCreator, mentionsCreator, creatorName, imageUrl });
+    const response = aiResult.text;
     if (!response) {
       await message.reply("My brain just short-circuited. Even AI has bad days, okay?");
       return;
@@ -342,6 +343,8 @@ export async function handleMention(message: Message, client: Client): Promise<v
       mood: moodStatus.mood, moodIntensity: moodStatus.intensity,
       context: fullContext,
       affinity,
+      promptTokens: aiResult.promptTokens,
+      completionTokens: aiResult.completionTokens,
     }).catch((err) => console.error('Log interaction failed:', (err as Error).message));
 
     // Bump affinity for genuine exchange (+0.5, max once per 10 min per user)

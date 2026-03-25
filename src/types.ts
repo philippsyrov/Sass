@@ -105,6 +105,12 @@ export interface QueryAIOptions {
   temperature?: number;
 }
 
+export interface AIResponse {
+  text: string | null;
+  promptTokens?: number;
+  completionTokens?: number;
+}
+
 export interface GetSassResponseOptions {
   guildId?: string;
   recentContext?: string;
