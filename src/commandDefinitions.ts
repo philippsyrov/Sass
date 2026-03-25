@@ -82,22 +82,6 @@ export const commands = [
     .setDescription('Wall of shame — most roasted users'),
 
   new SlashCommandBuilder()
-    .setName('dare')
-    .setDescription('Dare someone to do something unhinged')
-    .addUserOption((opt) => opt.setName('user').setDescription('Who to dare').setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName('confess')
-    .setDescription('Send an anonymous confession to someone')
-    .addUserOption((opt) => opt.setName('user').setDescription('Who to confess to').setRequired(true))
-    .addStringOption((opt) => opt.setName('confession').setDescription('Your confession').setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName('predict')
-    .setDescription('Get a prediction about someone\'s future')
-    .addUserOption((opt) => opt.setName('user').setDescription('Who to predict (defaults to you)').setRequired(false)),
-
-  new SlashCommandBuilder()
     .setName('forgetme')
     .setDescription('Delete all your data — affinity, facts, memories, beef. Cannot be undone.'),
 
