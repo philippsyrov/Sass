@@ -1,0 +1,290 @@
+import {
+  EmbedBuilder,
+  AttachmentBuilder,
+  type ChatInputCommandInteraction,
+} from 'discord.js';
+import { queryAI, analyzeProfile } from '../ai.js';
+import * as userMemory from '../userMemory.js';
+import { logCommand, getAffinity } from '../database.js';
+import { getShipScore, getPairInteractions, warmPairCache } from '../shipScore.js';
+import { generateShipImage } from '../shipImage.js';
+
+export async function handleSocialCommand(
+  interaction: ChatInputCommandInteraction,
+  commandName: string,
+  guildId: string,
+): Promise<void> {
+  switch (commandName) {
+    case 'ship': {
+      await interaction.deferReply();
+      const user1 = interaction.options.getUser('user1', true);
+      const user2 = interaction.options.getUser('user2', true);
+
+      if (user1.id === user2.id) {
+        await interaction.editReply('you can\'t ship someone with themselves. that\'s just called being alone.');
+        break;
+      }
+
+      // Check if shipping with Sass — use affinity instead of hash
+      const botId = interaction.client.user?.id;
+      const isShipWithSass = botId && (user1.id === botId || user2.id === botId);
+      const otherUser = isShipWithSass ? (user1.id === botId ? user2 : user1) : null;
+
+      let percent: number;
+      if (isShipWithSass && otherUser) {
+        percent = Math.round(await getAffinity(guildId, otherUser.id));
+      } else {
+        await warmPairCache(guildId, user1.id, user2.id);
+        percent = await getShipScore(guildId, user1.id, user2.id);
+      }
+      const bar = '\u2764\uFE0F'.repeat(Math.round(percent / 10)) + '\u{1F5A4}'.repeat(10 - Math.round(percent / 10));
+
+      try {
+        const shipPrompt = isShipWithSass
+          ? `Someone shipped "${otherUser?.displayName}" with you (Sass). Your affinity with them is ${percent}%. ONE sentence verdict about how you feel about them, max 12 words. Be tsundere — if high affinity, admit you like them reluctantly. If low, be cold.`
+          : `"${user1.displayName}" x "${user2.displayName}" at ${percent}%. ONE sentence verdict, max 12 words. No metaphors or object comparisons. React like a friend judging a couple.`;
+        let verdict = await queryAI(shipPrompt, {
+          systemPrompt: 'You judge ship compatibility. ONE short sentence. Max 12 words. Lowercase. Talk like a 20-year-old, not a poet. No "chemistry of a [object]" comparisons. If you exceed 12 words, you failed.',
+        });
+
+        // Hard enforce 12 word cap — truncate to first sentence if too long
+        if (verdict && verdict.split(/\s+/).length > 14) {
+          const firstSentence = verdict.split(/[.!?]/)[0];
+          verdict = firstSentence ? firstSentence.trim() + '.' : verdict.split(/\s+/).slice(0, 12).join(' ') + '.';
+        }
+
+        const shipName = user1.displayName.slice(0, Math.ceil(user1.displayName.length / 2)) +
+          user2.displayName.slice(Math.floor(user2.displayName.length / 2));
+
+        // Interaction hint — show users their ship is tracked
+        const interactions = getPairInteractions(guildId, user1.id, user2.id);
+        let hint = '';
+        if (isShipWithSass) {
+          // Show affinity tier + progress bar when shipping with Sass
+          let tierEmoji = '\u2753';
+          let tierName = 'stranger';
+          let tierQuote = 'who are you again?';
+          let nextTier = 'nuisance (16%)';
+          if (percent >= 96) { tierEmoji = '\u{1F48E}'; tierName = 'ride or die'; tierQuote = "i'd never admit it, but i'd choose you."; nextTier = ''; }
+          else if (percent >= 86) { tierEmoji = '\u{1F497}'; tierName = 'favorite'; tierQuote = "don't tell anyone, but you're my favorite."; nextTier = 'ride or die (96%)'; }
+          else if (percent >= 71) { tierEmoji = '\u{1F495}'; tierName = 'liked'; tierQuote = '...fine, i like you. shut up about it.'; nextTier = 'favorite (86%)'; }
+          else if (percent >= 51) { tierEmoji = '\u{1F91D}'; tierName = 'familiar'; tierQuote = "you're tolerable. don't push it."; nextTier = 'liked (71%)'; }
+          else if (percent >= 31) { tierEmoji = '\u{1F610}'; tierName = 'acquaintance'; tierQuote = 'i acknowledge your existence.'; nextTier = 'familiar (51%)'; }
+          else if (percent >= 16) { tierEmoji = '\u{1F612}'; tierName = 'nuisance'; tierQuote = "oh, you're still here."; nextTier = 'acquaintance (31%)'; }
+          else { nextTier = 'nuisance (16%)'; }
+
+          // Visual progress bar (30 segments with tier milestone markers)
+          const totalSegments = 30;
+          const filledCount = Math.round((percent / 100) * totalSegments);
+          const milestones = [16, 31, 51, 71, 86, 96].map(m => Math.round((m / 100) * totalSegments));
+          let progressBar = '';
+          for (let i = 0; i < totalSegments; i++) {
+            if (milestones.includes(i)) {
+              progressBar += '|';
+            } else {
+              progressBar += i < filledCount ? '\u2588' : '\u2591';
+            }
+          }
+
+          hint = `\n\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 \u273F \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n` +
+            `${tierEmoji} **${tierName}**\n` +
+            `*"${tierQuote}"*\n\n` +
+            `\`${progressBar}\` **${percent}%**` +
+            (nextTier ? `\n*next: ${nextTier}*` : '\n\u2728 *max affinity \u2014 she chose you.*');
+        } else {
+          // User x User — pair tier display
+          let pairEmoji = '\u{1F480}';
+          let pairTier = 'enemies';
+          let pairQuote = 'someone call a mediator.';
+          let nextPairTier = 'awkward (15%)';
+          if (percent >= 95) { pairEmoji = '\u{1F48E}'; pairTier = 'soulmates'; pairQuote = 'written in the stars.'; nextPairTier = ''; }
+          else if (percent >= 80) { pairEmoji = '\u{1F525}'; pairTier = 'power couple'; pairQuote = 'the server ships it.'; nextPairTier = 'soulmates (95%)'; }
+          else if (percent >= 60) { pairEmoji = '\u{1F495}'; pairTier = 'close'; pairQuote = "they finish each other's sentences."; nextPairTier = 'power couple (80%)'; }
+          else if (percent >= 40) { pairEmoji = '\u{1F91D}'; pairTier = 'friends'; pairQuote = 'solid vibes, nothing more.'; nextPairTier = 'close (60%)'; }
+          else if (percent >= 25) { pairEmoji = '\u{1F937}'; pairTier = 'acquaintances'; pairQuote = "they've been in the same room, probably."; nextPairTier = 'friends (40%)'; }
+          else if (percent >= 15) { pairEmoji = '\u{1F610}'; pairTier = 'awkward'; pairQuote = "the vibes are... off."; nextPairTier = 'acquaintances (25%)'; }
+          else { nextPairTier = 'awkward (15%)'; }
+
+          // Progress bar (30 segments with tier milestones)
+          const pairSegments = 30;
+          const pairFilled = Math.round((percent / 100) * pairSegments);
+          const pairMilestones = [15, 25, 40, 60, 80, 95].map(m => Math.round((m / 100) * pairSegments));
+          let pairBar = '';
+          for (let i = 0; i < pairSegments; i++) {
+            if (pairMilestones.includes(i)) {
+              pairBar += '|';
+            } else {
+              pairBar += i < pairFilled ? '\u2588' : '\u2591';
+            }
+          }
+
+          hint = `\n\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 \u273F \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n` +
+            `${pairEmoji} **${pairTier}**\n` +
+            `*"${pairQuote}"*\n\n` +
+            `\`${pairBar}\` **${percent}%**` +
+            (interactions >= 5 ? `\n\u{1F4C8} *${interactions} interactions tracked*` : '') +
+            (nextPairTier ? `\n*next: ${nextPairTier}*` : '\n\u2728 *soulmates \u2014 this is real.*');
+        }
+
+        // Generate ship card image
+        const avatar1 = user1.displayAvatarURL({ extension: 'png', size: 128 });
+        const avatar2 = user2.displayAvatarURL({ extension: 'png', size: 128 });
+        let files: AttachmentBuilder[] = [];
+        try {
+          const shipBuffer = await generateShipImage(avatar1, avatar2, percent);
+          files = [new AttachmentBuilder(shipBuffer, { name: 'ship.png' })];
+        } catch (imgErr) {
+          console.error('Ship image generation failed:', (imgErr as Error).message);
+        }
+
+        const embed = new EmbedBuilder()
+          .setColor(0xFF4D6D)
+          .setDescription(
+            `\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\n\n` +
+            `\u{1F498} **${user1.displayName}** x **${user2.displayName}**\n` +
+            `ship name: **${shipName}**\n` +
+            `${bar} **${percent}%**\n\n` +
+            `*${verdict}*${hint}\n\n` +
+            `\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}`
+          );
+
+        if (files.length > 0) {
+          embed.setImage('attachment://ship.png');
+        }
+
+        await interaction.editReply({ embeds: [embed], files });
+      } catch (err) {
+        console.error('Ship command failed:', (err as Error).message);
+        await interaction.editReply(
+          `\u{1F498} **${user1.displayName}** x **${user2.displayName}**\n` +
+          `${bar} **${percent}%**\n\n` +
+          `*my brain crashed trying to imagine this couple. that tells you everything.*`
+        );
+      }
+      break;
+    }
+
+    case 'favorite': {
+      await interaction.deferReply();
+      const board = await userMemory.getLeaderboard(guildId, 1);
+      const fav = board[0];
+      if (!fav || fav.timesRoasted === 0) {
+        await interaction.editReply("i don't have a favorite yet. nobody's earned it. or deserved it.");
+        break;
+      }
+      const responses = [
+        `my current favorite punching bag is **${fav.name}** with ${fav.timesRoasted} roasts. they keep coming back for more.`,
+        `**${fav.name}**. ${fav.timesRoasted} roasts and counting. at this point it's a relationship.`,
+        `gotta be **${fav.name}**. they've been roasted ${fav.timesRoasted} times and still haven't learned.`,
+      ];
+      const favResponse = responses[Math.floor(Math.random() * responses.length)] ?? '';
+      await interaction.editReply(favResponse);
+      break;
+    }
+
+    case 'compliment': {
+      await interaction.deferReply();
+      const targetUser = interaction.options.getUser('user', true);
+      try {
+        const response = await queryAI(
+          `Give "${targetUser.displayName}" a backhanded compliment. It should sound genuinely nice at first, then subtly roast them by the end. One or two sentences. The twist should be subtle enough that they have to read it twice.`,
+          { systemPrompt: 'You give backhanded compliments. Sound sincere at first, then twist. Lowercase. Subtle is key \u2014 the best ones take a second to register.' }
+        );
+        await interaction.editReply(`\u{1F490} ${response}`);
+      } catch (err) {
+        console.error('Compliment command failed:', (err as Error).message);
+        await interaction.editReply(`\u{1F490} ${targetUser.displayName}, you're really brave for being yourself when literally any other option exists.`);
+      }
+      break;
+    }
+
+    case 'profile': {
+      await interaction.deferReply();
+      const targetUser = interaction.options.getUser('user') ?? interaction.user;
+      const targetId = targetUser.id;
+      const targetName = targetUser.displayName || targetUser.username;
+
+      try {
+        const channel = interaction.channel;
+        if (!channel || !('messages' in channel)) {
+          await interaction.editReply("i can't read messages here. try a normal text channel.");
+          break;
+        }
+        const fetched = await channel.messages.fetch({ limit: 100 });
+        const userMsgs = fetched
+          .filter((m) => m.author.id === targetId && !m.author.bot)
+          .map((m) => m.content)
+          .filter((c) => c.length > 0)
+          .reverse()
+          .slice(0, 30);
+
+        if (userMsgs.length < 3) {
+          await interaction.editReply(`${targetName} barely talks. can't profile a ghost.`);
+          break;
+        }
+
+        const raw = await analyzeProfile(targetName, userMsgs.join('\n'));
+        if (!raw) {
+          await interaction.editReply("my brain crashed trying to analyze this person. that says a lot honestly.");
+          break;
+        }
+
+        const lines = raw.trim().split('\n');
+        const scores: Record<string, number> = {};
+        let archetype = 'Unknown';
+        let roast = '';
+        for (const line of lines) {
+          const [key, ...rest] = line.split(':');
+          if (!key) continue;
+          const val = rest.join(':').trim();
+          if (['chaos', 'thirst', 'aggro', 'clown', 'brain'].includes(key.trim())) {
+            scores[key.trim()] = Math.min(10, Math.max(0, parseInt(val, 10) || 0));
+          } else if (key.trim() === 'archetype') {
+            archetype = val;
+          } else if (key.trim() === 'roast') {
+            roast = val;
+          }
+        }
+
+        const barFn = (score: number): string => '\u2588'.repeat(score) + '\u2591'.repeat(10 - score);
+        const profile = [
+          `**${targetName}'s behavioral diagnosis**`,
+          `> archetype: **${archetype}**`,
+          '',
+          `\`chaos \` ${barFn(scores['chaos'] || 0)} **${scores['chaos'] || 0}**/10`,
+          `\`thirst\` ${barFn(scores['thirst'] || 0)} **${scores['thirst'] || 0}**/10`,
+          `\`aggro \` ${barFn(scores['aggro'] || 0)} **${scores['aggro'] || 0}**/10`,
+          `\`clown \` ${barFn(scores['clown'] || 0)} **${scores['clown'] || 0}**/10`,
+          `\`brain \` ${barFn(scores['brain'] || 0)} **${scores['brain'] || 0}**/10`,
+          '',
+          `*${roast}*`,
+        ];
+        await interaction.editReply(profile.join('\n'));
+        logCommand({ serverId: guildId, userId: interaction.user.id, commandName: 'profile', commandType: 'slash' }).catch((err) => console.error('Log command failed:', (err as Error).message));
+      } catch (err) {
+        console.error('Profile command failed:', (err as Error).message);
+        await interaction.editReply("my brain crashed trying to analyze this person. that says a lot honestly.");
+      }
+      break;
+    }
+
+    case 'leaderboard': {
+      await interaction.deferReply();
+      const board = await userMemory.getLeaderboard(guildId, 5);
+      if (board.length === 0 || board.every((u) => u.timesRoasted === 0)) {
+        await interaction.editReply("nobody's been roasted enough to make a list yet. give it time.");
+        break;
+      }
+      const medals = ['\u{1F451}', '\u{1F480}', '\u{1FAA6}', '\u{1F4A9}', '\u{1F921}'];
+      const lines = board
+        .filter((u) => u.timesRoasted > 0)
+        .map((u, i) => `${medals[i] || '\u2022'} **${u.name}** \u2014 roasted ${u.timesRoasted} time${u.timesRoasted === 1 ? '' : 's'}`);
+      await interaction.editReply(`**sass's wall of shame**\n${lines.join('\n')}`);
+      logCommand({ serverId: guildId, userId: interaction.user.id, commandName: 'leaderboard', commandType: 'slash' }).catch((err) => console.error('Log command failed:', (err as Error).message));
+      break;
+    }
+
+    default:
+      break;
+  }
+}

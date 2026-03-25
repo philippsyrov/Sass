@@ -2,7 +2,7 @@ import { Client, GatewayIntentBits, Partials, type Guild, type TextChannel } fro
 import dotenv from 'dotenv';
 import { handleMention } from './handlers/mention.js';
 import { handleAutoSass } from './handlers/autoSass.js';
-import { handleCommand, handleBattleMessage } from './commands.js';
+import { handleCommand, handleBattleMessage } from './commands/index.js';
 import { messageBuffer } from './messageBuffer.js';
 import * as userMemory from './userMemory.js';
 import { initDatabase, closeDatabase, logReaction, updateAffinity } from './database.js';
