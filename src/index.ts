@@ -1,12 +1,12 @@
 import { Client, GatewayIntentBits, Partials, type Guild, type TextChannel } from 'discord.js';
 import dotenv from 'dotenv';
-import { handleMention } from './handlers/mention.js';
+import { handleMention } from './handlers/mention/index.js';
 import { handleAutoSass } from './handlers/autoSass.js';
 import { handleCommand, handleBattleMessage } from './commands/index.js';
 import { messageBuffer } from './messageBuffer.js';
 import * as userMemory from './userMemory.js';
 import { initDatabase, closeDatabase, logReaction, updateAffinity } from './database/index.js';
-import { queryAI } from './ai.js';
+import { queryAI } from './ai/index.js';
 import { isOnSlashCooldown, setSlashCooldown, isOnShipCooldown, setShipCooldown } from './cooldown.js';
 import { recordPairInteraction } from './shipScore.js';
 
