@@ -403,7 +403,9 @@ export async function handleEntertainmentCommand(
       await interaction.deferReply();
       const topic = interaction.options.getString('topic');
       const targetUser = interaction.options.getUser('user');
-      const userName = targetUser?.displayName || interaction.user.displayName || interaction.user.username;
+      const targetMember = targetUser ? interaction.guild?.members.cache.get(targetUser.id) : null;
+      const callerMember = interaction.guild?.members.cache.get(interaction.user.id);
+      const userName = targetMember?.displayName ?? targetUser?.displayName ?? callerMember?.displayName ?? interaction.user.username;
       const targetId = targetUser?.id || interaction.user.id;
 
       try {
@@ -432,7 +434,7 @@ export async function handleEntertainmentCommand(
               members.length > 0 ? `Server members you can use: ${members.join(', ')}` : null,
               memoryContext,
               `Rules:`,
-              `- Use REAL member names from the list above`,
+              `- Use REAL member names from the list above (plain text only, NEVER @mention or tag anyone)`,
               `- Connect at least 3 people in the theory`,
               `- Reference any relevant facts from memory if available`,
               `- Make it absurd but specific — not generic`,
@@ -451,7 +453,7 @@ export async function handleEntertainmentCommand(
             ].filter(Boolean).join('\n');
 
         const response = await queryAI(prompt, {
-          systemPrompt: 'You are Sass, a conspiracy theorist bot. Generate unhinged but funny conspiracy theories. Use real names. Lowercase. Be specific and creative. Reference facts when available.',
+          systemPrompt: 'You are Sass, a conspiracy theorist bot. Generate unhinged but funny conspiracy theories. Use real names (plain text only — NEVER use @mentions, <@ids>, or Discord tags). Lowercase. Be specific and creative. Reference facts when available.',
           maxTokens: 250,
         });
 
