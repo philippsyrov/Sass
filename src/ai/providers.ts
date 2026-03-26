@@ -98,9 +98,17 @@ async function queryOpenAIWithUsage(prompt: string, systemPrompt: string, imageU
     temperature,
   });
 
+  const promptTokens = response.usage?.prompt_tokens;
+  const completionTokens = response.usage?.completion_tokens;
+  if (promptTokens != null || completionTokens != null) {
+    console.log(`[TOKENS] prompt=${promptTokens} completion=${completionTokens}`);
+  } else {
+    console.log('[TOKENS] usage data missing from OpenAI response');
+  }
+
   return {
     text: response.choices[0]?.message?.content ?? null,
-    promptTokens: response.usage?.prompt_tokens,
-    completionTokens: response.usage?.completion_tokens,
+    promptTokens,
+    completionTokens,
   };
 }
