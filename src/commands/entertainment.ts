@@ -8,8 +8,7 @@ import {
 } from 'discord.js';
 import { queryAI } from '../ai/index.js';
 import * as userMemory from '../userMemory.js';
-import { logInteraction, getTopReactions, deleteUserData, getAffinity } from '../database/index.js';
-import * as mood from '../mood.js';
+import { getTopReactions, deleteUserData } from '../database/index.js';
 import { hasUsedToday, markUsedToday } from '../shared/commandUtils.js';
 import { activeBattles } from '../roastBattle.js';
 import { messageBuffer } from '../messageBuffer.js';
@@ -210,139 +209,6 @@ export async function handleEntertainmentCommand(
         collector.on('end', async () => {
           try { await reply.edit({ components: [] }); } catch { /* message deleted */ }
         });
-      }
-      break;
-    }
-
-    case 'dare': {
-      const targetUser = interaction.options.getUser('user', true);
-      if (hasUsedToday(guildId, interaction.user.id, 'dare')) {
-        await interaction.reply({ content: "you already dared someone today. one chaos event per day is enough.", ephemeral: true }).catch((err) => console.error('Dare cooldown reply failed:', (err as Error).message));
-        break;
-      }
-      await interaction.deferReply();
-      const userContext = await userMemory.getContext(guildId, targetUser.id);
-      try {
-        const response = await queryAI(
-          `Generate a dare for the Discord user "${targetUser.displayName}". The dare should be something they can do in the Discord server (send a message, change their nickname, post something, etc). Make it funny and slightly unhinged but not harmful. Also rate the difficulty 1-5.\n\n${userContext ? `What you know about them: ${userContext}` : 'You don\'t know much about them yet.'}\n\nRespond in EXACTLY this format:\nDARE: [the dare]\nDIFFICULTY: [1-5]`,
-          { systemPrompt: 'You generate funny Discord dares. Creative, unhinged, but not harmful or against TOS. Lowercase. The dare should be specific and doable in Discord.' }
-        );
-        const dareMatch = response?.match(/DARE:\s*(.+)/i);
-        const diffMatch = response?.match(/DIFFICULTY:\s*(\d)/);
-        const dareText = dareMatch?.[1]?.trim() ?? 'i dare you to explain why you needed a bot to dare you';
-        const difficulty = Math.min(5, Math.max(1, parseInt(diffMatch?.[1] ?? '3', 10)));
-        const skulls = '\u{1F480}'.repeat(difficulty) + '\u{1FA76}'.repeat(5 - difficulty);
-
-        const embed = new EmbedBuilder()
-          .setColor(0xFF4D6D)
-          .setTitle(`\u{1F3B2} DARE \u2014 ${targetUser.displayName.toUpperCase()}`)
-          .setDescription(dareText)
-          .addFields(
-            { name: 'Difficulty', value: skulls, inline: true },
-          )
-          .setFooter({ text: 'sass dares you. do it or be a coward.' });
-        markUsedToday(guildId, interaction.user.id, 'dare');
-        await interaction.editReply({ embeds: [embed] });
-      } catch (err) {
-        console.error('Dare command failed:', (err as Error).message);
-        await interaction.editReply(`i dare ${targetUser.displayName} to do literally anything interesting for once.`);
-      }
-      break;
-    }
-
-    case 'confess': {
-      const targetUser = interaction.options.getUser('user', true);
-      const confession = interaction.options.getString('confession') ?? '';
-
-      if (targetUser.id === interaction.user.id) {
-        await interaction.reply({ content: "you can't confess to yourself. that's just thinking.", ephemeral: true }).catch((err) => console.error('Confess self reply failed:', (err as Error).message));
-        break;
-      }
-      if (targetUser.bot) {
-        await interaction.reply({ content: "confessing to a bot? down bad doesn't even begin to cover it.", ephemeral: true }).catch((err) => console.error('Confess bot reply failed:', (err as Error).message));
-        break;
-      }
-      if (hasUsedToday(guildId, interaction.user.id, 'confess')) {
-        await interaction.reply({ content: "one confession per day. you're not a priest.", ephemeral: true }).catch((err) => console.error('Confess cooldown reply failed:', (err as Error).message));
-        break;
-      }
-
-      // Ephemeral ack to confessor
-      await interaction.reply({ content: "got it. your secret's safe with me... for now \u{1F440}", ephemeral: true }).catch((err) => console.error('Confess ack reply failed:', (err as Error).message));
-
-      try {
-        const commentary = await queryAI(
-          `Someone anonymously confessed "${confession}" to ${targetUser.displayName}. React in ONE short sentence (under 12 words). Roast the confessor for being too scared to say it themselves. No fancy vocabulary.`,
-          { systemPrompt: 'You are Sass. One short sentence. Lowercase. Talk like a 20-year-old in a group chat, not a poet. No words like "breathtaking", "celestial", "revelation", "poetic", "devotion".' }
-        );
-        const channel = interaction.channel;
-        if (channel && 'send' in channel) {
-          await channel.send(`\u{1F4E9} **ANONYMOUS CONFESSION** for <@${targetUser.id}>:\n\n> *"${confession}"*\n\n${commentary ?? "someone couldn't find the guts to say this themselves. shocking."}`).catch((err) => console.error('Confess message send failed:', (err as Error).message));
-          markUsedToday(guildId, interaction.user.id, 'confess');
-          const confessAffinity = await getAffinity(guildId, interaction.user.id);
-          logInteraction({
-            serverId: interaction.guild?.id ?? '',
-            serverName: interaction.guild?.name ?? '',
-            channelId: channel.id,
-            channelName: 'name' in channel ? (channel as { name: string }).name : '',
-            userId: interaction.user.id,
-            username: interaction.user.displayName ?? interaction.user.username,
-            triggerType: 'confess',
-            commandName: 'confess',
-            userMessage: confession,
-            sassResponse: commentary ?? '',
-            mood: (await mood.getStatus(guildId)).mood,
-            moodIntensity: (await mood.getStatus(guildId)).intensity,
-            affinity: confessAffinity,
-          }).catch((err) => console.error('DB log failed:', err.message));
-        }
-      } catch (err) {
-        console.error('Confess failed:', (err as Error).message);
-        // Don't expose error to channel since we already replied ephemerally
-      }
-      break;
-    }
-
-    case 'predict': {
-      const targetUser = interaction.options.getUser('user') ?? interaction.user;
-      const targetKey = `${targetUser.id}:predict`;
-      if (hasUsedToday(guildId, interaction.user.id, targetKey)) {
-        await interaction.reply(`you already got ${targetUser.id === interaction.user.id ? 'your' : 'their'} prediction today. the future hasn't changed in the last 5 minutes.`).catch((err) => console.error('Predict cooldown reply failed:', (err as Error).message));
-        break;
-      }
-      await interaction.deferReply();
-
-      const userData = await userMemory.getContext(guildId, targetUser.id);
-      const facts = await userMemory.getFacts(guildId, targetUser.id);
-      const userStats = await userMemory.getUserStats(guildId, targetUser.id);
-      const messageCount = userStats?.messageCount ?? 0;
-      const timesRoasted = userStats?.timesRoasted ?? 0;
-
-      const dataPrompt = [
-        `User: ${targetUser.displayName}`,
-        messageCount > 0 ? `Messages sent: ${messageCount}` : null,
-        timesRoasted > 0 ? `Times roasted: ${timesRoasted}` : null,
-        facts.length > 0 ? `Known facts: ${facts.join('; ')}` : null,
-        userData ? `Context: ${userData}` : null,
-      ].filter(Boolean).join('\n');
-
-      try {
-        const response = await queryAI(
-          `Predict ${targetUser.displayName}'s future based on their Discord data. Be specific to THEIR data, not generic.\n\n${dataPrompt}\n\nFormat:\n\u{1F52E} PAST: [one sentence]\n\u{1F4CD} PRESENT: [one sentence]\n\u{1F31F} FUTURE: [one specific, funny prediction]\n\u{1F340} lucky item: [something insulting based on their behavior]`,
-          { systemPrompt: 'You are a sassy fortune teller. Use the provided Discord data to make specific predictions. Lowercase. Short sentences. Mystical but devastating. Never repeat the same prediction twice \u2014 each one must be unique to the user.', maxTokens: 200 }
-        );
-        if (!response) throw new Error('Empty response from AI');
-        markUsedToday(guildId, interaction.user.id, targetKey);
-        const embed = new EmbedBuilder()
-          .setColor(0x9B59B6)
-          .setTitle(`\u{1F52E} PREDICTION \u2014 ${targetUser.displayName.toUpperCase()}`)
-          .setDescription(response)
-          .setFooter({ text: 'sass sees all. sass knows all. sass judges all.' })
-          .setTimestamp();
-        await interaction.editReply({ embeds: [embed] });
-      } catch (err) {
-        console.error('Predict command failed:', (err as Error).message);
-        await interaction.editReply(`the crystal ball showed me ${targetUser.displayName}'s future and honestly? it cracked. that's the prediction.`);
       }
       break;
     }

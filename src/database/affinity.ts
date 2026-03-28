@@ -132,7 +132,9 @@ export async function getAffinity(guildId: string, userId: string): Promise<numb
           if (decayed !== affinity) {
             // Persist the decayed value so it doesn't recalculate the same decay next time
             await pool.query(
-              'UPDATE users SET affinity = $3::REAL WHERE server_id = $1 AND user_id = $2',
+              `INSERT INTO users (server_id, user_id, name, affinity)
+               VALUES ($1, $2, '', $3::REAL)
+               ON CONFLICT (server_id, user_id) DO UPDATE SET affinity = $3::REAL`,
               [guildId, userId, decayed]
             ).catch((err: Error) => console.error('Failed to persist affinity decay:', err.message));
             affinity = decayed;

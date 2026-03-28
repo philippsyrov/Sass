@@ -279,6 +279,7 @@ export async function createSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_interactions_server ON interactions(server_id);
     CREATE INDEX IF NOT EXISTS idx_interactions_timestamp ON interactions(timestamp);
     CREATE INDEX IF NOT EXISTS idx_interactions_trigger ON interactions(trigger_type);
+    CREATE INDEX IF NOT EXISTS idx_interactions_server_trigger ON interactions(server_id, trigger_type);
     CREATE INDEX IF NOT EXISTS idx_command_usage_command ON command_usage(command_name);
 
     CREATE TABLE IF NOT EXISTS reactions (

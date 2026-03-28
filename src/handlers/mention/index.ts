@@ -255,16 +255,20 @@ export async function handleMention(message: Message, client: Client): Promise<v
   const creatorName = await userMemory.getCreatorName(guildId);
   const mentionsCreator = !isCreator && await userMemory.isAboutCreator(guildId, cleanContent);
 
-  // Search vector memory for relevant ammo
+  // Fetch vector memory and affinity in parallel — both are independent read-only ops
+  const memoriesPromise = (!isCreator && cleanContent)
+    ? searchMemories(cleanContent, { guildId, userId, limit: 3 }).catch((err) => {
+        console.error('Vector search failed:', (err as Error).message);
+        return [];
+      })
+    : Promise.resolve([]);
+  const affinityPromise = getAffinity(guildId, userId);
+  const [memories, affinity] = await Promise.all([memoriesPromise, affinityPromise]);
+
   let vectorContext = '';
-  if (!isCreator && cleanContent) {
-    try {
-      const memories = await searchMemories(cleanContent, { guildId, userId, limit: 3 });
-      if (memories.length > 0) {
-        vectorContext = 'RELEVANT MEMORIES (use these if they fit):\n' +
-          memories.map((m) => `- [${m.type}] ${m.content}`).join('\n');
-      }
-    } catch (err) { console.error('Vector search failed:', (err as Error).message); }
+  if (!isCreator && memories.length > 0) {
+    vectorContext = 'RELEVANT MEMORIES (use these if they fit):\n' +
+      memories.map((m) => `- [${m.type}] ${m.content}`).join('\n');
   }
 
   // Escalation tag count — needed for unified personality context
@@ -304,7 +308,6 @@ export async function handleMention(message: Message, client: Client): Promise<v
 
     // Unified personality context — combines long-term relationship (affinity) with
     // in-the-moment behavior (escalation) into ONE clear instruction for the AI.
-    const affinity = await getAffinity(guildId, userId);
     let personalityContext = '';
 
     if (!isCreator) {

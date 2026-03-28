@@ -40,14 +40,23 @@ export async function handleSocialCommand(
         percent = await getShipScore(guildId, user1.id, user2.id);
       }
       const bar = '\u2764\uFE0F'.repeat(Math.round(percent / 10)) + '\u{1F5A4}'.repeat(10 - Math.round(percent / 10));
+      const avatar1 = user1.displayAvatarURL({ extension: 'png', size: 128 });
+      const avatar2 = user2.displayAvatarURL({ extension: 'png', size: 128 });
 
       try {
         const shipPrompt = isShipWithSass
           ? `Someone shipped "${otherUser?.displayName}" with you (Sass). Your affinity with them is ${percent}%. ONE sentence verdict about how you feel about them, max 12 words. Be tsundere — if high affinity, admit you like them reluctantly. If low, be cold.`
           : `"${user1.displayName}" x "${user2.displayName}" at ${percent}%. ONE sentence verdict, max 12 words. No metaphors or object comparisons. React like a friend judging a couple.`;
-        let verdict = await queryAI(shipPrompt, {
-          systemPrompt: 'You judge ship compatibility. ONE short sentence. Max 12 words. Lowercase. Talk like a 20-year-old, not a poet. No "chemistry of a [object]" comparisons. If you exceed 12 words, you failed.',
-        });
+
+        // Run AI verdict and image generation in parallel — neither depends on the other
+        const [verdictRaw, shipBuffer] = await Promise.all([
+          queryAI(shipPrompt, {
+            systemPrompt: 'You judge ship compatibility. ONE short sentence. Max 12 words. Lowercase. Talk like a 20-year-old, not a poet. No "chemistry of a [object]" comparisons. If you exceed 12 words, you failed.',
+          }),
+          generateShipImage(avatar1, avatar2, percent)
+            .catch((imgErr) => { console.error('Ship image generation failed:', (imgErr as Error).message); return null; }),
+        ]);
+        let verdict = verdictRaw;
 
         // Hard enforce 12 word cap — truncate to first sentence if too long
         if (verdict && verdict.split(/\s+/).length > 14) {
@@ -128,16 +137,7 @@ export async function handleSocialCommand(
             (nextPairTier ? `\n*next: ${nextPairTier}*` : '\n\u2728 *soulmates \u2014 this is real.*');
         }
 
-        // Generate ship card image
-        const avatar1 = user1.displayAvatarURL({ extension: 'png', size: 128 });
-        const avatar2 = user2.displayAvatarURL({ extension: 'png', size: 128 });
-        let files: AttachmentBuilder[] = [];
-        try {
-          const shipBuffer = await generateShipImage(avatar1, avatar2, percent);
-          files = [new AttachmentBuilder(shipBuffer, { name: 'ship.png' })];
-        } catch (imgErr) {
-          console.error('Ship image generation failed:', (imgErr as Error).message);
-        }
+        const files = shipBuffer ? [new AttachmentBuilder(shipBuffer, { name: 'ship.png' })] : [];
 
         const embed = new EmbedBuilder()
           .setColor(0xFF4D6D)

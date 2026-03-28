@@ -49,8 +49,8 @@ async function passesQualityGate(response: string): Promise<boolean> {
     );
     const score = parseInt(verdict?.trim() ?? '0', 10);
     return score >= 5;
-  } catch {
-    // If quality check fails, let it through
+  } catch (err) {
+    console.error('Quality gate check failed:', (err as Error).message);
     return true;
   }
 }

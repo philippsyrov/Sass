@@ -21,7 +21,11 @@ async function embed(text: string): Promise<number[]> {
     model: 'text-embedding-3-small',
     input: text,
   });
-  return response.data[0]?.embedding ?? [];
+  const embedding = response.data[0]?.embedding;
+  if (!embedding || embedding.length === 0) {
+    throw new Error('Empty embedding response from OpenAI');
+  }
+  return embedding;
 }
 
 function cosineSimilarity(a: number[], b: number[]): number {
