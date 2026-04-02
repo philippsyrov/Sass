@@ -278,7 +278,9 @@ export async function handleMention(message: Message, client: Client, event?: Sa
   const tagCount = getEscalationCount(guildId, userId);
 
   // Frame the message with the speaker's name
-  const framedMessage = `${displayName} says: ${cleanContent}`;
+  // Creator mode should receive the raw message, not a quoted "X says:" wrapper.
+  // Otherwise the model can misread it like the creator is relaying someone else's words.
+  const framedMessage = isCreator ? cleanContent : `${displayName} says: ${cleanContent}`;
 
   try {
     await channel.sendTyping().catch((err) => console.error('sendTyping failed:', (err as Error).message));
