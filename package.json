@@ -8,6 +8,7 @@
     "start": "node dist/index.js",
     "dev": "tsx --watch src/index.ts",
     "lint": "eslint src/",
+    "doctor": "node dist/doctor.js",
     "verify": "./scripts/verify.sh",
     "migrate": "tsx src/migrate.ts"
   },

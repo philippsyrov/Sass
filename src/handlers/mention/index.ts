@@ -22,6 +22,9 @@ import { recordResponse, getRecentResponses } from '../../responseMemory.js';
 import { isSpamPing, isSensitiveTopic, isOnRememberCooldown, getSensitiveHint, affinityGainCooldowns, AFFINITY_GAIN_COOLDOWN_MS } from './spamDetection.js';
 import { buildPersonalityContext } from './personality.js';
 import { handleRemember } from './memoryOps.js';
+import { validateResponse } from '../../responseFilter.js';
+
+const SAFE_FILTER_FALLBACKS = ['no', 'anyway', "i'll pass", 'moving on'];
 
 /**
  * Handle direct @Sass mentions and replies to Sass.
@@ -328,7 +331,14 @@ export async function handleMention(message: Message, client: Client): Promise<v
 
     const fullUserContext = [userContext, vectorContext, responseHistory, personalityContext, sensitiveHint].filter(Boolean).join('\n\n');
     const aiResult = await getSassResponse(framedMessage, { guildId, recentContext, userContext: fullUserContext, peopleContext, isCreator, mentionsCreator, creatorName, imageUrl });
-    const response = aiResult.text;
+    let response = aiResult.text;
+    if (!isCreator && response) {
+      const validation = validateResponse(response);
+      if (!validation.valid) {
+        console.log('[FILTER] Response filtered:', validation.reason);
+        response = SAFE_FILTER_FALLBACKS[Math.floor(Math.random() * SAFE_FILTER_FALLBACKS.length)] ?? 'no';
+      }
+    }
     if (!response) {
       await message.reply("My brain just short-circuited. Even AI has bad days, okay?");
       return;

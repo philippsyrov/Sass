@@ -19,7 +19,7 @@ export function setupStartup(client: Client): void {
     console.log(`Sass is online as ${client.user.tag}`);
     console.log(`AI Provider: ${process.env.AI_PROVIDER || 'ollama'}`);
     console.log(`Auto-sass chance: ${(parseFloat(process.env.AUTO_SASS_CHANCE ?? '0.4') || 0.4) * 100}%`);
-    console.log(`Creator ID: ${process.env.CREATOR_ID || 'not set'}`);
+    console.log(`Creator mode: ${process.env.CREATOR_ID ? 'configured' : 'not set'}`);
 
     // Initialize database (fails silently if no DATABASE_URL)
     await initDatabase();

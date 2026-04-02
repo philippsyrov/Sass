@@ -13,6 +13,7 @@ import * as mood from '../mood.js';
 import { logInteraction, wasActivityRoastedRecently, setActivityRoasted, getAffinity, updateAffinity } from '../database/index.js';
 import { recordResponse, getRecentResponses } from '../responseMemory.js';
 import { UTILITY_SYSTEM_PROMPT } from '../ai/prompts.js';
+import { validateResponse } from '../responseFilter.js';
 
 // Track message count per channel since last auto-sass
 const messageCounters = new Map<string, { count: number; lastSeen: number }>();
@@ -86,6 +87,15 @@ const SHORT_REACTIONS = [
   'bro what', 'wild', 'relatable', 'checks out', 'i—',
   'okay and?', 'fascinating', 'anyway', 'you done?', 'cool story',
 ];
+
+function shouldSkipFilteredResponse(response: string): boolean {
+  const validation = validateResponse(response);
+  if (!validation.valid) {
+    console.log('[FILTER] Response filtered:', validation.reason);
+    return true;
+  }
+  return false;
+}
 
 /**
  * Occasionally Sass reads the room and drops an unsolicited remark or reaction.
@@ -263,6 +273,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
           );
           const roast = activityResult.text;
           if (roast && roast.trim().toUpperCase() !== 'SKIP') {
+            if (shouldSkipFilteredResponse(roast)) return;
             setAutoSassCooldown(channelId);
             setGuildAutoSassCooldown(guildId);
             // Track in DB so it survives deploys
@@ -402,6 +413,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
       const joinRemark = joinResult.text;
 
       if (joinRemark && joinRemark.trim().toUpperCase() !== 'SKIP') {
+        if (shouldSkipFilteredResponse(joinRemark)) return;
         // Quality gate — skip filler responses
         if (!(await passesQualityGate(joinRemark))) return;
 
@@ -436,6 +448,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
     const remark = roastResult.text;
 
     if (!remark || remark.trim().toUpperCase() === 'SKIP') return;
+    if (shouldSkipFilteredResponse(remark)) return;
 
     // Quality gate — skip filler responses
     if (!(await passesQualityGate(remark))) return;

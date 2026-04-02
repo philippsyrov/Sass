@@ -113,6 +113,8 @@ export async function deleteUserData(guildId: string, userId: string): Promise<{
 
   const deletedTables: string[] = [];
   try {
+    await pool.query('BEGIN');
+
     const userResult = await pool.query('DELETE FROM users WHERE server_id = $1 AND user_id = $2', [guildId, userId]);
     if ((userResult.rowCount ?? 0) > 0) deletedTables.push('users');
 
@@ -134,8 +136,12 @@ export async function deleteUserData(guildId: string, userId: string): Promise<{
     const wqResult = await pool.query('DELETE FROM wild_quotes WHERE server_id = $1 AND user_id = $2', [guildId, userId]);
     if ((wqResult.rowCount ?? 0) > 0) deletedTables.push('wild_quotes');
 
+    await pool.query('COMMIT');
     return { deleted: true, tables: deletedTables };
   } catch (err) {
+    await pool.query('ROLLBACK').catch((rollbackErr) => {
+      console.error('deleteUserData rollback failed:', (rollbackErr as Error).message);
+    });
     console.error('deleteUserData failed:', (err as Error).message);
     return { deleted: false, tables: [] };
   }
