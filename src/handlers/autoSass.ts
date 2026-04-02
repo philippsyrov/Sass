@@ -13,7 +13,8 @@ import * as mood from '../mood.js';
 import { logInteraction, wasActivityRoastedRecently, setActivityRoasted, getAffinity, updateAffinity } from '../database/index.js';
 import { recordResponse, getRecentResponses } from '../responseMemory.js';
 import { UTILITY_SYSTEM_PROMPT } from '../ai/prompts.js';
-import { validateResponse } from '../responseFilter.js';
+import { handleResponse } from '../shared/responsePipeline.js';
+import type { SassEvent } from '../types.js';
 
 // Track message count per channel since last auto-sass
 const messageCounters = new Map<string, { count: number; lastSeen: number }>();
@@ -88,15 +89,6 @@ const SHORT_REACTIONS = [
   'okay and?', 'fascinating', 'anyway', 'you done?', 'cool story',
 ];
 
-function shouldSkipFilteredResponse(response: string): boolean {
-  const validation = validateResponse(response);
-  if (!validation.valid) {
-    console.log('[FILTER] Response filtered:', validation.reason);
-    return true;
-  }
-  return false;
-}
-
 /**
  * Occasionally Sass reads the room and drops an unsolicited remark or reaction.
  *
@@ -111,11 +103,24 @@ interface AutoSassOptions {
   heardName?: boolean; // someone said "sass" — skip dice roll, let AI decide
 }
 
-export async function handleAutoSass(message: Message, _client: Client, options: AutoSassOptions = {}): Promise<void> {
+export async function handleAutoSass(message: Message, _client: Client, options: AutoSassOptions = {}, event?: SassEvent): Promise<void> {
   const { heardName = false } = options;
   const guildId = message.guild?.id ?? '';
 
   if (!message.guild) return;
+
+  // Build SassEvent for pipeline (if not passed from messageCreate)
+  const channel = message.channel as TextChannel;
+  const sassEvent: SassEvent = event ?? {
+    guildId,
+    channelId: channel.id,
+    userId: message.author.id,
+    displayName: message.author.displayName || message.author.username,
+    content: message.content,
+    isCreator: message.author.id === process.env.CREATOR_ID,
+    message,
+    channel,
+  };
 
   // Never auto-sass the creator (unless they said her name)
   if (message.author.id === process.env.CREATOR_ID && !heardName) return;
@@ -199,8 +204,6 @@ export async function handleAutoSass(message: Message, _client: Client, options:
     mood.shift(guildId, 'nice_to_each_other').catch((err) => console.error('Mood shift failed:', (err as Error).message));
   }
 
-  // Cast channel — this handler only runs in guild text channels
-  const channel = message.channel as TextChannel;
   const channelId = channel.id;
 
   // Increment counter (cap tracked channels to prevent memory leak)
@@ -227,10 +230,11 @@ export async function handleAutoSass(message: Message, _client: Client, options:
     if (wordCount < 4) return;
 
     // Channel cooldown — don't auto-sass too frequently
-    if (isOnAutoSassCooldown(channelId) || isOnGuildAutoSassCooldown(guildId)) return;
+    if (isOnAutoSassCooldown(channelId)) { console.log(`[SKIP] auto-sass channel cooldown for ${channelId.slice(-4)}`); return; }
+    if (isOnGuildAutoSassCooldown(guildId)) { console.log(`[SKIP] auto-sass guild cooldown for ${guildId.slice(-4)}`); return; }
 
     // Roll the dice
-    if (Math.random() > AUTO_SASS_CHANCE) return;
+    if (Math.random() > AUTO_SASS_CHANCE) { console.log(`[SKIP] auto-sass probability roll for ${channelId.slice(-4)}`); return; }
   }
 
   // Reset counter regardless of outcome
@@ -273,7 +277,8 @@ export async function handleAutoSass(message: Message, _client: Client, options:
           );
           const roast = activityResult.text;
           if (roast && roast.trim().toUpperCase() !== 'SKIP') {
-            if (shouldSkipFilteredResponse(roast)) return;
+            // Activity roast is a snowflake — targets different user, custom message format
+            // Kept manual instead of using handleResponse pipeline
             setAutoSassCooldown(channelId);
             setGuildAutoSassCooldown(guildId);
             // Track in DB so it survives deploys
@@ -405,31 +410,22 @@ export async function handleAutoSass(message: Message, _client: Client, options:
       const joinRemark = joinResult.text;
 
       if (joinRemark && joinRemark.trim().toUpperCase() !== 'SKIP') {
-        if (shouldSkipFilteredResponse(joinRemark)) return;
         // Quality gate — skip filler responses
-        if (!(await passesQualityGate(joinRemark))) return;
+        if (!(await passesQualityGate(joinRemark))) { console.log('[SKIP] join quality gate failed'); return; }
 
-        setAutoSassCooldown(channelId);
         setGuildAutoSassCooldown(guildId);
-        await channel.sendTyping().catch((err) => console.error('sendTyping failed:', (err as Error).message));
-        const delay = 1000 + Math.random() * 2000;
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        await channel.send(joinRemark).catch((err) => console.error('Channel send failed:', (err as Error).message));
-        recordResponse(channelId, joinRemark);
-        const moodStatus = await mood.getStatus(guildId);
-        const joinAffinity = await getAffinity(guildId, message.author.id);
-        logInteraction({
-          serverId: message.guild?.id, serverName: message.guild?.name,
-          channelId: channel.id, channelName: channel.name,
-          userId: message.author.id, username: message.author.displayName || message.author.username,
-          triggerType: 'auto-sass-join', commandName: null,
-          userMessage: message.content, sassResponse: joinRemark,
-          mood: moodStatus.mood, moodIntensity: moodStatus.intensity,
-          affinity: joinAffinity,
-          promptTokens: joinResult.promptTokens,
-          completionTokens: joinResult.completionTokens,
-        }).catch((err) => console.error('DB log failed:', (err as Error).message));
-        return;
+        const sent = await handleResponse({
+          event: sassEvent,
+          response: joinRemark,
+          aiResult: joinResult,
+          userMessage: message.content,
+          triggerType: 'auto-sass-join',
+          onFiltered: 'skip',
+          sendMode: 'channel',
+          trackRoast: false,
+          updateAffinity: false,
+        });
+        if (sent) return;
       }
       // AI skipped — fall through to roast
     }
@@ -440,35 +436,22 @@ export async function handleAutoSass(message: Message, _client: Client, options:
     const remark = roastResult.text;
 
     if (!remark || remark.trim().toUpperCase() === 'SKIP') return;
-    if (shouldSkipFilteredResponse(remark)) return;
-
     // Quality gate — skip filler responses
-    if (!(await passesQualityGate(remark))) return;
+    if (!(await passesQualityGate(remark))) { console.log('[SKIP] roast quality gate failed'); return; }
 
-    setAutoSassCooldown(channelId);
     setGuildAutoSassCooldown(guildId);
-    await channel.sendTyping().catch((err) => console.error('sendTyping failed:', (err as Error).message));
-    const delay = 1000 + Math.random() * 2000;
-    await new Promise((resolve) => setTimeout(resolve, delay));
-
-    await message.reply(remark).catch((err) => console.error('Reply failed:', (err as Error).message));
-    recordResponse(channelId, remark);
-    userMemory.recordRoast(guildId, message.author.id).catch((err) => console.error('Record roast failed:', (err as Error).message));
-
-    const moodStatus = await mood.getStatus(guildId);
-    const roastAffinity = await getAffinity(guildId, message.author.id);
-    logInteraction({
-      serverId: message.guild?.id, serverName: message.guild?.name,
-      channelId: channel.id, channelName: channel.name,
-      userId: message.author.id, username: message.author.displayName || message.author.username,
-      triggerType: 'auto-sass', commandName: null,
-      userMessage: message.content, sassResponse: remark,
-      mood: moodStatus.mood, moodIntensity: moodStatus.intensity,
+    await handleResponse({
+      event: sassEvent,
+      response: remark,
+      aiResult: roastResult,
+      userMessage: message.content,
+      triggerType: 'auto-sass',
+      onFiltered: 'skip',
+      sendMode: 'reply',
+      trackRoast: true,
+      updateAffinity: false,
       context: [recentContext, peopleContext, affinityContext].filter(Boolean).join('\n---\n'),
-      affinity: roastAffinity,
-      promptTokens: roastResult.promptTokens,
-      completionTokens: roastResult.completionTokens,
-    }).catch((err) => console.error('DB log failed:', (err as Error).message));
+    });
   } catch (err) {
     console.error('Auto-sass failed:', (err as Error).message);
   }

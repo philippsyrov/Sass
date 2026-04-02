@@ -1,4 +1,4 @@
-import type { Message, User } from 'discord.js';
+import type { Message, User, TextChannel } from 'discord.js';
 
 // --- Environment ---
 declare global {
@@ -18,6 +18,19 @@ declare global {
       AUTO_SASS_MIN_MESSAGES?: string;
     }
   }
+}
+
+// --- Surface Adapter ---
+// Clean parcel of data built once in messageCreate, passed to all handlers.
+export interface SassEvent {
+  guildId: string;
+  channelId: string;
+  userId: string;
+  displayName: string;
+  content: string;        // raw message content (mentions NOT stripped — handlers strip as needed)
+  isCreator: boolean;
+  message: Message;       // original Discord message
+  channel: TextChannel;   // cast guild text channel
 }
 
 // --- Message Buffer ---

@@ -1,10 +1,11 @@
-import type { Client } from 'discord.js';
+import type { Client, TextChannel } from 'discord.js';
 import { handleMention } from '../handlers/mention/index.js';
 import { handleAutoSass } from '../handlers/autoSass.js';
 import { handleBattleMessage } from '../commands/index.js';
 import { messageBuffer } from '../messageBuffer.js';
 import * as userMemory from '../userMemory.js';
 import { recordPairInteraction } from '../shipScore.js';
+import type { SassEvent } from '../types.js';
 
 // Dedup guard — prevent processing the same message twice
 // Using a Map with timestamps for automatic cleanup
@@ -150,15 +151,29 @@ export function setupMessageHandler(client: Client): void {
     const isBattle = await handleBattleMessage(message);
     if (isBattle) return;
 
-    // 1. Direct mention or reply to Sass — always respond
     if (!client.user) return;
+    if (!message.guild) return;
+
+    // Build SassEvent once — clean parcel of data for all handlers
+    const sassEvent: SassEvent = {
+      guildId,
+      channelId: message.channel.id,
+      userId: message.author.id,
+      displayName,
+      content: message.content,
+      isCreator: message.author.id === process.env.CREATOR_ID,
+      message,
+      channel: message.channel as TextChannel,
+    };
+
+    // 1. Direct mention or reply to Sass — always respond
     // Explicit @Sass in message text — always respond
     const isMentionInText = message.content.includes(`<@${client.user.id}>`)
       || message.content.includes(`<@!${client.user.id}>`);
     if (isMentionInText) {
       if (isUserOnCooldown(message.author.id)) return;
       if (isSpamming(message.author.id, message.content)) return;
-      await handleMention(message, client);
+      await handleMention(message, client, sassEvent);
       return;
     }
 
@@ -176,7 +191,7 @@ export function setupMessageHandler(client: Client): void {
             if (Math.random() < 0.7) {
               if (isUserOnCooldown(message.author.id)) return;
               if (isSpamming(message.author.id, message.content)) return;
-              await handleAutoSass(message, client, { heardName: true });
+              await handleAutoSass(message, client, { heardName: true }, sassEvent);
               return;
             }
           }
@@ -195,11 +210,11 @@ export function setupMessageHandler(client: Client): void {
         await message.reply(ack).catch((err) => console.error('Reply failed:', (err as Error).message));
         return;
       }
-      await handleAutoSass(message, client, { heardName: true });
+      await handleAutoSass(message, client, { heardName: true }, sassEvent);
       return;
     }
 
     // 3. Auto-sass — occasionally pop in uninvited
-    await handleAutoSass(message, client);
+    await handleAutoSass(message, client, {}, sassEvent);
   });
 }

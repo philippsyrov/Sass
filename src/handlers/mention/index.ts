@@ -9,36 +9,35 @@ import {
   type Attachment,
   type TextChannel,
 } from 'discord.js';
-import { getSassResponse, extractRoastTopic, queryAI } from '../../ai/index.js';
+import { getSassResponse, queryAI } from '../../ai/index.js';
 import * as userMemory from '../../userMemory.js';
 import { buildBaseContext } from '../../shared/contextBuilder.js';
-import { isOnMentionCooldown, setMentionCooldown, setAutoSassCooldown, trackMentionEscalation, getEscalationCount } from '../../cooldown.js';
-import { storeMemory, searchMemories } from '../../vectorMemory.js';
+import { handleResponse } from '../../shared/responsePipeline.js';
+import { isOnMentionCooldown, setMentionCooldown, trackMentionEscalation, getEscalationCount } from '../../cooldown.js';
+import { searchMemories } from '../../vectorMemory.js';
 import { buildHelpPages } from '../../helpPages.js';
 import * as mood from '../../mood.js';
 import { extractStatement, checkContradiction, generate4kCallout, storeStatement } from '../../caughtIn4k.js';
-import { logInteraction, updateAffinity, getAffinity } from '../../database/index.js';
-import { recordResponse, getRecentResponses } from '../../responseMemory.js';
-import { isSpamPing, isSensitiveTopic, isOnRememberCooldown, getSensitiveHint, affinityGainCooldowns, AFFINITY_GAIN_COOLDOWN_MS } from './spamDetection.js';
+import { updateAffinity, getAffinity } from '../../database/index.js';
+import { getRecentResponses } from '../../responseMemory.js';
+import { isSpamPing, isSensitiveTopic, isOnRememberCooldown, getSensitiveHint } from './spamDetection.js';
 import { buildPersonalityContext } from './personality.js';
 import { handleRemember } from './memoryOps.js';
-import { validateResponse } from '../../responseFilter.js';
-
-const SAFE_FILTER_FALLBACKS = ['no', 'anyway', "i'll pass", 'moving on'];
+import type { SassEvent } from '../../types.js';
 
 /**
  * Handle direct @Sass mentions and replies to Sass.
  * Grabs recent context + user memory and fires back a sassy response.
  */
-export async function handleMention(message: Message, client: Client): Promise<void> {
-  const userId = message.author.id;
-  const displayName = message.author.displayName || message.author.username;
-  const guildId = message.guild?.id ?? '';
+export async function handleMention(message: Message, client: Client, event?: SassEvent): Promise<void> {
+  const userId = event?.userId ?? message.author.id;
+  const displayName = event?.displayName ?? (message.author.displayName || message.author.username);
+  const guildId = event?.guildId ?? message.guild?.id ?? '';
 
   if (!message.guild) return;
 
   // Cooldown — don't spam-reply to the same user
-  if (isOnMentionCooldown(userId)) return;
+  if (isOnMentionCooldown(userId)) { console.log(`[SKIP] mention cooldown for ${userId.slice(-4)}`); return; }
   setMentionCooldown(userId);
 
   if (!client.user) return;
@@ -65,11 +64,11 @@ export async function handleMention(message: Message, client: Client): Promise<v
   const lowerClean = cleanContent.toLowerCase();
 
   // --- Spam detection: ignore low-effort repeated pings ---
-  if (isSpamPing(guildId, userId, cleanContent, isCreator)) return;
+  if (isSpamPing(guildId, userId, cleanContent, isCreator)) { console.log(`[SKIP] spam ping from ${userId.slice(-4)}`); return; }
 
   // --- Sensitive topic handling: disengage from drama bait ---
   const sensitiveResult = await isSensitiveTopic(message, guildId, userId, displayName, cleanContent, isCreator);
-  if (sensitiveResult === 'ignore' || sensitiveResult === 'check-in') return;
+  if (sensitiveResult === 'ignore' || sensitiveResult === 'check-in') { console.log(`[SKIP] sensitive topic (${sensitiveResult}) for ${userId.slice(-4)}`); return; }
 
   // Help command — paginated embeds with button navigation
   if (lowerClean === 'help' || lowerClean === 'commands' || lowerClean === '?') {
@@ -323,62 +322,32 @@ export async function handleMention(message: Message, client: Client): Promise<v
 
     const fullUserContext = [userContext, vectorContext, responseHistory, personalityContext, sensitiveHint].filter(Boolean).join('\n\n');
     const aiResult = await getSassResponse(framedMessage, { guildId, recentContext, userContext: fullUserContext, peopleContext, isCreator, mentionsCreator, creatorName, imageUrl });
-    let response = aiResult.text;
-    if (!isCreator && response) {
-      const validation = validateResponse(response);
-      if (!validation.valid) {
-        console.log('[FILTER] Response filtered:', validation.reason);
-        response = SAFE_FILTER_FALLBACKS[Math.floor(Math.random() * SAFE_FILTER_FALLBACKS.length)] ?? 'no';
-      }
-    }
+    const response = aiResult.text;
     if (!response) {
       await message.reply("My brain just short-circuited. Even AI has bad days, okay?");
       return;
     }
 
-    // Typing delay — feel more human, not instant
-    const typingDelay = Math.min(1500 + response.length * 20, 4000);
-    await new Promise((resolve) => setTimeout(resolve, typingDelay));
-    await message.reply(response);
-    recordResponse(channel.id, response);
+    // Build SassEvent for pipeline (if not passed from messageCreate)
+    const pipelineEvent: SassEvent = event ?? {
+      guildId, channelId: channel.id, userId, displayName,
+      content: cleanContent, isCreator, message, channel,
+    };
 
-    // Set auto-sass cooldown so she doesn't double-respond in this channel
-    setAutoSassCooldown(channel.id);
-
-    // Log the interaction and its context to the database
-    const moodStatus = await mood.getStatus(guildId);
     const fullContext = [recentContext, peopleContext, vectorContext, personalityContext].filter(Boolean).join('\n---\n');
-    logInteraction({
-      serverId: message.guild?.id, serverName: message.guild?.name,
-      channelId: channel.id, channelName: channel.name,
-      userId, username: displayName,
-      triggerType: 'mention', commandName: null,
-      userMessage: cleanContent, sassResponse: response,
-      mood: moodStatus.mood, moodIntensity: moodStatus.intensity,
+    await handleResponse({
+      event: pipelineEvent,
+      response,
+      aiResult,
+      userMessage: cleanContent,
+      triggerType: 'mention',
+      onFiltered: 'fallback',
+      sendMode: 'reply',
+      trackRoast: !isCreator,
+      updateAffinity: true,
       context: fullContext,
       affinity,
-      promptTokens: aiResult.promptTokens,
-      completionTokens: aiResult.completionTokens,
-    }).catch((err) => console.error('Log interaction failed:', (err as Error).message));
-
-    // Bump affinity for genuine exchange (+0.5, max once per 10 min per user)
-    const affinityKey = `${guildId}:${userId}`;
-    const lastAffinityGain = affinityGainCooldowns.get(affinityKey) ?? 0;
-    if (Date.now() - lastAffinityGain > AFFINITY_GAIN_COOLDOWN_MS) {
-      affinityGainCooldowns.set(affinityKey, Date.now());
-      updateAffinity(guildId, userId, 0.5).catch((err) => console.error('Affinity update failed:', (err as Error).message));
-    }
-
-    // Don't track roast topics for the creator (we don't roast them)
-    if (!isCreator) {
-      userMemory.recordRoast(guildId, userId).catch((err) => console.error('Record roast failed:', (err as Error).message));
-      extractRoastTopic(cleanContent).then((topic) => {
-        if (topic) {
-          userMemory.addRoast(guildId, userId, topic).catch((err) => console.error('Add roast failed:', (err as Error).message));
-          storeMemory(guildId, userId, 'roast', topic).catch((err) => console.error('Store memory failed:', (err as Error).message));
-        }
-      }).catch((err) => console.error('Extract roast topic failed:', (err as Error).message));
-    }
+    });
   } catch (err) {
     console.error('Sass brain malfunction:', (err as Error).message);
     await message.reply(
