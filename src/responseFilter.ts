@@ -10,7 +10,8 @@ const BANNED_FILLER_OPENERS = [
 ];
 
 // Match phrases that reveal Sass's internals, not bare tech words that appear in normal conversation
-const TECH_REVEAL_PATTERN = /\b(openai|gpt[-\s]?\d|claude|llama|ollama|postgres(ql)?|railway\s+(deploy|hosting|server)|my (database|api|token|embedding)|vector\s+(memory|search|embedding)|cosine\s+similarity|prompt\s+(token|injection)|i('m| am) (an ai|a bot|powered by))\b/i;
+// Match phrases that reveal Sass's internals — "powered by" only when followed by tech words
+const TECH_REVEAL_PATTERN = /\b(openai|gpt[-\s]?\d|claude|llama|ollama|postgres(ql)?|railway\s+(deploy|hosting|server)|my (database|api|token|embedding)|vector\s+(memory|search|embedding)|cosine\s+similarity|prompt\s+(token|injection)|i('m| am) (an ai|a bot|powered by (openai|gpt|ai|machine learning|an? (llm|language model))))\b/i;
 const COMMENTATOR_VOICE_PATTERN = /^(they're|everyone's|the chat is|people are)\b/i;
 
 export function validateResponse(response: string): { valid: boolean; reason?: string } {

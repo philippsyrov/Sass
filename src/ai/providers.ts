@@ -46,21 +46,26 @@ export async function queryAI(prompt: string, options: QueryAIOptions = {}): Pro
 // --- Provider implementations ---
 
 async function queryOllama(prompt: string, systemPrompt: string): Promise<string | null> {
-  const ollama = new Ollama({
-    host: process.env.OLLAMA_HOST || 'http://localhost:11434',
-  });
+  try {
+    const ollama = new Ollama({
+      host: process.env.OLLAMA_HOST || 'http://localhost:11434',
+    });
 
-  const messages: OllamaMessage[] = [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: prompt },
-  ];
+    const messages: OllamaMessage[] = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: prompt },
+    ];
 
-  const response = await ollama.chat({
-    model: process.env.OLLAMA_MODEL || 'llama3.1:8b',
-    messages,
-  });
+    const response = await ollama.chat({
+      model: process.env.OLLAMA_MODEL || 'llama3.1:8b',
+      messages,
+    });
 
-  return response.message.content;
+    return response.message.content;
+  } catch (err) {
+    console.error('Ollama query failed:', (err as Error).message);
+    return null;
+  }
 }
 
 async function queryOpenAIWithUsage(prompt: string, systemPrompt: string, imageUrl: string | null = null, maxTokens?: number, overrideTemperature?: number): Promise<AIResponse> {

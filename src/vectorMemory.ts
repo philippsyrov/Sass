@@ -338,11 +338,14 @@ export async function distillUserProfile(guildId: string, userId: string): Promi
 
     if (!profile) return null;
 
-    // Store in DB
+    // Store in DB — upsert to handle edge case where row was deleted between read and write
     await pool.query(
-      `UPDATE users SET distilled_profile = $3, profile_updated_at = NOW()
-       WHERE server_id = $1 AND user_id = $2`,
-      [guildId, userId, profile.trim()]
+      `INSERT INTO users (server_id, user_id, name, distilled_profile, profile_updated_at)
+       VALUES ($1, $2, $3, $4, NOW())
+       ON CONFLICT (server_id, user_id) DO UPDATE SET
+         distilled_profile = $4,
+         profile_updated_at = NOW()`,
+      [guildId, userId, user.name, profile.trim()]
     );
 
     return profile.trim();
