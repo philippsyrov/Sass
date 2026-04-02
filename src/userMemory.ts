@@ -165,7 +165,8 @@ export async function addRoast(guildId: string, userId: string, topic: string): 
        ON CONFLICT (server_id, user_id) DO UPDATE SET
          roasts = (SELECT array_agg(r) FROM (
            SELECT unnest(array_append(users.roasts, $3)) AS r
-         ) sub OFFSET GREATEST(0, array_length(array_append(users.roasts, $3), 1) - 5))`,
+         ) sub OFFSET GREATEST(0, array_length(array_append(users.roasts, $3), 1) - 5)),
+         profile_updated_at = NULL`,
       [guildId, userId, topic]
     );
   } catch (err) {
@@ -271,9 +272,12 @@ export async function buildPeopleContext(guildId: string, recentMessages: Buffer
           facts: (row.facts as string[]) || [],
           gender: (row.gender as UserData['gender']) ?? undefined,
         };
-        // Store distilled profile if available
-        if (row.distilled_profile) {
-          profilesMap[row.user_id as string] = row.distilled_profile as string;
+        // Store distilled profile if available and fresh (< 24h)
+        if (row.distilled_profile && row.profile_updated_at) {
+          const updatedAt = new Date(row.profile_updated_at as string).getTime();
+          if (Date.now() - updatedAt < 24 * 60 * 60 * 1000) {
+            profilesMap[row.user_id as string] = row.distilled_profile as string;
+          }
         }
       }
     } catch (err) {
@@ -390,7 +394,8 @@ export async function remember(guildId: string, userId: string, fact: string): P
            facts = (SELECT array_agg(f) FROM (
              SELECT unnest(array_append(users.facts, $3)) AS f
            ) sub OFFSET GREATEST(0, array_length(array_append(users.facts, $3), 1) - 20)),
-           gender = $4`,
+           gender = $4,
+           profile_updated_at = NULL`,
         [guildId, userId, fact, gender]
       );
     } else {
@@ -400,7 +405,8 @@ export async function remember(guildId: string, userId: string, fact: string): P
          ON CONFLICT (server_id, user_id) DO UPDATE SET
            facts = (SELECT array_agg(f) FROM (
              SELECT unnest(array_append(users.facts, $3)) AS f
-           ) sub OFFSET GREATEST(0, array_length(array_append(users.facts, $3), 1) - 20))`,
+           ) sub OFFSET GREATEST(0, array_length(array_append(users.facts, $3), 1) - 20)),
+           profile_updated_at = NULL`,
         [guildId, userId, fact]
       );
     }
