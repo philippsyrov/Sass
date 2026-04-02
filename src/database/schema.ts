@@ -407,6 +407,16 @@ export async function createSchema(): Promise<void> {
     console.error('Wild quotes dedup/index failed (non-fatal):', (err as Error).message);
   }
 
+  // Index for memory distillation — efficient date-based queries during prune/cap
+  try {
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_vector_memories_created_at
+      ON vector_memories(server_id, user_id, created_at)
+    `);
+  } catch (err) {
+    console.error('vector_memories created_at index failed (non-fatal):', (err as Error).message);
+  }
+
   // Migrate local JSON files to Postgres (one-time, on first deploy after guild-scoping)
   await migrateLocalFiles();
 }

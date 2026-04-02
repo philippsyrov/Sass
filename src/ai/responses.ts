@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 import { Ollama, type Message as OllamaMessage } from 'ollama';
 import * as mood from '../mood.js';
-import type { GetSassResponseOptions, AIResponse } from '../types.js';
+import type { GetSassResponseOptions, AIResponse, BufferEntry } from '../types.js';
 import { queryAI, queryAIWithUsage, getOpenAI } from './providers.js';
 import { CREATOR_SYSTEM_PROMPT, UTILITY_SYSTEM_PROMPT, PROFILE_SYSTEM_PROMPT } from './prompts.js';
 
@@ -145,6 +145,26 @@ export function pickCustomReaction(context: string): string | null {
   if (/\b(sus|cap|lie|lying|fake)\b/.test(lower)) return 'sass_judge:100000000000000902';
   if (/\b(yawn|lame|cringe|corny)\b/.test(lower)) return 'sass_yawn:100000000000000910';
   return null;
+}
+
+/**
+ * Summarize a batch of messages into 1-2 short factual sentences.
+ * Used by context compaction when old buffer messages are about to be dropped.
+ */
+export async function summarizeMessages(messages: BufferEntry[]): Promise<string | null> {
+  if (messages.length === 0) return null;
+
+  const formatted = messages.map(
+    (msg) => `${msg.author}: ${msg.content}`
+  ).join('\n');
+
+  const prompt = `Summarize this Discord conversation in 1-2 short sentences. Key topics and who said what. Be factual, no personality.\n\n${formatted}`;
+
+  return queryAI(prompt, {
+    systemPrompt: UTILITY_SYSTEM_PROMPT,
+    maxTokens: 60,
+    temperature: 0.3,
+  });
 }
 
 // --- Creator mode (separate brain, no roasting) ---

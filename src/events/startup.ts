@@ -1,6 +1,7 @@
 import type { Client, Guild, TextChannel } from 'discord.js';
 import { initDatabase, closeDatabase } from '../database/index.js';
 import * as userMemory from '../userMemory.js';
+import { distillAllGuilds } from '../vectorMemory.js';
 
 // Send a message to the first available text channel in a guild
 async function sendToFirstChannel(guild: Guild, text: string): Promise<void> {
@@ -22,6 +23,17 @@ export function setupStartup(client: Client): void {
 
     // Initialize database (fails silently if no DATABASE_URL)
     await initDatabase();
+
+    // Memory distillation: 5-min startup delay, then every 6 hours
+    const DISTILL_DELAY_MS = 5 * 60 * 1000;
+    const DISTILL_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+    setTimeout(() => {
+      distillAllGuilds().catch((err) => console.error('Startup distillation failed:', (err as Error).message));
+      setInterval(() => {
+        distillAllGuilds().catch((err) => console.error('Periodic distillation failed:', (err as Error).message));
+      }, DISTILL_INTERVAL_MS);
+    }, DISTILL_DELAY_MS);
   });
 
   // Guild join — announce arrival

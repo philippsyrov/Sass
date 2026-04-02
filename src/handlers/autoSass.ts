@@ -10,7 +10,7 @@ import * as userMemory from '../userMemory.js';
 import { isOnAutoSassCooldown, setAutoSassCooldown, isOnGuildAutoSassCooldown, setGuildAutoSassCooldown } from '../cooldown.js';
 import { getActivityDescription } from '../shared/commandUtils.js';
 import * as mood from '../mood.js';
-import { logInteraction, wasActivityRoastedRecently, setActivityRoasted, getAffinity } from '../database/index.js';
+import { logInteraction, wasActivityRoastedRecently, setActivityRoasted, getAffinity, updateAffinity } from '../database/index.js';
 import { recordResponse, getRecentResponses } from '../responseMemory.js';
 import { UTILITY_SYSTEM_PROMPT } from '../ai/prompts.js';
 
@@ -139,28 +139,51 @@ export async function handleAutoSass(message: Message, _client: Client, options:
 
   // Vibe detection — shift mood based on chat energy
   const lowerText = text.toLowerCase();
-  // Beef detection — only register REAL fights, not casual banter
-  // Requires direct targeting: @mention with hostile language OR hostile reply to another user
-  const fightPatterns = /\b(stfu|fight me|shut up|fuck you|fuck off|kys|you suck|loser|idiot|stupid|pathetic|brain ?dead|die mad|get rekt|go away|nobody likes|i hate you|you'?re cooked|you fell off|trash take)\b/i;
+
+  // Tiered hostility detection — distinguishes casual banter from genuine hostility
+  // Mild words (common in gaming/anime servers) only record beef if low affinity
+  const mildFightPatterns = /\b(loser|idiot|stupid|pathetic|brain ?dead|get rekt|you'?re cooked|you fell off|trash take|you suck)\b/i;
+  const mediumFightPatterns = /\b(stfu|fight me|shut up|fuck you|fuck off|go away|nobody likes|i hate you)\b/i;
+  const severeFightPatterns = /\b(kys|die mad|kill yourself|go die)\b/i;
   const wholesomePatterns = /\b(love you|you'?re (amazing|the best|awesome)|thank you|ily|<3|❤️|😊|🥰)\b/i;
 
-  if (fightPatterns.test(lowerText)) {
+  const isSevere = severeFightPatterns.test(lowerText);
+  const isMedium = !isSevere && mediumFightPatterns.test(lowerText);
+  const isMild = !isSevere && !isMedium && mildFightPatterns.test(lowerText);
+
+  if (isSevere || isMedium || isMild) {
     mood.shift(guildId, 'fighting').catch((err) => console.error('Mood shift failed:', (err as Error).message));
-    // Record beef ONLY if directly replying to another user with hostile language
-    if (message.reference?.messageId) {
-      try {
-        const repliedTo = await message.channel.messages.fetch(message.reference.messageId);
-        if (repliedTo?.author && !repliedTo.author.bot && repliedTo.author.id !== message.author.id) {
-          const topic = text.slice(0, 50);
-          userMemory.addBeef(guildId, message.author.id, repliedTo.author.id, topic).catch((err) => console.error('Add beef failed:', (err as Error).message));
-        }
-      } catch (err) { console.error('Fetch message failed:', (err as Error).message); }
+
+    // Severe: extra affinity penalty
+    if (isSevere) {
+      updateAffinity(guildId, message.author.id, -5).catch((err) => console.error('Severe affinity penalty failed:', (err as Error).message));
     }
-    // Record beef ONLY if they @mentioned another user with hostile language
-    const mentionedUsers = message.mentions.users.filter((u) => !u.bot && u.id !== message.author.id && u.id !== _client.user?.id);
-    for (const [, mentionedUser] of mentionedUsers) {
-      const topic = text.slice(0, 50);
-      userMemory.addBeef(guildId, message.author.id, mentionedUser.id, topic).catch((err) => console.error('Add beef failed:', (err as Error).message));
+
+    // Determine if beef should be recorded based on tier
+    // Mild banter only counts as beef if the author has low affinity with Sass
+    let shouldRecordBeef = isSevere || isMedium;
+    if (isMild && !shouldRecordBeef) {
+      const authorAffinity = await getAffinity(guildId, message.author.id);
+      shouldRecordBeef = authorAffinity < 30;
+    }
+
+    if (shouldRecordBeef) {
+      // Record beef ONLY if directly replying to another user with hostile language
+      if (message.reference?.messageId) {
+        try {
+          const repliedTo = await message.channel.messages.fetch(message.reference.messageId);
+          if (repliedTo?.author && !repliedTo.author.bot && repliedTo.author.id !== message.author.id) {
+            const topic = text.slice(0, 50);
+            userMemory.addBeef(guildId, message.author.id, repliedTo.author.id, topic).catch((err) => console.error('Add beef failed:', (err as Error).message));
+          }
+        } catch (err) { console.error('Fetch replied message failed:', (err as Error).message); }
+      }
+      // Record beef ONLY if they @mentioned another user with hostile language
+      const mentionedUsers = message.mentions.users.filter((u) => !u.bot && u.id !== message.author.id && u.id !== _client.user?.id);
+      for (const [, mentionedUser] of mentionedUsers) {
+        const topic = text.slice(0, 50);
+        userMemory.addBeef(guildId, message.author.id, mentionedUser.id, topic).catch((err) => console.error('Add beef failed:', (err as Error).message));
+      }
     }
   } else if (wholesomePatterns.test(lowerText)) {
     mood.shift(guildId, 'nice_to_each_other').catch((err) => console.error('Mood shift failed:', (err as Error).message));
@@ -276,9 +299,13 @@ export async function handleAutoSass(message: Message, _client: Client, options:
   const recentMessages = messageBuffer.getRecentRaw(channelId, 20);
   if (!recentMessages || recentMessages.length === 0) return;
 
-  const recentContext = recentMessages.map(
-    (msg) => `${msg.author}${msg.isBot ? ' [BOT]' : ''}: ${msg.content}`
-  ).join('\n');
+  const bufferSummary = messageBuffer.getSummary(channelId);
+  const recentContext = [
+    bufferSummary,
+    ...recentMessages.map(
+      (msg) => `${msg.author}${msg.isBot ? ' [BOT]' : ''}: ${msg.content}`
+    ),
+  ].filter(Boolean).join('\n');
   const peopleContext = await userMemory.buildPeopleContext(guildId, recentMessages);
   const affinityContext = await buildAffinityContext(guildId, recentMessages);
   const responseHistory = getRecentResponses(channelId);

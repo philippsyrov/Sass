@@ -184,6 +184,13 @@ export interface ReactionLog {
   isPositive: boolean;
 }
 
+// --- Context Compaction ---
+export interface ChannelSummary {
+  text: string;
+  messageCount: number;
+  timestamp: number;
+}
+
 // --- Vector Memory ---
 export type MemoryType = 'roast' | 'fact' | 'statement' | 'quote';
 

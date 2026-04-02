@@ -289,7 +289,11 @@ export async function handleEntertainmentCommand(
           : [];
 
         const memoryContext = memories.length > 0
-          ? `Known facts from memory:\n${memories.map((m) => `- ${m.content}`).join('\n')}`
+          ? `Known facts from memory:\n${memories.map((m) => {
+              const member = guild?.members.cache.get(m.userId);
+              const name = member?.displayName ?? 'someone';
+              return `- ${name}: ${m.content}`;
+            }).join('\n')}`
           : '';
 
         // User-focused (no topic) vs server-wide (with topic)

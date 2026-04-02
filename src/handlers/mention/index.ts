@@ -191,12 +191,17 @@ export async function handleMention(message: Message, client: Client): Promise<v
   }
 
   // Mood detection — detect how user is treating Sass
+  // Tiered: standard insults just shift mood, severe toxicity also penalizes affinity
   if (!isCreator && cleanContent) {
     const nicePatterns = /\b(you'?re (actually |pretty )?(cool|funny|great|awesome|the best|amazing|hilarious)|i love you|good bot|nice one|that was good|love sass|sass is the best|you'?re my fav)\b/i;
-    const meanPatterns = /\b(you suck|worst bot|you'?re (trash|garbage|terrible|bad|boring|annoying|lame|stupid)|hate this bot|sass is (trash|mid|ass)|fuck you|fuck off|stfu|kys|die|kill yourself|go die|eat shit|piece of shit|pos)\b/i;
+    const meanPatterns = /\b(you suck|worst bot|you'?re (trash|garbage|terrible|bad|boring|annoying|lame|stupid)|hate this bot|sass is (trash|mid|ass)|fuck you|fuck off|stfu|eat shit|piece of shit|pos)\b/i;
+    const severeMeanPatterns = /\b(kys|kill yourself|go die)\b/i;
 
     if (nicePatterns.test(lowerClean)) {
       mood.shift(guildId, 'complimented').catch((err) => console.error('Mood shift failed:', (err as Error).message));
+    } else if (severeMeanPatterns.test(lowerClean)) {
+      mood.shift(guildId, 'insulted').catch((err) => console.error('Mood shift failed:', (err as Error).message));
+      updateAffinity(guildId, userId, -3).catch((err) => console.error('Severe mean affinity penalty failed:', (err as Error).message));
     } else if (meanPatterns.test(lowerClean)) {
       mood.shift(guildId, 'insulted').catch((err) => console.error('Mood shift failed:', (err as Error).message));
     }
@@ -245,9 +250,13 @@ export async function handleMention(message: Message, client: Client): Promise<v
 
   // Build context — include who is speaking so the AI understands the conversation
   const recentMessages = messageBuffer.getRecentRaw(channel.id, 25);
-  const recentContext = recentMessages.map(
-    (msg) => `${msg.author}${msg.isBot ? ' [BOT]' : ''}: ${msg.content}`
-  ).join('\n');
+  const bufferSummary = messageBuffer.getSummary(channel.id);
+  const recentContext = [
+    bufferSummary,
+    ...recentMessages.map(
+      (msg) => `${msg.author}${msg.isBot ? ' [BOT]' : ''}: ${msg.content}`
+    ),
+  ].filter(Boolean).join('\n');
   const userContext = await userMemory.getContext(guildId, userId);
   const peopleContext = await userMemory.buildPeopleContext(guildId, recentMessages);
 
@@ -267,8 +276,8 @@ export async function handleMention(message: Message, client: Client): Promise<v
 
   let vectorContext = '';
   if (!isCreator && memories.length > 0) {
-    vectorContext = 'RELEVANT MEMORIES (use these if they fit):\n' +
-      memories.map((m) => `- [${m.type}] ${m.content}`).join('\n');
+    vectorContext = `RELEVANT MEMORIES about ${displayName} (use these if they fit):\n` +
+      memories.map((m) => `- [${m.type}] ${displayName}: ${m.content}`).join('\n');
   }
 
   // Escalation tag count — needed for unified personality context
