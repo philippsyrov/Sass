@@ -15,16 +15,19 @@ const MAX_TRACKED_CHANNELS = 1000;
 const COMPACTION_BATCH_SIZE = 10;
 const MAX_SUMMARY_LENGTH = 300;
 const SUMMARY_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
+const MAX_COMPACTION_FAILURES = 3; // stop trying after 3 consecutive failures (circuit breaker)
 
 class MessageBuffer {
   channels: Map<string, BufferEntry[]>;
   private summaries: Map<string, ChannelSummary>;
   private pendingCompaction: Set<string>;
+  private compactionFailures: number;
 
   constructor() {
     this.channels = new Map();
     this.summaries = new Map();
     this.pendingCompaction = new Set();
+    this.compactionFailures = 0;
   }
 
   add(message: Message): void {
@@ -56,9 +59,9 @@ class MessageBuffer {
     if (buffer.length > MAX_MESSAGES_PER_CHANNEL) {
       const overflow = buffer.length - MAX_MESSAGES_PER_CHANNEL;
 
-      // If enough messages are being dropped and no compaction in progress,
-      // capture them synchronously and summarize async
-      if (overflow >= COMPACTION_BATCH_SIZE && !this.pendingCompaction.has(channelId)) {
+      // If enough messages are being dropped, no compaction in progress,
+      // and circuit breaker hasn't tripped — capture and summarize async
+      if (overflow >= COMPACTION_BATCH_SIZE && !this.pendingCompaction.has(channelId) && this.compactionFailures < MAX_COMPACTION_FAILURES) {
         const dropped = buffer.slice(0, overflow);
         this.compactChannel(channelId, dropped).catch((err) =>
           console.error('Buffer compaction failed:', (err as Error).message)
@@ -141,7 +144,16 @@ class MessageBuffer {
     this.pendingCompaction.add(channelId);
     try {
       const newSummary = await summarizeMessages(dropped);
-      if (!newSummary) return;
+      if (!newSummary) {
+        this.compactionFailures++;
+        if (this.compactionFailures >= MAX_COMPACTION_FAILURES) {
+          console.warn(`[COMPACTION] Circuit breaker tripped after ${this.compactionFailures} failures — disabling for this session`);
+        }
+        return;
+      }
+
+      // Success — reset failure counter
+      this.compactionFailures = 0;
 
       const existing = this.summaries.get(channelId);
       let combinedText: string;
