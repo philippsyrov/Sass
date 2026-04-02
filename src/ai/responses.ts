@@ -3,7 +3,7 @@ import { Ollama, type Message as OllamaMessage } from 'ollama';
 import * as mood from '../mood.js';
 import type { GetSassResponseOptions, AIResponse, BufferEntry } from '../types.js';
 import { queryAI, queryAIWithUsage, getOpenAI } from './providers.js';
-import { CREATOR_SYSTEM_PROMPT, UTILITY_SYSTEM_PROMPT, PROFILE_SYSTEM_PROMPT } from './prompts.js';
+import { CREATOR_SYSTEM_PROMPT, UTILITY_SYSTEM_PROMPT, PROFILE_SYSTEM_PROMPT, SASS_LITE_PROMPT } from './prompts.js';
 
 type UserContent = string | OpenAI.ChatCompletionContentPart[];
 
@@ -70,7 +70,7 @@ IMPORTANT RULES:
 - If you don't know what "it" or "that" refers to, say "SKIP" rather than guessing.`,
   ].filter(Boolean);
 
-  return queryAIWithUsage(parts.join('\n\n'));
+  return queryAIWithUsage(parts.join('\n\n'), { systemPrompt: SASS_LITE_PROMPT });
 }
 
 /**
@@ -103,7 +103,7 @@ Be natural and casual. Short (3-10 words). Lowercase. You're a participant, not 
 IMPORTANT: You CANNOT see images or embed content. If the conversation is mostly about images or things you can't see, say "SKIP". NEVER start with filler words like "nah," "yeah," "honestly," "lol". Lead with personality, not filler.`,
   ].filter(Boolean);
 
-  return queryAIWithUsage(parts.join('\n\n'));
+  return queryAIWithUsage(parts.join('\n\n'), { systemPrompt: SASS_LITE_PROMPT });
 }
 
 /**

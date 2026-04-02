@@ -5,8 +5,8 @@ import {
   type TextChannel,
 } from 'discord.js';
 import { getAutoSassDecision, getReactionDecision, getConversationJoin, queryAI, queryAIWithUsage, pickCustomReaction } from '../ai/index.js';
-import { messageBuffer } from '../messageBuffer.js';
 import * as userMemory from '../userMemory.js';
+import { buildBaseContext } from '../shared/contextBuilder.js';
 import { isOnAutoSassCooldown, setAutoSassCooldown, isOnGuildAutoSassCooldown, setGuildAutoSassCooldown } from '../cooldown.js';
 import { getActivityDescription } from '../shared/commandUtils.js';
 import * as mood from '../mood.js';
@@ -307,17 +307,9 @@ export async function handleAutoSass(message: Message, _client: Client, options:
     }
   }
 
-  const recentMessages = messageBuffer.getRecentRaw(channelId, 20);
+  const { recentMessages, recentContext, peopleContext } = await buildBaseContext(guildId, channelId, 20);
   if (!recentMessages || recentMessages.length === 0) return;
 
-  const bufferSummary = messageBuffer.getSummary(channelId);
-  const recentContext = [
-    bufferSummary,
-    ...recentMessages.map(
-      (msg) => `${msg.author}${msg.isBot ? ' [BOT]' : ''}: ${msg.content}`
-    ),
-  ].filter(Boolean).join('\n');
-  const peopleContext = await userMemory.buildPeopleContext(guildId, recentMessages);
   const affinityContext = await buildAffinityContext(guildId, recentMessages);
   const responseHistory = getRecentResponses(channelId);
 

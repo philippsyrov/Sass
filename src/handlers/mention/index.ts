@@ -10,8 +10,8 @@ import {
   type TextChannel,
 } from 'discord.js';
 import { getSassResponse, extractRoastTopic, queryAI } from '../../ai/index.js';
-import { messageBuffer } from '../../messageBuffer.js';
 import * as userMemory from '../../userMemory.js';
+import { buildBaseContext } from '../../shared/contextBuilder.js';
 import { isOnMentionCooldown, setMentionCooldown, setAutoSassCooldown, trackMentionEscalation, getEscalationCount } from '../../cooldown.js';
 import { storeMemory, searchMemories } from '../../vectorMemory.js';
 import { buildHelpPages } from '../../helpPages.js';
@@ -252,16 +252,8 @@ export async function handleMention(message: Message, client: Client): Promise<v
   }
 
   // Build context — include who is speaking so the AI understands the conversation
-  const recentMessages = messageBuffer.getRecentRaw(channel.id, 25);
-  const bufferSummary = messageBuffer.getSummary(channel.id);
-  const recentContext = [
-    bufferSummary,
-    ...recentMessages.map(
-      (msg) => `${msg.author}${msg.isBot ? ' [BOT]' : ''}: ${msg.content}`
-    ),
-  ].filter(Boolean).join('\n');
+  const { recentContext, peopleContext } = await buildBaseContext(guildId, channel.id, 25);
   const userContext = await userMemory.getContext(guildId, userId);
-  const peopleContext = await userMemory.buildPeopleContext(guildId, recentMessages);
 
   // Check if someone is talking about the creator — protect them
   const creatorName = await userMemory.getCreatorName(guildId);

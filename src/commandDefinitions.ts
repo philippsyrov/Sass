@@ -93,6 +93,41 @@ export const commands = [
 
 ];
 
+// --- Command Capability Registry ---
+// Documents each command's runtime characteristics for tooling and future automation.
+// No runtime code reads this yet — purely informational.
+
+export interface CommandMeta {
+  name: string;
+  costLevel: 'free' | 'cheap' | 'standard';  // free=no AI, cheap=utility prompt, standard=full Sass prompt
+  dbRequired: boolean;
+  aiRequired: boolean;
+  bufferInjection: boolean;   // injects result into message buffer after execution
+  memoryRead: boolean;        // reads from user memory or vector memory
+  memoryWrite: boolean;       // writes to user memory or vector memory
+  affinityImpact: boolean;    // modifies affinity score
+}
+
+export const COMMAND_REGISTRY: Record<string, CommandMeta> = {
+  help:        { name: 'help',        costLevel: 'free',     dbRequired: false, aiRequired: false, bufferInjection: false, memoryRead: false, memoryWrite: false, affinityImpact: false },
+  fortune:     { name: 'fortune',     costLevel: 'free',     dbRequired: false, aiRequired: false, bufferInjection: false, memoryRead: false, memoryWrite: false, affinityImpact: false },
+  quote:       { name: 'quote',       costLevel: 'standard', dbRequired: false, aiRequired: true,  bufferInjection: false, memoryRead: false, memoryWrite: false, affinityImpact: false },
+  hottake:     { name: 'hottake',     costLevel: 'standard', dbRequired: false, aiRequired: true,  bufferInjection: true,  memoryRead: false, memoryWrite: false, affinityImpact: false },
+  status:      { name: 'status',      costLevel: 'free',     dbRequired: true,  aiRequired: false, bufferInjection: false, memoryRead: false, memoryWrite: false, affinityImpact: false },
+  ship:        { name: 'ship',        costLevel: 'standard', dbRequired: true,  aiRequired: true,  bufferInjection: true,  memoryRead: true,  memoryWrite: false, affinityImpact: false },
+  compliment:  { name: 'compliment',  costLevel: 'standard', dbRequired: true,  aiRequired: true,  bufferInjection: false, memoryRead: true,  memoryWrite: false, affinityImpact: true  },
+  profile:     { name: 'profile',     costLevel: 'standard', dbRequired: true,  aiRequired: true,  bufferInjection: true,  memoryRead: true,  memoryWrite: false, affinityImpact: false },
+  leaderboard: { name: 'leaderboard', costLevel: 'free',     dbRequired: true,  aiRequired: false, bufferInjection: false, memoryRead: false, memoryWrite: false, affinityImpact: false },
+  favorite:    { name: 'favorite',    costLevel: 'free',     dbRequired: true,  aiRequired: false, bufferInjection: false, memoryRead: true,  memoryWrite: false, affinityImpact: false },
+  horoscope:   { name: 'horoscope',   costLevel: 'standard', dbRequired: false, aiRequired: true,  bufferInjection: true,  memoryRead: false, memoryWrite: false, affinityImpact: false },
+  roastbattle: { name: 'roastbattle', costLevel: 'standard', dbRequired: true,  aiRequired: true,  bufferInjection: false, memoryRead: false, memoryWrite: false, affinityImpact: true  },
+  beef:        { name: 'beef',        costLevel: 'free',     dbRequired: true,  aiRequired: false, bufferInjection: false, memoryRead: false, memoryWrite: false, affinityImpact: false },
+  halloffame:  { name: 'halloffame',  costLevel: 'free',     dbRequired: true,  aiRequired: false, bufferInjection: false, memoryRead: false, memoryWrite: false, affinityImpact: false },
+  bestof:      { name: 'bestof',      costLevel: 'free',     dbRequired: true,  aiRequired: false, bufferInjection: false, memoryRead: false, memoryWrite: false, affinityImpact: false },
+  forgetme:    { name: 'forgetme',    costLevel: 'free',     dbRequired: true,  aiRequired: false, bufferInjection: false, memoryRead: false, memoryWrite: true,  affinityImpact: true  },
+  conspiracy:  { name: 'conspiracy',  costLevel: 'standard', dbRequired: true,  aiRequired: true,  bufferInjection: true,  memoryRead: true,  memoryWrite: false, affinityImpact: false },
+};
+
 // --- Fortune cookies ---
 export const FORTUNES: string[] = [
   "your future holds... disappointment. but you're used to that.",
