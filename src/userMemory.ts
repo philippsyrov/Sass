@@ -177,7 +177,7 @@ export async function addRoast(guildId: string, userId: string, topic: string): 
 /**
  * Get context string about a user for the AI prompt.
  */
-export async function getContext(guildId: string, userId: string): Promise<string> {
+export async function getContext(guildId: string, userId: string, currentDisplayName?: string): Promise<string> {
   const pool = getPool();
   if (!pool) return '';
 
@@ -189,16 +189,19 @@ export async function getContext(guildId: string, userId: string): Promise<strin
       [guildId, userId]
     );
     const row = profileResult.rows[0];
+    // Use current display name to avoid name mismatch (DB name may be stale)
+    const name = currentDisplayName ?? (row?.name as string | undefined) ?? 'unknown';
+
     if (row?.distilled_profile) {
       const updatedAt = row.profile_updated_at ? new Date(row.profile_updated_at as string).getTime() : 0;
       const isRecent = Date.now() - updatedAt < 24 * 60 * 60 * 1000; // 24h
 
       if (isRecent) {
-        const parts: string[] = [`ABOUT ${row.name as string}: ${row.distilled_profile as string}`];
+        const parts: string[] = [`ABOUT ${name}: ${row.distilled_profile as string}`];
         // Keep raw facts as specific ammo the AI can reference
         const facts = row.facts as string[] | null;
         if (facts?.length) {
-          parts.push(`things you know about ${row.name as string}: ${facts.join('; ')}. weaponize this.`);
+          parts.push(`things you know about ${name}: ${facts.join('; ')}. weaponize this.`);
         }
         return parts.join('\n');
       }
@@ -210,25 +213,27 @@ export async function getContext(guildId: string, userId: string): Promise<strin
   // Fallback to raw assembly if no distilled profile
   const user = await getUser(guildId, userId);
   if (!user) return '';
+  // Use current display name to avoid stale DB name
+  const name = currentDisplayName ?? user.name;
 
   const parts: string[] = [];
   if (user.facts && user.facts.length > 0) {
     parts.push(
-      `things you know about ${user.name}: ${user.facts.join('; ')}. weaponize this.`
+      `things you know about ${name}: ${user.facts.join('; ')}. weaponize this.`
     );
   }
   if (user.roasts.length > 0) {
     parts.push(
-      `you've already destroyed ${user.name} before about: ${user.roasts.join(', ')}. ` +
+      `you've already destroyed ${name} before about: ${user.roasts.join(', ')}. ` +
       `use this. be petty. remind them they never learn.`
     );
   }
   if (user.messageCount > 50) {
-    parts.push(`${user.name} is basically a fixture here. they can take whatever you throw at them — no mercy.`);
+    parts.push(`${name} is basically a fixture here. they can take whatever you throw at them — no mercy.`);
   } else if (user.messageCount > 20) {
-    parts.push(`${user.name} is a regular. they know what they signed up for.`);
+    parts.push(`${name} is a regular. they know what they signed up for.`);
   } else if (user.messageCount <= 3) {
-    parts.push(`${user.name} hasn't talked much yet. don't assume they're brand new — they might just be quiet.`);
+    parts.push(`${name} hasn't talked much yet. don't assume they're brand new — they might just be quiet.`);
   }
   return parts.join(' ');
 }

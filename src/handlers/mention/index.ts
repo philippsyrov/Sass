@@ -252,7 +252,7 @@ export async function handleMention(message: Message, client: Client, event?: Sa
 
   // Build context — include who is speaking so the AI understands the conversation
   const { recentContext, peopleContext } = await buildBaseContext(guildId, channel.id, 25);
-  const userContext = await userMemory.getContext(guildId, userId);
+  const userContext = await userMemory.getContext(guildId, userId, displayName);
 
   // Check if someone is talking about the creator — protect them
   const creatorName = await userMemory.getCreatorName(guildId);
