@@ -21,13 +21,13 @@ class MessageBuffer {
   channels: Map<string, BufferEntry[]>;
   private summaries: Map<string, ChannelSummary>;
   private pendingCompaction: Set<string>;
-  private compactionFailures: number;
+  private compactionFailures: Map<string, number>; // per-channel circuit breaker
 
   constructor() {
     this.channels = new Map();
     this.summaries = new Map();
     this.pendingCompaction = new Set();
-    this.compactionFailures = 0;
+    this.compactionFailures = new Map();
   }
 
   add(message: Message): void {
@@ -40,6 +40,7 @@ class MessageBuffer {
         if (oldest !== undefined) {
           this.channels.delete(oldest);
           this.summaries.delete(oldest);
+          this.compactionFailures.delete(oldest);
         }
       }
       this.channels.set(channelId, []);
@@ -60,8 +61,8 @@ class MessageBuffer {
       const overflow = buffer.length - MAX_MESSAGES_PER_CHANNEL;
 
       // If enough messages are being dropped, no compaction in progress,
-      // and circuit breaker hasn't tripped — capture and summarize async
-      if (overflow >= COMPACTION_BATCH_SIZE && !this.pendingCompaction.has(channelId) && this.compactionFailures < MAX_COMPACTION_FAILURES) {
+      // and circuit breaker hasn't tripped for this channel — capture and summarize async
+      if (overflow >= COMPACTION_BATCH_SIZE && !this.pendingCompaction.has(channelId) && (this.compactionFailures.get(channelId) ?? 0) < MAX_COMPACTION_FAILURES) {
         const dropped = buffer.slice(0, overflow);
         this.compactChannel(channelId, dropped).catch((err) =>
           console.error('Buffer compaction failed:', (err as Error).message)
@@ -116,6 +117,7 @@ class MessageBuffer {
         if (oldest !== undefined) {
           this.channels.delete(oldest);
           this.summaries.delete(oldest);
+          this.compactionFailures.delete(oldest);
         }
       }
       this.channels.set(channelId, []);
@@ -145,15 +147,16 @@ class MessageBuffer {
     try {
       const newSummary = await summarizeMessages(dropped);
       if (!newSummary) {
-        this.compactionFailures++;
-        if (this.compactionFailures >= MAX_COMPACTION_FAILURES) {
-          console.warn(`[COMPACTION] Circuit breaker tripped after ${this.compactionFailures} failures — disabling for this session`);
+        const fails = (this.compactionFailures.get(channelId) ?? 0) + 1;
+        this.compactionFailures.set(channelId, fails);
+        if (fails >= MAX_COMPACTION_FAILURES) {
+          console.warn(`[COMPACTION] Circuit breaker tripped for channel ${channelId} after ${fails} failures`);
         }
         return;
       }
 
-      // Success — reset failure counter
-      this.compactionFailures = 0;
+      // Success — reset failure counter for this channel
+      this.compactionFailures.delete(channelId);
 
       const existing = this.summaries.get(channelId);
       let combinedText: string;
