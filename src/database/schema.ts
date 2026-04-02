@@ -417,6 +417,14 @@ export async function createSchema(): Promise<void> {
     console.error('vector_memories created_at index failed (non-fatal):', (err as Error).message);
   }
 
+  // Add distilled profile columns for per-user AI-generated profile summaries
+  try {
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS distilled_profile TEXT`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_updated_at TIMESTAMPTZ`);
+  } catch (err) {
+    console.error('Distilled profile columns failed (non-fatal):', (err as Error).message);
+  }
+
   // Migrate local JSON files to Postgres (one-time, on first deploy after guild-scoping)
   await migrateLocalFiles();
 }

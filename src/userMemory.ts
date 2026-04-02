@@ -177,6 +177,36 @@ export async function addRoast(guildId: string, userId: string, topic: string): 
  * Get context string about a user for the AI prompt.
  */
 export async function getContext(guildId: string, userId: string): Promise<string> {
+  const pool = getPool();
+  if (!pool) return '';
+
+  // Try distilled profile first — compact AI-generated summary
+  try {
+    const profileResult = await pool.query(
+      `SELECT distilled_profile, profile_updated_at, name, facts
+       FROM users WHERE server_id = $1 AND user_id = $2`,
+      [guildId, userId]
+    );
+    const row = profileResult.rows[0];
+    if (row?.distilled_profile) {
+      const updatedAt = row.profile_updated_at ? new Date(row.profile_updated_at as string).getTime() : 0;
+      const isRecent = Date.now() - updatedAt < 24 * 60 * 60 * 1000; // 24h
+
+      if (isRecent) {
+        const parts: string[] = [`ABOUT ${row.name as string}: ${row.distilled_profile as string}`];
+        // Keep raw facts as specific ammo the AI can reference
+        const facts = row.facts as string[] | null;
+        if (facts?.length) {
+          parts.push(`things you know about ${row.name as string}: ${facts.join('; ')}. weaponize this.`);
+        }
+        return parts.join('\n');
+      }
+    }
+  } catch (err) {
+    console.error('getContext profile fetch failed:', (err as Error).message);
+  }
+
+  // Fallback to raw assembly if no distilled profile
   const user = await getUser(guildId, userId);
   if (!user) return '';
 
@@ -223,6 +253,7 @@ export async function buildPeopleContext(guildId: string, recentMessages: Buffer
   // Batch fetch from DB
   const userIds = [...seen.keys()];
   const usersMap: Record<string, UserData> = {};
+  const profilesMap: Record<string, string> = {};
 
   if (pool) {
     try {
@@ -240,6 +271,10 @@ export async function buildPeopleContext(guildId: string, recentMessages: Buffer
           facts: (row.facts as string[]) || [],
           gender: (row.gender as UserData['gender']) ?? undefined,
         };
+        // Store distilled profile if available
+        if (row.distilled_profile) {
+          profilesMap[row.user_id as string] = row.distilled_profile as string;
+        }
       }
     } catch (err) {
       console.error('buildPeopleContext DB fetch failed:', (err as Error).message);
@@ -253,7 +288,11 @@ export async function buildPeopleContext(guildId: string, recentMessages: Buffer
 
     if (userId === creatorId) {
       parts.push('friend — be chill with them');
+    } else if (profilesMap[userId]) {
+      // Use distilled profile — compact AI summary
+      parts.push(profilesMap[userId]);
     } else if (user) {
+      // Fallback to raw assembly
       if (user.gender === 'female') parts.push('she/her');
       else if (user.gender === 'male') parts.push('he/him');
       else if (user.gender === 'nonbinary') parts.push('they/them');

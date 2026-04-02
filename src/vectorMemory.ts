@@ -8,6 +8,8 @@
 
 import OpenAI from 'openai';
 import { getPool, isDatabaseConnected } from './database/index.js';
+import { queryAI } from './ai/providers.js';
+import { UTILITY_SYSTEM_PROMPT } from './ai/prompts.js';
 import type { MemoryType, SearchResult, MemoryRow } from './types.js';
 
 let openaiClient: OpenAI | null = null;
@@ -251,17 +253,135 @@ export async function distillAllGuilds(): Promise<void> {
     let totalDeduped = 0;
     let totalPruned = 0;
     let totalCapped = 0;
+    let totalProfiles = 0;
 
     for (const guildId of guildIds) {
       const result = await distillMemories(guildId);
       totalDeduped += result.deduped;
       totalPruned += result.pruned;
       totalCapped += result.capped;
+
+      // Distill user profiles after memory cleanup
+      const profiles = await distillGuildProfiles(guildId);
+      totalProfiles += profiles;
     }
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`[DISTILL] Done in ${elapsed}s — ${guildIds.length} guilds, ${totalDeduped} deduped, ${totalPruned} pruned, ${totalCapped} capped`);
+    console.log(`[DISTILL] Done in ${elapsed}s — ${guildIds.length} guilds, ${totalDeduped} deduped, ${totalPruned} pruned, ${totalCapped} capped, ${totalProfiles} profiles updated`);
   } catch (err) {
     console.error('[DISTILL] Full distillation failed:', (err as Error).message);
   }
+}
+
+// --- Per-User Distilled Profiles ---
+// Generates a compact 1-2 sentence AI summary of each user for cheaper, more coherent context.
+
+/**
+ * Generate a distilled profile for a single user in a guild.
+ * Compresses facts, roast history, memories, and stats into one sentence.
+ */
+export async function distillUserProfile(guildId: string, userId: string): Promise<string | null> {
+  if (!isDatabaseConnected()) return null;
+  const pool = getPool();
+  if (!pool) return null;
+
+  try {
+    // Fetch user data
+    const userResult = await pool.query(
+      `SELECT name, facts, roasts, message_count, times_roasted, gender, affinity
+       FROM users WHERE server_id = $1 AND user_id = $2`,
+      [guildId, userId]
+    );
+    const user = userResult.rows[0] as {
+      name: string; facts: string[] | null; roasts: string[] | null;
+      message_count: number; times_roasted: number; gender: string | null; affinity: number;
+    } | undefined;
+    if (!user?.name) return null;
+
+    // Fetch recent vector memories
+    const memoriesResult = await pool.query(
+      `SELECT content, type FROM vector_memories
+       WHERE server_id = $1 AND user_id = $2
+       ORDER BY created_at DESC LIMIT 10`,
+      [guildId, userId]
+    );
+    const memories = memoriesResult.rows as Array<{ content: string; type: string }>;
+
+    // Build the distillation prompt
+    const affinityTier = user.affinity >= 80 ? 'close friend'
+      : user.affinity >= 60 ? 'liked'
+      : user.affinity >= 40 ? 'neutral'
+      : user.affinity >= 20 ? 'cold'
+      : 'enemy';
+
+    const parts: string[] = [
+      `Compress this user data into ONE sentence (max 30 words) for a Discord bot's memory.`,
+      `Include: key traits, notable facts, roast ammo, relationship. Be factual, no sass.`,
+      ``,
+      `Name: ${user.name}`,
+    ];
+    if (user.gender) parts.push(`Gender: ${user.gender}`);
+    parts.push(`Affinity: ${Math.round(user.affinity)}% (${affinityTier})`);
+    parts.push(`Messages: ${user.message_count ?? 0}, Times roasted: ${user.times_roasted ?? 0}`);
+    if (user.facts?.length) parts.push(`Facts: ${user.facts.join(', ')}`);
+    if (user.roasts?.length) parts.push(`Recent roast topics: ${user.roasts.join(', ')}`);
+    if (memories.length > 0) {
+      const memLines = memories.map((m) => `[${m.type}] ${m.content}`).join(', ');
+      parts.push(`Recent memories: ${memLines}`);
+    }
+
+    const profile = await queryAI(parts.join('\n'), {
+      systemPrompt: UTILITY_SYSTEM_PROMPT,
+      maxTokens: 50,
+      temperature: 0.3,
+    });
+
+    if (!profile) return null;
+
+    // Store in DB
+    await pool.query(
+      `UPDATE users SET distilled_profile = $3, profile_updated_at = NOW()
+       WHERE server_id = $1 AND user_id = $2`,
+      [guildId, userId, profile.trim()]
+    );
+
+    return profile.trim();
+  } catch (err) {
+    console.error(`[DISTILL] Profile generation failed for ${userId}:`, (err as Error).message);
+    return null;
+  }
+}
+
+/**
+ * Distill profiles for all users in a guild.
+ * Skips users whose profiles are still fresh (< 6h old).
+ */
+export async function distillGuildProfiles(guildId: string): Promise<number> {
+  if (!isDatabaseConnected()) return 0;
+  const pool = getPool();
+  if (!pool) return 0;
+
+  let updated = 0;
+  try {
+    // Fetch users who need profile refresh
+    const usersResult = await pool.query(
+      `SELECT user_id FROM users
+       WHERE server_id = $1
+       AND (profile_updated_at IS NULL OR profile_updated_at < NOW() - INTERVAL '6 hours')`,
+      [guildId]
+    );
+    const userIds = (usersResult.rows as Array<{ user_id: string }>).map((r) => r.user_id);
+
+    for (const userId of userIds) {
+      const profile = await distillUserProfile(guildId, userId);
+      if (profile) {
+        updated++;
+        console.log(`[DISTILL] Profile updated for ${userId}`);
+      }
+    }
+  } catch (err) {
+    console.error('[DISTILL] Guild profile distillation failed:', (err as Error).message);
+  }
+
+  return updated;
 }
