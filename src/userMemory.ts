@@ -64,7 +64,11 @@ export async function flushSeen(): Promise<void> {
        ON CONFLICT (server_id, user_id) DO UPDATE SET
          name = EXCLUDED.name,
          message_count = users.message_count + EXCLUDED.message_count,
-         last_seen = EXCLUDED.last_seen`,
+         last_seen = EXCLUDED.last_seen,
+         profile_updated_at = CASE
+           WHEN users.name != EXCLUDED.name THEN NULL
+           ELSE users.profile_updated_at
+         END`,
       values
     );
   } catch (err) {
