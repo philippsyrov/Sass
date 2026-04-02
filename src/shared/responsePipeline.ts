@@ -34,11 +34,12 @@ export interface ResponseOptions {
 
 export async function handleResponse(options: ResponseOptions): Promise<boolean> {
   const {
-    event, response, aiResult, userMessage,
+    event, aiResult, userMessage,
     triggerType, commandName = null,
     onFiltered, sendMode, trackRoast, updateAffinity: shouldUpdateAffinity,
     context,
   } = options;
+  let { response } = options;
 
   // Step 1: Validate response
   if (!event.isCreator) {
@@ -46,11 +47,8 @@ export async function handleResponse(options: ResponseOptions): Promise<boolean>
     if (!validation.valid) {
       console.log(`[FILTER] ${triggerType} response filtered: ${validation.reason}`);
       if (onFiltered === 'skip') return false;
-      // Fallback — send a safe one-liner instead
-      const fallback = SAFE_FALLBACKS[Math.floor(Math.random() * SAFE_FALLBACKS.length)] ?? 'no';
-      await event.message.reply(fallback).catch((err) => console.error('Fallback reply failed:', (err as Error).message));
-      recordResponse(event.channelId, fallback);
-      return true;
+      // Fallback — replace response with safe one-liner, continue through pipeline
+      response = SAFE_FALLBACKS[Math.floor(Math.random() * SAFE_FALLBACKS.length)] ?? 'no';
     }
   }
 

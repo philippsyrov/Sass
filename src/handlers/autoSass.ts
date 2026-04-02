@@ -279,6 +279,9 @@ export async function handleAutoSass(message: Message, _client: Client, options:
           if (roast && roast.trim().toUpperCase() !== 'SKIP') {
             // Activity roast is a snowflake — targets different user, custom message format
             // Kept manual instead of using handleResponse pipeline
+            const { validateResponse } = await import('../responseFilter.js');
+            const validation = validateResponse(roast);
+            if (!validation.valid) { console.log(`[FILTER] activity roast filtered: ${validation.reason}`); return; }
             setAutoSassCooldown(channelId);
             setGuildAutoSassCooldown(guildId);
             // Track in DB so it survives deploys
