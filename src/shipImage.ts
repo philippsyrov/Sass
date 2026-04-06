@@ -44,8 +44,8 @@ interface TemplateConfig {
 const TEMPLATES: Record<string, TemplateConfig> = {
   dark_storm: {
     path: join(__dirname, '..', 'assets', 'dark_storm_clouds.jpg'),
-    avatar1Cx: 300,
-    avatar2Cx: 1090,
+    avatar1Cx: 340,
+    avatar2Cx: 1050,
     avatarCy: 340,
     avatarRadius: 158,
     accentColor: '#8bb8d0',
@@ -54,8 +54,8 @@ const TEMPLATES: Record<string, TemplateConfig> = {
   },
   overcast: {
     path: join(__dirname, '..', 'assets', 'overcast_dusk.jpg'),
-    avatar1Cx: 300,
-    avatar2Cx: 1090,
+    avatar1Cx: 340,
+    avatar2Cx: 1050,
     avatarCy: 340,
     avatarRadius: 158,
     accentColor: '#b0c4de',
@@ -64,13 +64,13 @@ const TEMPLATES: Record<string, TemplateConfig> = {
   },
   sunset: {
     path: join(__dirname, '..', 'assets', 'warm_sunset.jpg'),
-    avatar1Cx: 300,
-    avatar2Cx: 1090,
+    avatar1Cx: 340,
+    avatar2Cx: 1050,
     avatarCy: 340,
     avatarRadius: 158,
     accentColor: '#f0a868',
     embedColor: 0xD4764E,
-    borderEmoji: '\u{1F305}\u2728\u{1F305}\u2728\u{1F305}\u2728\u{1F305}\u2728\u{1F305}\u2728\u{1F305}\u2728\u{1F305}\u2728\u{1F305}\u2728\u{1F305}\u2728\u{1F305}\u2728\u{1F305}\u2728\u{1F305}',
+    borderEmoji: '\u{1F305}\u2728\u{1F305}\u2728\u{1F305}\u2728\u{1F305}\u2728\u{1F305}\u2728\u{1F305}\u2728\u{1F305}\u2728\u{1F305}\u2728\u{1F305}',
   },
   light_sakura: {
     path: join(__dirname, '..', 'assets', 'light_sakura.jpg'),
