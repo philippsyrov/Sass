@@ -2,7 +2,7 @@
  * shipImage.ts — Generate ship card images using affinity-tiered templates
  *
  * Renders the template as a full background, then draws avatars on top
- * at hardcoded circle positions. All ship info rendered on the card —
+ * at per-template circle positions. All ship info rendered on the card —
  * user names, ship name, %, tier, and verdict. Embed is image-only.
  *
  * Template images are 1024×1536 but we crop to 1024×1050 for a wider
@@ -31,30 +31,49 @@ const TEMPLATE_HEIGHT = 1536;
 const CANVAS_WIDTH = 1024;
 const CANVAS_HEIGHT = 1050;
 
-// How far down we offset the template (negative = shift template up to show the right section)
-// We want to show the avatar area (centered ~y=650 in the template) in our cropped canvas
-const TEMPLATE_OFFSET_Y = -200;
-
-// Avatar circle positions (relative to the cropped canvas)
-const AVATAR1_CX = 178;
-const AVATAR1_CY = 650 + TEMPLATE_OFFSET_Y;  // 450 in canvas space
-const AVATAR1_RADIUS = 160;
-const AVATAR2_CX = 845;
-const AVATAR2_CY = 650 + TEMPLATE_OFFSET_Y;  // 450 in canvas space
-const AVATAR2_RADIUS = 160;
-
 // Text layout
 const CENTER_X = CANVAS_WIDTH / 2;
 
 /**
- * Pick template path based on ship score.
- * Add more tiers here as new templates are created.
+ * Per-template configuration — circle positions differ between templates
+ * because the AI-generated images have circles in slightly different spots.
  */
-function getTemplatePath(score: number): string {
-  if (score >= 50) {
-    return join(__dirname, '..', 'assets', 'ship-sakura.png');
-  }
-  return join(__dirname, '..', 'assets', 'ship-storm.png');
+interface TemplateConfig {
+  path: string;
+  offsetY: number;       // How far to shift template up (negative)
+  avatar1Cx: number;
+  avatar1Cy: number;     // In template coordinates (offset applied later)
+  avatar2Cx: number;
+  avatar2Cy: number;
+  avatarRadius: number;
+}
+
+const TEMPLATES: Record<string, TemplateConfig> = {
+  sakura: {
+    path: join(__dirname, '..', 'assets', 'ship-sakura.png'),
+    offsetY: -250,
+    avatar1Cx: 155,
+    avatar1Cy: 650,
+    avatar2Cx: 870,
+    avatar2Cy: 650,
+    avatarRadius: 160,
+  },
+  storm: {
+    path: join(__dirname, '..', 'assets', 'ship-storm.png'),
+    offsetY: -200,
+    avatar1Cx: 178,
+    avatar1Cy: 650,
+    avatar2Cx: 845,
+    avatar2Cy: 650,
+    avatarRadius: 160,
+  },
+};
+
+function getTemplate(score: number): TemplateConfig {
+  const key = score >= 50 ? 'sakura' : 'storm';
+  const config = TEMPLATES[key];
+  if (!config) throw new Error(`Missing template config for key: ${key}`);
+  return config;
 }
 
 export interface ShipCardOptions {
@@ -77,36 +96,38 @@ export async function generateShipImage(opts: ShipCardOptions): Promise<Buffer> 
   const canvas = createCanvas(CANVAS_WIDTH, CANVAS_HEIGHT);
   const ctx = canvas.getContext('2d');
 
-  const templatePath = getTemplatePath(percent);
+  const tmpl = getTemplate(percent);
+  const av1Cy = tmpl.avatar1Cy + tmpl.offsetY;
+  const av2Cy = tmpl.avatar2Cy + tmpl.offsetY;
 
   // Load template and avatars in parallel
   const [template, img1, img2] = await Promise.all([
-    loadImage(templatePath).catch((err) => { console.error('Template load failed:', (err as Error).message); return null; }),
+    loadImage(tmpl.path).catch((err) => { console.error('Template load failed:', (err as Error).message); return null; }),
     loadImage(avatarUrl1).catch((err) => { console.error('Avatar 1 load failed:', (err as Error).message); return null; }),
     loadImage(avatarUrl2).catch((err) => { console.error('Avatar 2 load failed:', (err as Error).message); return null; }),
   ]);
 
   // Step 1: Draw template shifted up so avatar area is centered in cropped canvas
   if (template) {
-    ctx.drawImage(template, 0, TEMPLATE_OFFSET_Y, TEMPLATE_WIDTH, TEMPLATE_HEIGHT);
+    ctx.drawImage(template, 0, tmpl.offsetY, TEMPLATE_WIDTH, TEMPLATE_HEIGHT);
   } else {
     ctx.fillStyle = '#1a0a12';
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
   }
 
   // Step 2: Draw avatars clipped to circles on top of template
-  drawCircularAvatar(ctx, img1, AVATAR1_CX, AVATAR1_CY, AVATAR1_RADIUS);
-  drawCircularAvatar(ctx, img2, AVATAR2_CX, AVATAR2_CY, AVATAR2_RADIUS);
+  drawCircularAvatar(ctx, img1, tmpl.avatar1Cx, av1Cy, tmpl.avatarRadius);
+  drawCircularAvatar(ctx, img2, tmpl.avatar2Cx, av2Cy, tmpl.avatarRadius);
 
   // Step 3: User display names under each avatar
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font = 'bold 32px ShipFont';
-  drawTextWithShadow(ctx, displayName1, AVATAR1_CX, AVATAR1_CY + AVATAR1_RADIUS + 35, '#ffffff');
-  drawTextWithShadow(ctx, displayName2, AVATAR2_CX, AVATAR2_CY + AVATAR2_RADIUS + 35, '#ffffff');
+  drawTextWithShadow(ctx, displayName1, tmpl.avatar1Cx, av1Cy + tmpl.avatarRadius + 35, '#ffffff');
+  drawTextWithShadow(ctx, displayName2, tmpl.avatar2Cx, av2Cy + tmpl.avatarRadius + 35, '#ffffff');
 
   // Step 4: Dark overlay strip for bottom text
-  const overlayTop = CANVAS_HEIGHT - 300;
+  const overlayTop = CANVAS_HEIGHT - 280;
   const gradient = ctx.createLinearGradient(0, overlayTop, 0, CANVAS_HEIGHT);
   gradient.addColorStop(0, 'rgba(0,0,0,0)');
   gradient.addColorStop(0.25, 'rgba(0,0,0,0.6)');
@@ -114,37 +135,66 @@ export async function generateShipImage(opts: ShipCardOptions): Promise<Buffer> 
   ctx.fillStyle = gradient;
   ctx.fillRect(0, overlayTop, CANVAS_WIDTH, CANVAS_HEIGHT - overlayTop);
 
-  // Step 5: Hearts bar
-  const heartsY = 800;
-  const filledHearts = Math.round(percent / 10);
-  const heartsText = '\u2764\uFE0F'.repeat(filledHearts) + '\u{1F5A4}'.repeat(10 - filledHearts);
-  ctx.font = '36px serif';
-  ctx.textAlign = 'center';
-  ctx.fillText(heartsText, CENTER_X, heartsY);
+  // Step 5: Affinity bar (drawn, not emoji — canvas can't render emoji)
+  const barY = 800;
+  const barWidth = 300;
+  const barHeight = 8;
+  const barX = CENTER_X - barWidth / 2;
+  const fillWidth = (percent / 100) * barWidth;
 
-  // Step 6: Ship name + percent
+  // Background bar
+  ctx.fillStyle = 'rgba(255,255,255,0.2)';
+  roundRect(ctx, barX, barY, barWidth, barHeight, 4);
+  // Filled portion
+  const barColor = percent >= 70 ? '#ff6b9d' : percent >= 40 ? '#c084fc' : '#64748b';
+  ctx.fillStyle = barColor;
+  if (fillWidth > 0) {
+    roundRect(ctx, barX, barY, fillWidth, barHeight, 4);
+  }
+
+  // Step 6: Ship name
   if (shipName) {
     ctx.font = 'bold 52px ShipFont';
-    drawTextWithShadow(ctx, shipName, CENTER_X, 870, '#ffffff');
+    drawTextWithShadow(ctx, shipName, CENTER_X, 855, '#ffffff');
   }
 
   // Percentage and tier on same line
   ctx.font = 'bold 44px ShipFont';
   const statsLine = tierLabel ? `${percent}%  \u00b7  ${tierLabel}` : `${percent}%`;
-  drawTextWithShadow(ctx, statsLine, CENTER_X, 940, '#ff8fab');
+  drawTextWithShadow(ctx, statsLine, CENTER_X, 925, '#ff8fab');
 
-  // Step 7: Verdict text (AI-generated one-liner)
+  // Step 7: Verdict text in quotes
   if (verdict) {
     ctx.font = 'bold 28px ShipFont';
+    const quotedVerdict = `"${verdict}"`;
     const maxWidth = CANVAS_WIDTH - 100;
-    const lines = wrapText(ctx, verdict, maxWidth);
-    const verdictStartY = 1005;
+    const lines = wrapText(ctx, quotedVerdict, maxWidth);
+    const verdictStartY = 995;
     for (let i = 0; i < lines.length && i < 2; i++) {
       drawTextWithShadow(ctx, lines[i] ?? '', CENTER_X, verdictStartY + i * 36, 'rgba(255,255,255,0.8)');
     }
   }
 
   return canvas.toBuffer('image/png');
+}
+
+/**
+ * Draw a filled rounded rectangle.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function roundRect(ctx: any, x: number, y: number, w: number, h: number, r: number): void {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  ctx.fill();
 }
 
 /**
