@@ -60,7 +60,7 @@ const TEMPLATES: Record<string, TemplateConfig> = {
     avatarRadius: 158,
     accentColor: '#b0c4de',
     embedColor: 0x4A6FA5,
-    borderEmoji: '\u{1F32B}\uFE0F\u{1F48E}\u{1F32B}\uFE0F\u{1F48E}\u{1F32B}\uFE0F\u{1F48E}\u{1F32B}\uFE0F\u{1F48E}\u{1F32B}\uFE0F\u{1F48E}\u{1F32B}\uFE0F\u{1F48E}\u{1F32B}\uFE0F\u{1F48E}\u{1F32B}\uFE0F\u{1F48E}\u{1F32B}\uFE0F\u{1F48E}\u{1F32B}\uFE0F\u{1F48E}\u{1F32B}\uFE0F\u{1F48E}\u{1F32B}\uFE0F',
+    borderEmoji: '\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}',
   },
   sunset: {
     path: join(__dirname, '..', 'assets', 'warm_sunset.jpg'),
