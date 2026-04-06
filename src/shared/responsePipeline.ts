@@ -8,6 +8,7 @@ import { recordResponse } from '../responseMemory.js';
 import { logInteraction, updateAffinity, getAffinity } from '../database/index.js';
 import { affinityGainCooldowns, AFFINITY_GAIN_COOLDOWN_MS } from '../handlers/mention/spamDetection.js';
 import type { SassEvent, AIResponse } from '../types.js';
+import { pickRandom } from './commandUtils.js';
 
 const SAFE_FALLBACKS = ['no', 'anyway', "i'll pass", 'moving on'];
 
@@ -48,7 +49,7 @@ export async function handleResponse(options: ResponseOptions): Promise<boolean>
       console.log(`[FILTER] ${triggerType} response filtered: ${validation.reason}`);
       if (onFiltered === 'skip') return false;
       // Fallback — replace response with safe one-liner, continue through pipeline
-      response = SAFE_FALLBACKS[Math.floor(Math.random() * SAFE_FALLBACKS.length)] ?? 'no';
+      response = pickRandom(SAFE_FALLBACKS) ?? 'no';
     }
   }
 

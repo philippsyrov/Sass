@@ -8,7 +8,7 @@ import { getAutoSassDecision, getReactionDecision, getConversationJoin, queryAI,
 import * as userMemory from '../userMemory.js';
 import { buildBaseContext } from '../shared/contextBuilder.js';
 import { isOnAutoSassCooldown, setAutoSassCooldown, isOnGuildAutoSassCooldown, setGuildAutoSassCooldown } from '../cooldown.js';
-import { getActivityDescription } from '../shared/commandUtils.js';
+import { getActivityDescription, pickRandom } from '../shared/commandUtils.js';
 import * as mood from '../mood.js';
 import { logInteraction, wasActivityRoastedRecently, setActivityRoasted, getAffinity, updateAffinity } from '../database/index.js';
 import { recordResponse, getRecentResponses } from '../responseMemory.js';
@@ -267,7 +267,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
           if (!recentlyRoasted) eligible.push(m);
         }
         if (eligible.length > 0) {
-          const target = eligible[Math.floor(Math.random() * eligible.length)];
+          const target = pickRandom(eligible);
           if (!target) return;
           const activity = getActivityDescription(target.presence);
           if (!activity) return;
@@ -361,7 +361,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
           .toJSON()
           .slice(2, 6); // skip the 2 most recent, pick from 3rd-6th
         if (candidates.length > 0) {
-          const target = candidates[Math.floor(Math.random() * candidates.length)];
+          const target = pickRandom(candidates);
           if (target) {
             const emoji = await getReactionDecision(`${target.author.displayName}: ${target.content}`);
             if (emoji) {
@@ -383,7 +383,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
 
     // 10% — Short text reaction (no AI call)
     if (roll >= 0.30 && roll < 0.40) {
-      const reaction = SHORT_REACTIONS[Math.floor(Math.random() * SHORT_REACTIONS.length)];
+      const reaction = pickRandom(SHORT_REACTIONS);
       if (reaction) {
         setAutoSassCooldown(channelId);
             setGuildAutoSassCooldown(guildId);

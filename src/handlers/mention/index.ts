@@ -1,11 +1,6 @@
 import {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  ComponentType,
   type Message,
   type Client,
-  type ButtonInteraction,
   type Attachment,
   type TextChannel,
 } from 'discord.js';
@@ -15,7 +10,6 @@ import { buildBaseContext } from '../../shared/contextBuilder.js';
 import { handleResponse } from '../../shared/responsePipeline.js';
 import { isOnMentionCooldown, setMentionCooldown, trackMentionEscalation, getEscalationCount } from '../../cooldown.js';
 import { searchMemories } from '../../vectorMemory.js';
-import { buildHelpPages } from '../../helpPages.js';
 import * as mood from '../../mood.js';
 import { extractStatement, checkContradiction, generate4kCallout, storeStatement } from '../../caughtIn4k.js';
 import { updateAffinity, getAffinity } from '../../database/index.js';
@@ -24,6 +18,7 @@ import { isSpamPing, isSensitiveTopic, isOnRememberCooldown, getSensitiveHint } 
 import { buildPersonalityContext } from './personality.js';
 import { handleRemember } from './memoryOps.js';
 import type { SassEvent } from '../../types.js';
+import { pickRandom } from '../../shared/commandUtils.js';
 
 /**
  * Handle direct @Sass mentions and replies to Sass.
@@ -70,44 +65,9 @@ export async function handleMention(message: Message, client: Client, event?: Sa
   const sensitiveResult = await isSensitiveTopic(message, guildId, userId, displayName, cleanContent, isCreator);
   if (sensitiveResult === 'ignore' || sensitiveResult === 'check-in') { console.log(`[SKIP] sensitive topic (${sensitiveResult}) for ${userId.slice(-4)}`); return; }
 
-  // Help command — paginated embeds with button navigation
+  // Help — redirect to slash command
   if (lowerClean === 'help' || lowerClean === 'commands' || lowerClean === '?') {
-    const botAvatar = client.user.displayAvatarURL({ size: 256 });
-    const pages = buildHelpPages(botAvatar);
-
-    const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder().setCustomId('help_prev').setLabel('\u25C0').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('help_next').setLabel('\u25B6').setStyle(ButtonStyle.Secondary),
-    );
-
-    let currentPage = 0;
-    const firstPage = pages[0];
-    if (!firstPage) return;
-    const reply = await message.reply({ embeds: [firstPage], components: [buttons] }).catch((err) => { console.error('Help reply failed:', (err as Error).message); return null; });
-    if (!reply) return;
-
-    const collector = reply.createMessageComponentCollector({
-      componentType: ComponentType.Button,
-      time: 120_000,
-    });
-
-    collector.on('collect', async (btn: ButtonInteraction) => {
-      currentPage = btn.customId === 'help_prev'
-        ? (currentPage > 0 ? currentPage - 1 : pages.length - 1)
-        : (currentPage < pages.length - 1 ? currentPage + 1 : 0);
-      const page = pages[currentPage];
-      if (!page) return;
-      await btn.update({ embeds: [page], components: [buttons] }).catch((err) => console.error('Help page update failed:', (err as Error).message));
-    });
-
-    collector.on('end', () => {
-      const disabledButtons = new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder().setCustomId('help_prev').setLabel('\u25C0').setStyle(ButtonStyle.Secondary).setDisabled(true),
-        new ButtonBuilder().setCustomId('help_next').setLabel('\u25B6').setStyle(ButtonStyle.Secondary).setDisabled(true),
-      );
-      reply.edit({ components: [disabledButtons] }).catch((err) => console.error('Failed to disable help buttons:', (err as Error).message));
-    });
-
+    await message.reply("use `/help` for that").catch((err) => console.error('Reply failed:', (err as Error).message));
     return;
   }
 
@@ -178,7 +138,7 @@ export async function handleMention(message: Message, client: Client, event?: Sa
       'you\'re speed-running the remember command and it shows',
       'one at a time. i\'m not your diary.',
     ];
-    await message.reply(rememberSpamResponses[Math.floor(Math.random() * rememberSpamResponses.length)] as string).catch((err) => console.error('Reply failed:', (err as Error).message));
+    await message.reply(pickRandom(rememberSpamResponses)).catch((err) => console.error('Reply failed:', (err as Error).message));
     return;
   }
 
@@ -233,7 +193,7 @@ export async function handleMention(message: Message, client: Client, event?: Sa
   if (!cleanContent && !imageAttachment) {
     if (isCreator) {
       const creatorPings = ['yeah?', "what's up", 'hm?', 'you good?', "i'm here lol"];
-      await message.reply(creatorPings[Math.floor(Math.random() * creatorPings.length)] as string).catch((err) => console.error('Reply failed:', (err as Error).message));
+      await message.reply(pickRandom(creatorPings)).catch((err) => console.error('Reply failed:', (err as Error).message));
     } else {
       const emptyPings = [
         'use your words',
@@ -245,7 +205,7 @@ export async function handleMention(message: Message, client: Client, event?: Sa
         'okay and?',
         'that was a whole lot of nothing',
       ];
-      await message.reply(emptyPings[Math.floor(Math.random() * emptyPings.length)] as string).catch((err) => console.error('Reply failed:', (err as Error).message));
+      await message.reply(pickRandom(emptyPings)).catch((err) => console.error('Reply failed:', (err as Error).message));
     }
     return;
   }

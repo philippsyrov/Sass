@@ -9,6 +9,7 @@ import {
   SOFT_BAN_RESPONSES,
   SOFT_BAN_ATTEMPT_RESPONSES,
 } from './rateLimiting.js';
+import { pickRandom } from '../shared/commandUtils.js';
 
 // Re-export from extracted modules so existing imports don't break
 export { commands } from '../commandDefinitions.js';
@@ -30,13 +31,13 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
     const limitResult = checkSlashRateLimit(interaction.user.id);
 
     if (limitResult === 'already-banned') {
-      const msg = SOFT_BAN_ATTEMPT_RESPONSES[Math.floor(Math.random() * SOFT_BAN_ATTEMPT_RESPONSES.length)] as string;
+      const msg = pickRandom(SOFT_BAN_ATTEMPT_RESPONSES);
       await interaction.reply({ content: msg, ephemeral: true }).catch((err) => console.error('Soft ban attempt reply failed:', (err as Error).message));
       return;
     }
 
     if (limitResult === 'soft-banned') {
-      const msg = SOFT_BAN_RESPONSES[Math.floor(Math.random() * SOFT_BAN_RESPONSES.length)] as string;
+      const msg = pickRandom(SOFT_BAN_RESPONSES);
       await interaction.reply({ content: msg, ephemeral: true }).catch((err) => console.error('Soft ban reply failed:', (err as Error).message));
       // Always publicly shame on soft ban
       const channel = interaction.channel;
@@ -49,7 +50,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
     }
 
     if (limitResult === 'limited') {
-      const msg = SLASH_RATE_LIMIT_RESPONSES[Math.floor(Math.random() * SLASH_RATE_LIMIT_RESPONSES.length)] as string;
+      const msg = pickRandom(SLASH_RATE_LIMIT_RESPONSES);
       await interaction.reply({ content: msg, ephemeral: true }).catch((err) => console.error('Rate limit reply failed:', (err as Error).message));
 
       // 30% chance to publicly call them out
@@ -65,7 +66,7 @@ export async function handleCommand(interaction: ChatInputCommandInteraction): P
             `<@${interaction.user.id}> the commands are not going anywhere. neither is your life apparently.`,
             `<@${interaction.user.id}> is using commands like they're running out of stock`,
           ];
-          const publicMsg = publicRoasts[Math.floor(Math.random() * publicRoasts.length)] as string;
+          const publicMsg = pickRandom(publicRoasts);
           const delay = 1000 + Math.random() * 2000;
           await new Promise((resolve) => setTimeout(resolve, delay));
           await channel.send(publicMsg).catch((err) => console.error('Public rate limit roast failed:', (err as Error).message));

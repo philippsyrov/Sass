@@ -6,6 +6,7 @@ import { messageBuffer } from '../messageBuffer.js';
 import * as userMemory from '../userMemory.js';
 import { recordPairInteraction } from '../shipScore.js';
 import type { SassEvent } from '../types.js';
+import { pickRandom } from '../shared/commandUtils.js';
 
 // Dedup guard — prevent processing the same message twice
 // Using a Map with timestamps for automatic cleanup
@@ -206,7 +207,7 @@ export function setupMessageHandler(client: Client): void {
       const nameWordCount = lowerContent.split(/\s+/).length;
       if (nameWordCount <= 2) {
         const acks = ['what', 'you rang?', 'hm?', '?', 'what do you want'];
-        const ack = acks[Math.floor(Math.random() * acks.length)] as string;
+        const ack = pickRandom(acks);
         await message.reply(ack).catch((err) => console.error('Reply failed:', (err as Error).message));
         return;
       }

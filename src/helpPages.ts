@@ -1,4 +1,11 @@
-import { EmbedBuilder } from 'discord.js';
+import {
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ComponentType,
+  type Message,
+} from 'discord.js';
 
 /**
  * Build paginated help embeds for Sass.
@@ -88,4 +95,43 @@ export function buildHelpPages(botAvatar: string | null | undefined): EmbedBuild
   });
 
   return pages;
+}
+
+/** Build the prev/next button row for help pages. */
+export function buildHelpButtons(): ActionRowBuilder<ButtonBuilder> {
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId('help_prev').setLabel('\u25C0').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('help_next').setLabel('\u25B6').setStyle(ButtonStyle.Secondary),
+  );
+}
+
+/**
+ * Attach paginated button navigation to a help reply message.
+ * Call AFTER sending the initial reply with buildHelpButtons() components.
+ * Works with both Message.reply() and Interaction.reply({ fetchReply: true }) surfaces.
+ */
+export function attachHelpCollector(reply: Message, pages: EmbedBuilder[]): void {
+  const buttons = buildHelpButtons();
+  let currentPage = 0;
+
+  const collector = reply.createMessageComponentCollector({
+    componentType: ComponentType.Button,
+    time: 120_000,
+  });
+
+  collector.on('collect', async (btn) => {
+    currentPage = btn.customId === 'help_prev'
+      ? (currentPage > 0 ? currentPage - 1 : pages.length - 1)
+      : (currentPage < pages.length - 1 ? currentPage + 1 : 0);
+    const page = pages[currentPage];
+    if (page) await btn.update({ embeds: [page], components: [buttons] }).catch((err) => console.error('Help page update failed:', (err as Error).message));
+  });
+
+  collector.on('end', () => {
+    const disabled = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId('help_prev').setLabel('\u25C0').setStyle(ButtonStyle.Secondary).setDisabled(true),
+      new ButtonBuilder().setCustomId('help_next').setLabel('\u25B6').setStyle(ButtonStyle.Secondary).setDisabled(true),
+    );
+    reply.edit({ components: [disabled] }).catch((err) => console.error('Failed to disable help buttons:', err.message));
+  });
 }

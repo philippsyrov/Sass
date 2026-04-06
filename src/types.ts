@@ -226,11 +226,6 @@ export interface ContradictionResult {
 }
 
 // --- Commands ---
-export interface MainCharacter {
-  name: string;
-  date: string;
-}
-
 export interface BattleState {
   challenger: User;
   opponent: User;

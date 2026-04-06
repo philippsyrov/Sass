@@ -1,6 +1,7 @@
 import type { Client } from 'discord.js';
 import { handleCommand } from '../commands/index.js';
 import { isOnSlashCooldown, setSlashCooldown, isOnShipCooldown, setShipCooldown } from '../cooldown.js';
+import { pickRandom } from '../shared/commandUtils.js';
 
 export function setupInteractionHandler(client: Client): void {
   client.on('interactionCreate', async (interaction) => {
@@ -17,7 +18,7 @@ export function setupInteractionHandler(client: Client): void {
         "give me a sec, even i need to breathe.",
       ];
       await interaction.reply({
-        content: cooldownResponses[Math.floor(Math.random() * cooldownResponses.length)] as string,
+        content: pickRandom(cooldownResponses),
         ephemeral: true,
       }).catch((err) => console.error('Cooldown reply failed:', (err as Error).message));
       return;

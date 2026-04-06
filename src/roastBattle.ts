@@ -6,6 +6,7 @@ import {
 import { queryAI } from './ai/index.js';
 import { getScoreBar } from './emoji.js';
 import type { BattleState } from './types.js';
+import { pickRandom } from './shared/commandUtils.js';
 
 // --- Roast Battle State ---
 export const activeBattles = new Map<string, BattleState>();
@@ -19,10 +20,6 @@ const FORFEIT_MESSAGES = [
   "timed out. the roast wrote itself — you're the joke.",
   "two minutes and nothing? the cowardice is the real roast.",
 ];
-
-function pickRandom<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)] as T;
-}
 
 // Clean up abandoned battles every 5 minutes
 setInterval(() => {

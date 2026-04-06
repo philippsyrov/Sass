@@ -2,6 +2,7 @@ import type { Client, Guild, TextChannel } from 'discord.js';
 import { initDatabase, closeDatabase } from '../database/index.js';
 import * as userMemory from '../userMemory.js';
 import { distillAllGuilds } from '../vectorMemory.js';
+import { pickRandom } from '../shared/commandUtils.js';
 
 // Send a message to the first available text channel in a guild
 async function sendToFirstChannel(guild: Guild, text: string): Promise<void> {
@@ -45,7 +46,7 @@ export function setupStartup(client: Client): void {
       "hey. i'm sass. i'm going to be a problem.",
       "somebody called for chaos? no? too bad.",
     ];
-    void sendToFirstChannel(guild, intros[Math.floor(Math.random() * intros.length)] as string);
+    void sendToFirstChannel(guild, pickRandom(intros));
   });
 }
 

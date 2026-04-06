@@ -10,6 +10,7 @@ import { getShipScore, warmPairCache } from '../shipScore.js';
 import { generateShipImage, type ShipCardOptions } from '../shipImage.js';
 import { messageBuffer } from '../messageBuffer.js';
 import { getUserMemories } from '../vectorMemory.js';
+import { pickRandom } from '../shared/commandUtils.js';
 
 export async function handleSocialCommand(
   interaction: ChatInputCommandInteraction,
@@ -145,7 +146,7 @@ export async function handleSocialCommand(
         `**${fav.name}**. ${fav.timesRoasted} roasts and counting. at this point it's a relationship.`,
         `gotta be **${fav.name}**. they've been roasted ${fav.timesRoasted} times and still haven't learned.`,
       ];
-      const favResponse = responses[Math.floor(Math.random() * responses.length)] ?? '';
+      const favResponse = pickRandom(responses) ?? '';
       await interaction.editReply(favResponse);
       break;
     }

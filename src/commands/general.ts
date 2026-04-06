@@ -1,13 +1,7 @@
-import {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  ComponentType,
-  type ChatInputCommandInteraction,
-} from 'discord.js';
+import { type ChatInputCommandInteraction } from 'discord.js';
 import { queryAI } from '../ai/index.js';
-import { buildHelpPages } from '../helpPages.js';
-import { getActivityDescription } from '../shared/commandUtils.js';
+import { buildHelpPages, buildHelpButtons, attachHelpCollector } from '../helpPages.js';
+import { getActivityDescription, pickRandom } from '../shared/commandUtils.js';
 import { FORTUNES, QUOTE_AUTHORS } from '../commandDefinitions.js';
 import { messageBuffer } from '../messageBuffer.js';
 
@@ -19,35 +13,16 @@ export async function handleGeneralCommand(
     case 'help': {
       const botAvatar = interaction.client.user?.displayAvatarURL({ size: 256 }) ?? '';
       const helpPages = buildHelpPages(botAvatar);
-      const helpButtons = new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder().setCustomId('help_prev').setLabel('\u25C0').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('help_next').setLabel('\u25B6').setStyle(ButtonStyle.Secondary),
-      );
-      let helpPage = 0;
       const firstPage = helpPages[0];
       if (!firstPage) break;
-      const helpReply = await interaction.reply({ embeds: [firstPage], components: [helpButtons], fetchReply: true }).catch((err) => { console.error('Help reply failed:', (err as Error).message); return null; });
+      const helpReply = await interaction.reply({ embeds: [firstPage], components: [buildHelpButtons()], fetchReply: true }).catch((err) => { console.error('Help reply failed:', (err as Error).message); return null; });
       if (!helpReply) break;
-      const helpCollector = helpReply.createMessageComponentCollector({ componentType: ComponentType.Button, time: 120_000 });
-      helpCollector.on('collect', async (btn) => {
-        helpPage = btn.customId === 'help_prev'
-          ? (helpPage > 0 ? helpPage - 1 : helpPages.length - 1)
-          : (helpPage < helpPages.length - 1 ? helpPage + 1 : 0);
-        const currentPage = helpPages[helpPage];
-        if (currentPage) await btn.update({ embeds: [currentPage], components: [helpButtons] }).catch((err) => console.error('Help page update failed:', (err as Error).message));
-      });
-      helpCollector.on('end', () => {
-        const disabled = new ActionRowBuilder<ButtonBuilder>().addComponents(
-          new ButtonBuilder().setCustomId('help_prev').setLabel('\u25C0').setStyle(ButtonStyle.Secondary).setDisabled(true),
-          new ButtonBuilder().setCustomId('help_next').setLabel('\u25B6').setStyle(ButtonStyle.Secondary).setDisabled(true),
-        );
-        helpReply.edit({ components: [disabled] }).catch((err) => console.error('Failed to disable help buttons:', err.message));
-      });
+      attachHelpCollector(helpReply, helpPages);
       break;
     }
 
     case 'fortune': {
-      const fortune = FORTUNES[Math.floor(Math.random() * FORTUNES.length)] ?? 'your future is... uncertain.';
+      const fortune = pickRandom(FORTUNES) ?? 'your future is... uncertain.';
       await interaction.reply(`\u{1F960} ${fortune}`).catch((err) => console.error('Fortune reply failed:', (err as Error).message));
       break;
     }
@@ -55,7 +30,7 @@ export async function handleGeneralCommand(
     case 'quote': {
       await interaction.deferReply();
       try {
-        const author = QUOTE_AUTHORS[Math.floor(Math.random() * QUOTE_AUTHORS.length)] ?? 'Sun Tzu';
+        const author = pickRandom(QUOTE_AUTHORS) ?? 'Sun Tzu';
         const response = await queryAI(
           `Generate a fake inspirational quote attributed to ${author}. Make it sound profound at first but actually be either absurd, passive-aggressive, or lowkey insulting. One sentence only. Just the quote, no attribution.`,
           { systemPrompt: 'You generate fake quotes. One sentence. No quotation marks. Lowercase.' }

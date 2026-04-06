@@ -2,6 +2,7 @@ import type { Message, Client } from 'discord.js';
 import * as userMemory from '../../userMemory.js';
 import { storeMemory } from '../../vectorMemory.js';
 import { setRememberCooldown } from './spamDetection.js';
+import { pickRandom } from '../../shared/commandUtils.js';
 
 /**
  * Handle "@Sass remember" commands — both "@Sass remember @user <fact>" and "@Sass remember <fact>".
@@ -36,7 +37,7 @@ export async function handleRemember(
       'saved. they have no idea what\'s coming',
       'interesting... very interesting',
     ];
-    await message.reply(responses[Math.floor(Math.random() * responses.length)] as string).catch((err) => console.error('Reply failed:', (err as Error).message));
+    await message.reply(pickRandom(responses)).catch((err) => console.error('Reply failed:', (err as Error).message));
     return true;
   }
 
@@ -60,7 +61,7 @@ export async function handleRemember(
         'that says more about you than me <:sass_judge:100000000000000902>',
         'you really thought that would work huh',
       ];
-      await message.reply(insultResponses[Math.floor(Math.random() * insultResponses.length)] as string).catch((err) => console.error('Reply failed:', (err as Error).message));
+      await message.reply(pickRandom(insultResponses)).catch((err) => console.error('Reply failed:', (err as Error).message));
       return true;
     }
 
@@ -72,7 +73,7 @@ export async function handleRemember(
         'okay i wrote it down. in pencil tho.',
         'the confidence is almost impressive. almost.',
       ];
-      await message.reply(hypeResponses[Math.floor(Math.random() * hypeResponses.length)] as string).catch((err) => console.error('Reply failed:', (err as Error).message));
+      await message.reply(pickRandom(hypeResponses)).catch((err) => console.error('Reply failed:', (err as Error).message));
       return true;
     }
 
@@ -86,7 +87,7 @@ export async function handleRemember(
       'saved. this is going to come back to haunt you',
       'interesting... i\'ll keep that in mind <:sass_judge:100000000000000902>',
     ];
-    await message.reply(responses[Math.floor(Math.random() * responses.length)] as string).catch((err) => console.error('Reply failed:', (err as Error).message));
+    await message.reply(pickRandom(responses)).catch((err) => console.error('Reply failed:', (err as Error).message));
     return true;
   }
 
