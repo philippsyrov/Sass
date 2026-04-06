@@ -27,15 +27,14 @@ const CANVAS_WIDTH = 1392;
 const CANVAS_HEIGHT = 768;
 const CENTER_X = CANVAS_WIDTH / 2;
 
-/**
- * Per-template configuration — avatar positions differ slightly between templates.
- */
+// Shared avatar layout — all templates have circles in the same positions
+const AVATAR1_CX = 315;
+const AVATAR2_CX = 1075;
+const AVATAR_CY = 340;
+const AVATAR_RADIUS = 155;
+
 interface TemplateConfig {
   path: string;
-  avatar1Cx: number;
-  avatar2Cx: number;
-  avatarCy: number;
-  avatarRadius: number;
   accentColor: string;    // Percentage text color
   embedColor: number;     // Discord embed sidebar color
   borderEmoji: string;    // Decorative border for embed text
@@ -44,50 +43,30 @@ interface TemplateConfig {
 const TEMPLATES: Record<string, TemplateConfig> = {
   dark_storm: {
     path: join(__dirname, '..', 'assets', 'dark_storm_clouds.jpg'),
-    avatar1Cx: 315,
-    avatar2Cx: 1075,
-    avatarCy: 340,
-    avatarRadius: 158,
     accentColor: '#8bb8d0',
     embedColor: 0x2a3040,
     borderEmoji: '\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F',
   },
   overcast: {
     path: join(__dirname, '..', 'assets', 'overcast_dusk.jpg'),
-    avatar1Cx: 315,
-    avatar2Cx: 1075,
-    avatarCy: 340,
-    avatarRadius: 158,
     accentColor: '#b0c4de',
     embedColor: 0x4A6FA5,
     borderEmoji: '\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}',
   },
   sunset: {
     path: join(__dirname, '..', 'assets', 'warm_sunset.jpg'),
-    avatar1Cx: 315,
-    avatar2Cx: 1075,
-    avatarCy: 340,
-    avatarRadius: 158,
     accentColor: '#f0a868',
     embedColor: 0xD4764E,
     borderEmoji: '\u{1F305}\u2728\u{1F305}\u2728\u{1F305}\u2728\u{1F305}\u2728\u{1F305}\u2728\u{1F305}\u2728\u{1F305}\u2728\u{1F305}\u2728\u{1F305}',
   },
   light_sakura: {
     path: join(__dirname, '..', 'assets', 'light_sakura.jpg'),
-    avatar1Cx: 335,
-    avatar2Cx: 1055,
-    avatarCy: 340,
-    avatarRadius: 150,
     accentColor: '#e8a0b8',
     embedColor: 0xE8A0B8,
     borderEmoji: '\u{1F338}\u{1F497}\u{1F338}\u{1F497}\u{1F338}\u{1F497}\u{1F338}\u{1F497}\u{1F338}\u{1F497}\u{1F338}\u{1F497}\u{1F338}\u{1F497}\u{1F338}\u{1F497}\u{1F338}',
   },
   full_sakura: {
     path: join(__dirname, '..', 'assets', 'full_sakura_bloom.jpg'),
-    avatar1Cx: 350,
-    avatar2Cx: 1040,
-    avatarCy: 340,
-    avatarRadius: 145,
     accentColor: '#ff8fab',
     embedColor: 0xFF4D6D,
     borderEmoji: '\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}',
@@ -141,8 +120,8 @@ export async function generateShipImage(
   }
 
   // Step 2: Draw avatars clipped to circles on top of template
-  drawCircularAvatar(ctx, img1, tmpl.avatar1Cx, tmpl.avatarCy, tmpl.avatarRadius);
-  drawCircularAvatar(ctx, img2, tmpl.avatar2Cx, tmpl.avatarCy, tmpl.avatarRadius);
+  drawCircularAvatar(ctx, img1, AVATAR1_CX, AVATAR_CY, AVATAR_RADIUS);
+  drawCircularAvatar(ctx, img2, AVATAR2_CX, AVATAR_CY, AVATAR_RADIUS);
 
   // Step 3: Percentage text centered below the heart
   ctx.textAlign = 'center';
