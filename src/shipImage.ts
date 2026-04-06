@@ -4,6 +4,9 @@
  * Renders the template as a full background, then draws avatars on top
  * at hardcoded circle positions. All ship info rendered on the card —
  * user names, ship name, %, tier, and verdict. Embed is image-only.
+ *
+ * Template images are 1024×1536 but we crop to 1024×1050 for a wider
+ * aspect ratio that displays well in Discord embeds on desktop.
  */
 
 import { createCanvas, loadImage, registerFont } from 'canvas';
@@ -20,16 +23,24 @@ try {
   console.error('Font registration failed:', (err as Error).message);
 }
 
-// Canvas dimensions — must match template files exactly
-const CANVAS_WIDTH = 1024;
-const CANVAS_HEIGHT = 1536;
+// Template source dimensions
+const TEMPLATE_WIDTH = 1024;
+const TEMPLATE_HEIGHT = 1536;
 
-// Avatar circle positions (measured from template via pixel scanning, radius padded to cover checkerboard)
+// Canvas output dimensions — cropped for wider Discord display
+const CANVAS_WIDTH = 1024;
+const CANVAS_HEIGHT = 1050;
+
+// How far down we offset the template (negative = shift template up to show the right section)
+// We want to show the avatar area (centered ~y=650 in the template) in our cropped canvas
+const TEMPLATE_OFFSET_Y = -200;
+
+// Avatar circle positions (relative to the cropped canvas)
 const AVATAR1_CX = 178;
-const AVATAR1_CY = 650;
+const AVATAR1_CY = 650 + TEMPLATE_OFFSET_Y;  // 450 in canvas space
 const AVATAR1_RADIUS = 160;
 const AVATAR2_CX = 845;
-const AVATAR2_CY = 650;
+const AVATAR2_CY = 650 + TEMPLATE_OFFSET_Y;  // 450 in canvas space
 const AVATAR2_RADIUS = 160;
 
 // Text layout
@@ -75,9 +86,9 @@ export async function generateShipImage(opts: ShipCardOptions): Promise<Buffer> 
     loadImage(avatarUrl2).catch((err) => { console.error('Avatar 2 load failed:', (err as Error).message); return null; }),
   ]);
 
-  // Step 1: Draw template as full background
+  // Step 1: Draw template shifted up so avatar area is centered in cropped canvas
   if (template) {
-    ctx.drawImage(template, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    ctx.drawImage(template, 0, TEMPLATE_OFFSET_Y, TEMPLATE_WIDTH, TEMPLATE_HEIGHT);
   } else {
     ctx.fillStyle = '#1a0a12';
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -91,11 +102,11 @@ export async function generateShipImage(opts: ShipCardOptions): Promise<Buffer> 
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font = 'bold 32px ShipFont';
-  drawTextWithShadow(ctx, displayName1, AVATAR1_CX, AVATAR1_CY + AVATAR1_RADIUS + 40, '#ffffff');
-  drawTextWithShadow(ctx, displayName2, AVATAR2_CX, AVATAR2_CY + AVATAR2_RADIUS + 40, '#ffffff');
+  drawTextWithShadow(ctx, displayName1, AVATAR1_CX, AVATAR1_CY + AVATAR1_RADIUS + 35, '#ffffff');
+  drawTextWithShadow(ctx, displayName2, AVATAR2_CX, AVATAR2_CY + AVATAR2_RADIUS + 35, '#ffffff');
 
   // Step 4: Dark overlay strip for bottom text
-  const overlayTop = CANVAS_HEIGHT - 400;
+  const overlayTop = CANVAS_HEIGHT - 300;
   const gradient = ctx.createLinearGradient(0, overlayTop, 0, CANVAS_HEIGHT);
   gradient.addColorStop(0, 'rgba(0,0,0,0)');
   gradient.addColorStop(0.25, 'rgba(0,0,0,0.6)');
@@ -104,7 +115,7 @@ export async function generateShipImage(opts: ShipCardOptions): Promise<Buffer> 
   ctx.fillRect(0, overlayTop, CANVAS_WIDTH, CANVAS_HEIGHT - overlayTop);
 
   // Step 5: Hearts bar
-  const heartsY = 1150;
+  const heartsY = 800;
   const filledHearts = Math.round(percent / 10);
   const heartsText = '\u2764\uFE0F'.repeat(filledHearts) + '\u{1F5A4}'.repeat(10 - filledHearts);
   ctx.font = '36px serif';
@@ -113,24 +124,23 @@ export async function generateShipImage(opts: ShipCardOptions): Promise<Buffer> 
 
   // Step 6: Ship name + percent
   if (shipName) {
-    ctx.font = 'bold 56px ShipFont';
-    drawTextWithShadow(ctx, shipName, CENTER_X, 1230, '#ffffff');
+    ctx.font = 'bold 52px ShipFont';
+    drawTextWithShadow(ctx, shipName, CENTER_X, 870, '#ffffff');
   }
 
   // Percentage and tier on same line
-  ctx.font = 'bold 48px ShipFont';
-  const statsLine = tierLabel ? `${percent}%  ·  ${tierLabel}` : `${percent}%`;
-  drawTextWithShadow(ctx, statsLine, CENTER_X, 1310, '#ff8fab');
+  ctx.font = 'bold 44px ShipFont';
+  const statsLine = tierLabel ? `${percent}%  \u00b7  ${tierLabel}` : `${percent}%`;
+  drawTextWithShadow(ctx, statsLine, CENTER_X, 940, '#ff8fab');
 
   // Step 7: Verdict text (AI-generated one-liner)
   if (verdict) {
-    ctx.font = 'bold 30px ShipFont';
-    // Wrap long verdicts
+    ctx.font = 'bold 28px ShipFont';
     const maxWidth = CANVAS_WIDTH - 100;
     const lines = wrapText(ctx, verdict, maxWidth);
-    const verdictStartY = 1400;
+    const verdictStartY = 1005;
     for (let i = 0; i < lines.length && i < 2; i++) {
-      drawTextWithShadow(ctx, lines[i] ?? '', CENTER_X, verdictStartY + i * 40, 'rgba(255,255,255,0.8)');
+      drawTextWithShadow(ctx, lines[i] ?? '', CENTER_X, verdictStartY + i * 36, 'rgba(255,255,255,0.8)');
     }
   }
 
