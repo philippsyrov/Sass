@@ -69,7 +69,7 @@ const TEMPLATES: Record<string, TemplateConfig> = {
     path: join(__dirname, '..', 'assets', 'full_sakura_bloom.jpg'),
     accentColor: '#ff8fab',
     embedColor: 0xFF4D6D,
-    borderEmoji: '\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}',
+    borderEmoji: '\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}\u273F\u{1F338}',
   },
 };
 
