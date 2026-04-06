@@ -61,11 +61,11 @@ const TEMPLATES: Record<string, TemplateConfig> = {
   storm: {
     path: join(__dirname, '..', 'assets', 'ship-storm.png'),
     offsetY: -200,
-    avatar1Cx: 178,
-    avatar1Cy: 650,
-    avatar2Cx: 845,
-    avatar2Cy: 650,
-    avatarRadius: 140,
+    avatar1Cx: 169,
+    avatar1Cy: 628,
+    avatar2Cx: 856,
+    avatar2Cy: 628,
+    avatarRadius: 153,
   },
 };
 
