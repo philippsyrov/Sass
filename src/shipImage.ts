@@ -53,9 +53,9 @@ const TEMPLATES: Record<string, TemplateConfig> = {
     path: join(__dirname, '..', 'assets', 'ship-sakura.png'),
     offsetY: -304,
     avatar1Cx: 169,
-    avatar1Cy: 630,
+    avatar1Cy: 628,
     avatar2Cx: 856,
-    avatar2Cy: 630,
+    avatar2Cy: 628,
     avatarRadius: 153,
   },
   storm: {
