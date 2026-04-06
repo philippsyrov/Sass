@@ -7,7 +7,7 @@ import { queryAI, analyzeProfile } from '../ai/index.js';
 import * as userMemory from '../userMemory.js';
 import { logCommand, getAffinity } from '../database/index.js';
 import { getShipScore, warmPairCache } from '../shipScore.js';
-import { generateShipImage, type ShipCardOptions } from '../shipImage.js';
+import { generateShipImage, getTemplateTier, getTemplateConfig } from '../shipImage.js';
 import { messageBuffer } from '../messageBuffer.js';
 import { getUserMemories } from '../vectorMemory.js';
 import { pickRandom } from '../shared/commandUtils.js';
@@ -49,6 +49,10 @@ export async function handleSocialCommand(
       const avatar1 = user1.displayAvatarURL({ extension: 'png', size: 128 });
       const avatar2 = user2.displayAvatarURL({ extension: 'png', size: 128 });
 
+      // Get template config for tier-specific styling
+      const tier = getTemplateTier(percent);
+      const tmplConfig = getTemplateConfig(tier);
+
       try {
         const shipPrompt = isShipWithSass
           ? `Someone shipped "${otherUser?.displayName}" with you (Sass). Your affinity with them is ${percent}%. ONE sentence verdict about how you feel about them, max 12 words. Be tsundere — if high affinity, admit you like them reluctantly. If low, be cold.`
@@ -57,76 +61,93 @@ export async function handleSocialCommand(
         const shipName = user1.displayName.slice(0, Math.ceil(user1.displayName.length / 2)) +
           user2.displayName.slice(Math.floor(user2.displayName.length / 2));
 
-        // Determine tier label for card — same logic used below for embed
-        let cardTierLabel: string;
+        // Determine tier label + emoji + quote
+        let tierEmoji: string;
+        let tierName: string;
+        let tierQuote: string;
+        let nextTier: string;
+
         if (isShipWithSass) {
-          if (percent >= 96) cardTierLabel = 'ride or die';
-          else if (percent >= 86) cardTierLabel = 'favorite';
-          else if (percent >= 71) cardTierLabel = 'liked';
-          else if (percent >= 51) cardTierLabel = 'familiar';
-          else if (percent >= 31) cardTierLabel = 'acquaintance';
-          else if (percent >= 16) cardTierLabel = 'nuisance';
-          else cardTierLabel = 'stranger';
+          if (percent >= 96) { tierEmoji = '\u{1F48E}'; tierName = 'ride or die'; tierQuote = "i'd never admit it, but i'd choose you."; nextTier = ''; }
+          else if (percent >= 86) { tierEmoji = '\u{1F497}'; tierName = 'favorite'; tierQuote = "don't tell anyone, but you're my favorite."; nextTier = 'ride or die (96%)'; }
+          else if (percent >= 71) { tierEmoji = '\u{1F495}'; tierName = 'liked'; tierQuote = '...fine, i like you. shut up about it.'; nextTier = 'favorite (86%)'; }
+          else if (percent >= 51) { tierEmoji = '\u{1F91D}'; tierName = 'familiar'; tierQuote = "you're tolerable. don't push it."; nextTier = 'liked (71%)'; }
+          else if (percent >= 31) { tierEmoji = '\u{1F610}'; tierName = 'acquaintance'; tierQuote = 'i acknowledge your existence.'; nextTier = 'familiar (51%)'; }
+          else if (percent >= 16) { tierEmoji = '\u{1F612}'; tierName = 'nuisance'; tierQuote = "oh, you're still here."; nextTier = 'acquaintance (31%)'; }
+          else { tierEmoji = '\u2753'; tierName = 'stranger'; tierQuote = 'who are you again?'; nextTier = 'nuisance (16%)'; }
         } else {
-          if (percent >= 95) cardTierLabel = 'soulmates';
-          else if (percent >= 80) cardTierLabel = 'power couple';
-          else if (percent >= 60) cardTierLabel = 'close';
-          else if (percent >= 40) cardTierLabel = 'friends';
-          else if (percent >= 25) cardTierLabel = 'acquaintances';
-          else if (percent >= 15) cardTierLabel = 'awkward';
-          else cardTierLabel = 'enemies';
+          if (percent >= 95) { tierEmoji = '\u{1F48E}'; tierName = 'soulmates'; tierQuote = 'written in the stars.'; nextTier = ''; }
+          else if (percent >= 80) { tierEmoji = '\u{1F525}'; tierName = 'power couple'; tierQuote = 'the server ships it.'; nextTier = 'soulmates (95%)'; }
+          else if (percent >= 60) { tierEmoji = '\u{1F495}'; tierName = 'close'; tierQuote = "they finish each other's sentences."; nextTier = 'power couple (80%)'; }
+          else if (percent >= 40) { tierEmoji = '\u{1F91D}'; tierName = 'friends'; tierQuote = 'solid vibes, nothing more.'; nextTier = 'close (60%)'; }
+          else if (percent >= 25) { tierEmoji = '\u{1F937}'; tierName = 'acquaintances'; tierQuote = "they've been in the same room, probably."; nextTier = 'friends (40%)'; }
+          else if (percent >= 15) { tierEmoji = '\u{1F610}'; tierName = 'awkward'; tierQuote = "the vibes are... off."; nextTier = 'acquaintances (25%)'; }
+          else { tierEmoji = '\u{1F480}'; tierName = 'enemies'; tierQuote = 'someone call a mediator.'; nextTier = 'awkward (15%)'; }
         }
 
-        // Get AI verdict first, then generate image with verdict baked in
-        const verdictRaw = await queryAI(shipPrompt, {
-          systemPrompt: 'You judge ship compatibility. ONE short sentence. Max 12 words. Lowercase. Talk like a 20-year-old, not a poet. No "chemistry of a [object]" comparisons. If you exceed 12 words, you failed.',
-        });
+        // Heart bar (10 hearts)
+        const heartBar = '\u2764\uFE0F'.repeat(Math.round(percent / 10)) + '\u{1F5A4}'.repeat(10 - Math.round(percent / 10));
+
+        // Progress bar (30 segments, no milestone splits)
+        const totalSegments = 30;
+        const filledCount = Math.round((percent / 100) * totalSegments);
+        const progressBar = '\u2588'.repeat(filledCount) + '\u2591'.repeat(totalSegments - filledCount);
+
+        const maxLine = isShipWithSass
+          ? '\u2728 *max affinity \u2014 she chose you.*'
+          : '\u2728 *soulmates \u2014 this is real.*';
+
+        // Run AI verdict and image generation in parallel
+        const [verdictRaw, shipBuffer] = await Promise.all([
+          queryAI(shipPrompt, {
+            systemPrompt: 'You judge ship compatibility. ONE short sentence. Max 12 words. Lowercase. Talk like a 20-year-old, not a poet. No "chemistry of a [object]" comparisons. If you exceed 12 words, you failed.',
+          }),
+          generateShipImage(avatar1, avatar2, percent)
+            .catch((imgErr) => { console.error('Ship image generation failed:', (imgErr as Error).message); return null; }),
+        ]);
         let verdict = verdictRaw;
 
-        // Hard enforce 12 word cap — truncate to first sentence if too long
+        // Hard enforce 12 word cap
         if (verdict && verdict.split(/\s+/).length > 14) {
           const firstSentence = verdict.split(/[.!?]/)[0];
           verdict = firstSentence ? firstSentence.trim() + '.' : verdict.split(/\s+/).slice(0, 12).join(' ') + '.';
         }
 
-        // Generate ship card with all info baked into the image
-        const cardOpts: ShipCardOptions = {
-          avatarUrl1: avatar1,
-          avatarUrl2: avatar2,
-          percent,
-          displayName1: user1.displayName,
-          displayName2: user2.displayName,
-          shipName,
-          tierLabel: cardTierLabel,
-          verdict: verdict ?? undefined,
-        };
-        const shipBuffer = await generateShipImage(cardOpts)
-          .catch((imgErr) => { console.error('Ship image generation failed:', (imgErr as Error).message); return null; });
+        // Build embed description — text above, image below
+        const description =
+          `${tmplConfig.borderEmoji}\n\n` +
+          `\u{1F498} **${user1.displayName}** x **${user2.displayName}**\n` +
+          `ship name: **${shipName}**\n` +
+          `${heartBar} **${percent}%**\n\n` +
+          `*${verdict}*\n\n` +
+          `\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 \u273F \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n` +
+          `${tierEmoji} **${tierName}**\n` +
+          `*"${tierQuote}"*\n\n` +
+          `\`${progressBar}\` **${percent}%**` +
+          (nextTier ? `\n*next: ${nextTier}*` : `\n${maxLine}`) +
+          `\n\n${tmplConfig.borderEmoji}`;
 
         const files = shipBuffer ? [new AttachmentBuilder(shipBuffer, { name: 'ship.png' })] : [];
 
+        const embed = new EmbedBuilder()
+          .setColor(tmplConfig.embedColor)
+          .setDescription(description);
+
         if (files.length > 0) {
-          const embed = new EmbedBuilder()
-            .setColor(percent >= 30 ? 0xFF4D6D : 0x4A6FA5)
-            .setImage('attachment://ship.png');
-          await interaction.editReply({ embeds: [embed], files });
-        } else {
-          // Fallback: text-only if image generation fails
-          await interaction.editReply(
-            `\u{1F498} **${user1.displayName}** x **${user2.displayName}** — ${percent}% ${cardTierLabel}\n*${verdict}*`
-          );
+          embed.setImage('attachment://ship.png');
         }
+
+        await interaction.editReply({ embeds: [embed], files });
 
         // Inject into message buffer so Sass can see slash command results
         const channelId = interaction.channelId;
-        const tierLabel = isShipWithSass
-          ? (percent >= 96 ? 'ride or die' : percent >= 86 ? 'favorite' : percent >= 71 ? 'liked' : percent >= 51 ? 'familiar' : 'acquaintance')
-          : (percent >= 80 ? 'power couple' : percent >= 60 ? 'close' : percent >= 40 ? 'friends' : 'acquaintances');
-        messageBuffer.injectBotMessage(channelId, `[Sass /ship result: ${user1.displayName} x ${user2.displayName} = ${percent}%, tier: ${tierLabel}]`);
+        messageBuffer.injectBotMessage(channelId, `[Sass /ship result: ${user1.displayName} x ${user2.displayName} = ${percent}%, tier: ${tierName}]`);
       } catch (err) {
         console.error('Ship command failed:', (err as Error).message);
+        const heartBar = '\u2764\uFE0F'.repeat(Math.round(percent / 10)) + '\u{1F5A4}'.repeat(10 - Math.round(percent / 10));
         await interaction.editReply(
-          `\u{1F498} **${user1.displayName}** x **${user2.displayName}** — ${percent}%\n` +
+          `\u{1F498} **${user1.displayName}** x **${user2.displayName}**\n` +
+          `${heartBar} **${percent}%**\n\n` +
           `*my brain crashed trying to imagine this couple. that tells you everything.*`
         );
       }
