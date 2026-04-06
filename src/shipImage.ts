@@ -132,9 +132,9 @@ export async function generateShipImage(opts: ShipCardOptions): Promise<Buffer> 
   ctx.fillRect(0, overlayTop, CANVAS_WIDTH, CANVAS_HEIGHT - overlayTop);
 
   // Step 5: Affinity bar (drawn, not emoji — canvas can't render emoji)
-  const barY = 800;
-  const barWidth = 300;
-  const barHeight = 10;
+  const barY = 770;
+  const barWidth = 340;
+  const barHeight = 12;
   const barX = CENTER_X - barWidth / 2;
   const fillWidth = (percent / 100) * barWidth;
 
@@ -152,24 +152,24 @@ export async function generateShipImage(opts: ShipCardOptions): Promise<Buffer> 
 
   // Step 6: Ship name
   if (shipName) {
-    ctx.font = 'bold 60px ShipFont';
-    drawTextWithShadow(ctx, shipName, CENTER_X, 855, '#ffffff');
+    ctx.font = 'bold 64px ShipFont';
+    drawTextWithShadow(ctx, shipName, CENTER_X, 825, '#ffffff');
   }
 
   // Percentage and tier on same line
-  ctx.font = 'bold 50px ShipFont';
+  ctx.font = 'bold 54px ShipFont';
   const statsLine = tierLabel ? `${percent}%  \u00b7  ${tierLabel}` : `${percent}%`;
-  drawTextWithShadow(ctx, statsLine, CENTER_X, 930, tmpl.accentColor);
+  drawTextWithShadow(ctx, statsLine, CENTER_X, 900, tmpl.accentColor);
 
   // Step 7: Verdict text in quotes
   if (verdict) {
-    ctx.font = 'bold 32px ShipFont';
+    ctx.font = 'bold 34px ShipFont';
     const quotedVerdict = `"${verdict}"`;
-    const maxWidth = CANVAS_WIDTH - 80;
+    const maxWidth = CANVAS_WIDTH - 60;
     const lines = wrapText(ctx, quotedVerdict, maxWidth);
-    const verdictStartY = 1000;
+    const verdictStartY = 965;
     for (let i = 0; i < lines.length && i < 2; i++) {
-      drawTextWithShadow(ctx, lines[i] ?? '', CENTER_X, verdictStartY + i * 40, 'rgba(255,255,255,0.85)');
+      drawTextWithShadow(ctx, lines[i] ?? '', CENTER_X, verdictStartY + i * 42, 'rgba(255,255,255,0.85)');
     }
   }
 
