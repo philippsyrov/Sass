@@ -114,12 +114,13 @@ export async function generateShipImage(opts: ShipCardOptions): Promise<Buffer> 
   drawCircularAvatar(ctx, img1, AVATAR1_CX, AVATAR_CY, AVATAR_RADIUS);
   drawCircularAvatar(ctx, img2, AVATAR2_CX, AVATAR_CY, AVATAR_RADIUS);
 
-  // Step 3: User display names under each avatar
+  // Step 3: User display names under each avatar (with dark glow for readability)
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = 'bold 32px ShipFont';
-  drawTextWithShadow(ctx, displayName1, AVATAR1_CX, AVATAR_CY + AVATAR_RADIUS + 35, '#ffffff');
-  drawTextWithShadow(ctx, displayName2, AVATAR2_CX, AVATAR_CY + AVATAR_RADIUS + 35, '#ffffff');
+  ctx.font = 'bold 36px ShipFont';
+  const nameY = AVATAR_CY + AVATAR_RADIUS + 38;
+  drawTextWithGlow(ctx, displayName1, AVATAR1_CX, nameY, '#ffffff');
+  drawTextWithGlow(ctx, displayName2, AVATAR2_CX, nameY, '#ffffff');
 
   // Step 4: Dark overlay strip for bottom text
   const overlayTop = CANVAS_HEIGHT - 280;
@@ -151,24 +152,24 @@ export async function generateShipImage(opts: ShipCardOptions): Promise<Buffer> 
 
   // Step 6: Ship name
   if (shipName) {
-    ctx.font = 'bold 52px ShipFont';
+    ctx.font = 'bold 60px ShipFont';
     drawTextWithShadow(ctx, shipName, CENTER_X, 855, '#ffffff');
   }
 
   // Percentage and tier on same line
-  ctx.font = 'bold 44px ShipFont';
+  ctx.font = 'bold 50px ShipFont';
   const statsLine = tierLabel ? `${percent}%  \u00b7  ${tierLabel}` : `${percent}%`;
-  drawTextWithShadow(ctx, statsLine, CENTER_X, 925, tmpl.accentColor);
+  drawTextWithShadow(ctx, statsLine, CENTER_X, 930, tmpl.accentColor);
 
   // Step 7: Verdict text in quotes
   if (verdict) {
-    ctx.font = 'bold 28px ShipFont';
+    ctx.font = 'bold 32px ShipFont';
     const quotedVerdict = `"${verdict}"`;
-    const maxWidth = CANVAS_WIDTH - 100;
+    const maxWidth = CANVAS_WIDTH - 80;
     const lines = wrapText(ctx, quotedVerdict, maxWidth);
-    const verdictStartY = 995;
+    const verdictStartY = 1000;
     for (let i = 0; i < lines.length && i < 2; i++) {
-      drawTextWithShadow(ctx, lines[i] ?? '', CENTER_X, verdictStartY + i * 36, 'rgba(255,255,255,0.8)');
+      drawTextWithShadow(ctx, lines[i] ?? '', CENTER_X, verdictStartY + i * 40, 'rgba(255,255,255,0.85)');
     }
   }
 
@@ -201,6 +202,22 @@ function roundRect(ctx: any, x: number, y: number, w: number, h: number, r: numb
 function drawTextWithShadow(ctx: any, text: string, x: number, y: number, color: string): void {
   ctx.fillStyle = 'rgba(0,0,0,0.5)';
   ctx.fillText(text, x + 2, y + 2);
+  ctx.fillStyle = color;
+  ctx.fillText(text, x, y);
+}
+
+/**
+ * Draw text with a dark glow for readability on busy backgrounds.
+ * Draws black text at multiple offsets to create a soft outline/glow.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function drawTextWithGlow(ctx: any, text: string, x: number, y: number, color: string): void {
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  for (const dx of [-3, -2, -1, 0, 1, 2, 3]) {
+    for (const dy of [-2, -1, 0, 1, 2, 3]) {
+      ctx.fillText(text, x + dx, y + dy);
+    }
+  }
   ctx.fillStyle = color;
   ctx.fillText(text, x, y);
 }
