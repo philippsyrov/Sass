@@ -32,8 +32,14 @@ export async function handleSocialCommand(
       const isShipWithSass = botId && (user1.id === botId || user2.id === botId);
       const otherUser = isShipWithSass ? (user1.id === botId ? user2 : user1) : null;
 
+      // Creator-only score override for testing card tiers
+      const isCreator = interaction.user.id === process.env.CREATOR_ID;
+      const scoreOverride = isCreator ? interaction.options.getInteger('score') : null;
+
       let percent: number;
-      if (isShipWithSass && otherUser) {
+      if (scoreOverride !== null && scoreOverride !== undefined) {
+        percent = scoreOverride;
+      } else if (isShipWithSass && otherUser) {
         percent = Math.round(await getAffinity(guildId, otherUser.id));
       } else {
         await warmPairCache(guildId, user1.id, user2.id);
@@ -48,12 +54,35 @@ export async function handleSocialCommand(
           ? `Someone shipped "${otherUser?.displayName}" with you (Sass). Your affinity with them is ${percent}%. ONE sentence verdict about how you feel about them, max 12 words. Be tsundere — if high affinity, admit you like them reluctantly. If low, be cold.`
           : `"${user1.displayName}" x "${user2.displayName}" at ${percent}%. ONE sentence verdict, max 12 words. No metaphors or object comparisons. React like a friend judging a couple.`;
 
+        const shipName = user1.displayName.slice(0, Math.ceil(user1.displayName.length / 2)) +
+          user2.displayName.slice(Math.floor(user2.displayName.length / 2));
+
+        // Determine tier label for card — same logic used below for embed
+        let cardTierLabel: string;
+        if (isShipWithSass) {
+          if (percent >= 96) cardTierLabel = 'ride or die';
+          else if (percent >= 86) cardTierLabel = 'favorite';
+          else if (percent >= 71) cardTierLabel = 'liked';
+          else if (percent >= 51) cardTierLabel = 'familiar';
+          else if (percent >= 31) cardTierLabel = 'acquaintance';
+          else if (percent >= 16) cardTierLabel = 'nuisance';
+          else cardTierLabel = 'stranger';
+        } else {
+          if (percent >= 95) cardTierLabel = 'soulmates';
+          else if (percent >= 80) cardTierLabel = 'power couple';
+          else if (percent >= 60) cardTierLabel = 'close';
+          else if (percent >= 40) cardTierLabel = 'friends';
+          else if (percent >= 25) cardTierLabel = 'acquaintances';
+          else if (percent >= 15) cardTierLabel = 'awkward';
+          else cardTierLabel = 'enemies';
+        }
+
         // Run AI verdict and image generation in parallel — neither depends on the other
         const [verdictRaw, shipBuffer] = await Promise.all([
           queryAI(shipPrompt, {
             systemPrompt: 'You judge ship compatibility. ONE short sentence. Max 12 words. Lowercase. Talk like a 20-year-old, not a poet. No "chemistry of a [object]" comparisons. If you exceed 12 words, you failed.',
           }),
-          generateShipImage(avatar1, avatar2, percent)
+          generateShipImage(avatar1, avatar2, percent, shipName, cardTierLabel)
             .catch((imgErr) => { console.error('Ship image generation failed:', (imgErr as Error).message); return null; }),
         ]);
         let verdict = verdictRaw;
@@ -63,9 +92,6 @@ export async function handleSocialCommand(
           const firstSentence = verdict.split(/[.!?]/)[0];
           verdict = firstSentence ? firstSentence.trim() + '.' : verdict.split(/\s+/).slice(0, 12).join(' ') + '.';
         }
-
-        const shipName = user1.displayName.slice(0, Math.ceil(user1.displayName.length / 2)) +
-          user2.displayName.slice(Math.floor(user2.displayName.length / 2));
 
         // Interaction hint — show users their ship is tracked
         const interactions = getPairInteractions(guildId, user1.id, user2.id);

@@ -7,7 +7,8 @@ export const commands = [
     .setName('ship')
     .setDescription('Test compatibility between two users')
     .addUserOption((opt) => opt.setName('user1').setDescription('First person').setRequired(true))
-    .addUserOption((opt) => opt.setName('user2').setDescription('Second person').setRequired(true)),
+    .addUserOption((opt) => opt.setName('user2').setDescription('Second person').setRequired(true))
+    .addIntegerOption((opt) => opt.setName('score').setDescription('[dev] Override ship score for testing').setMinValue(0).setMaxValue(100).setRequired(false)),
 
   new SlashCommandBuilder()
     .setName('hottake')
