@@ -258,9 +258,17 @@ export async function handleMention(message: Message, client: Client, event?: Sa
   const creatorName = await userMemory.getCreatorName(guildId);
   const mentionsCreator = !isCreator && await userMemory.isAboutCreator(guildId, cleanContent);
 
+  // Detect genuine questions and server/memory queries for enhanced context
+  const lowerContent = cleanContent?.toLowerCase() ?? '';
+  const isGenuineQuestion = cleanContent?.includes('?') &&
+    /^(who|what|when|where|why|how|do|did|is|are|can|have|tell|which|would|should)\b/i.test(cleanContent.trim()) &&
+    !/who asked|who cares|what are you on|are you dumb|are you stupid/i.test(lowerContent);
+  const isServerMemoryQuery = /\b(remember|server|memorable|history|stood out|people here|this place|everyone here)\b/i.test(lowerContent);
+  const memoryLimit = isServerMemoryQuery ? 8 : 3;
+
   // Fetch vector memory and affinity in parallel — both are independent read-only ops
-  const memoriesPromise = (!isCreator && cleanContent)
-    ? searchMemories(cleanContent, { guildId, userId, limit: 3 }).catch((err) => {
+  const memoriesPromise = cleanContent
+    ? searchMemories(cleanContent, { guildId, userId, limit: memoryLimit }).catch((err) => {
         console.error('Vector search failed:', (err as Error).message);
         return [];
       })
@@ -269,9 +277,10 @@ export async function handleMention(message: Message, client: Client, event?: Sa
   const [memories, affinity] = await Promise.all([memoriesPromise, affinityPromise]);
 
   let vectorContext = '';
-  if (!isCreator && memories.length > 0) {
-    vectorContext = `RELEVANT MEMORIES about ${displayName} (use these if they fit):\n` +
-      memories.map((m) => `- [${m.type}] ${displayName}: ${m.content}`).join('\n');
+  if (memories.length > 0) {
+    const memLabel = isServerMemoryQuery ? 'SERVER MEMORIES (reference these — the user is asking about history)' : `RELEVANT MEMORIES about ${displayName} (use these if they fit)`;
+    vectorContext = `${memLabel}:\n` +
+      memories.map((m) => `- [${m.type}] ${m.userId ? displayName : 'server'}: ${m.content}`).join('\n');
   }
 
   // Escalation tag count — needed for unified personality context
@@ -322,7 +331,15 @@ export async function handleMention(message: Message, client: Client, event?: Sa
     // Sensitive topic dismiss hint
     const sensitiveHint = getSensitiveHint(guildId, userId, displayName);
 
-    const fullUserContext = [userContext, vectorContext, responseHistory, personalityContext, sensitiveHint].filter(Boolean).join('\n\n');
+    // Genuine question hint — tells the AI to answer instead of deflect
+    let questionHint = '';
+    if (isGenuineQuestion) {
+      questionHint = isServerMemoryQuery
+        ? '[GENUINE QUESTION about the server/people — reference the memories and facts in your context. Give a real answer with personality.]'
+        : '[GENUINE QUESTION — answer this directly with real information. Add personality on top, but ANSWER FIRST. Don\'t deflect.]';
+    }
+
+    const fullUserContext = [userContext, vectorContext, responseHistory, personalityContext, sensitiveHint, questionHint].filter(Boolean).join('\n\n');
     const aiResult = await getSassResponse(framedMessage, { guildId, recentContext, userContext: fullUserContext, peopleContext, isCreator, mentionsCreator, creatorName, imageUrl });
     const response = aiResult.text;
     if (!response) {
