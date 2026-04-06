@@ -38,34 +38,25 @@ const CENTER_X = CANVAS_WIDTH / 2;
  * Per-template configuration — circle positions differ between templates
  * because the AI-generated images have circles in slightly different spots.
  */
+// Shared avatar layout — identical across all templates (canvas coordinates)
+const AVATAR1_CX = 169;
+const AVATAR2_CX = 856;
+const AVATAR_CY = 324;    // sakura: 628 + (-304) = 324, locked
+const AVATAR_RADIUS = 153;
+
 interface TemplateConfig {
   path: string;
-  offsetY: number;       // How far to shift template up (negative)
-  avatar1Cx: number;
-  avatar1Cy: number;     // In template coordinates (offset applied later)
-  avatar2Cx: number;
-  avatar2Cy: number;
-  avatarRadius: number;
+  offsetY: number;       // Only moves the background image, not avatars
 }
 
 const TEMPLATES: Record<string, TemplateConfig> = {
   sakura: {
     path: join(__dirname, '..', 'assets', 'ship-sakura.png'),
     offsetY: -304,
-    avatar1Cx: 169,
-    avatar1Cy: 628,
-    avatar2Cx: 856,
-    avatar2Cy: 628,
-    avatarRadius: 153,
   },
   storm: {
     path: join(__dirname, '..', 'assets', 'ship-storm.png'),
-    offsetY: -200,
-    avatar1Cx: 169,
-    avatar1Cy: 628,
-    avatar2Cx: 856,
-    avatar2Cy: 628,
-    avatarRadius: 153,
+    offsetY: -304,
   },
 };
 
@@ -97,8 +88,6 @@ export async function generateShipImage(opts: ShipCardOptions): Promise<Buffer> 
   const ctx = canvas.getContext('2d');
 
   const tmpl = getTemplate(percent);
-  const av1Cy = tmpl.avatar1Cy + tmpl.offsetY;
-  const av2Cy = tmpl.avatar2Cy + tmpl.offsetY;
 
   // Load template and avatars in parallel
   const [template, img1, img2] = await Promise.all([
@@ -116,15 +105,15 @@ export async function generateShipImage(opts: ShipCardOptions): Promise<Buffer> 
   }
 
   // Step 2: Draw avatars clipped to circles on top of template
-  drawCircularAvatar(ctx, img1, tmpl.avatar1Cx, av1Cy, tmpl.avatarRadius);
-  drawCircularAvatar(ctx, img2, tmpl.avatar2Cx, av2Cy, tmpl.avatarRadius);
+  drawCircularAvatar(ctx, img1, AVATAR1_CX, AVATAR_CY, AVATAR_RADIUS);
+  drawCircularAvatar(ctx, img2, AVATAR2_CX, AVATAR_CY, AVATAR_RADIUS);
 
   // Step 3: User display names under each avatar
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font = 'bold 32px ShipFont';
-  drawTextWithShadow(ctx, displayName1, tmpl.avatar1Cx, av1Cy + tmpl.avatarRadius + 35, '#ffffff');
-  drawTextWithShadow(ctx, displayName2, tmpl.avatar2Cx, av2Cy + tmpl.avatarRadius + 35, '#ffffff');
+  drawTextWithShadow(ctx, displayName1, AVATAR1_CX, AVATAR_CY + AVATAR_RADIUS + 35, '#ffffff');
+  drawTextWithShadow(ctx, displayName2, AVATAR2_CX, AVATAR_CY + AVATAR_RADIUS + 35, '#ffffff');
 
   // Step 4: Dark overlay strip for bottom text
   const overlayTop = CANVAS_HEIGHT - 280;
