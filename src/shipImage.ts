@@ -51,7 +51,7 @@ interface TemplateConfig {
 const TEMPLATES: Record<string, TemplateConfig> = {
   sakura: {
     path: join(__dirname, '..', 'assets', 'ship-sakura.png'),
-    offsetY: -304,
+    offsetY: -322,
     avatar1Cx: 175,
     avatar1Cy: 650,
     avatar2Cx: 850,
