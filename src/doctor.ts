@@ -126,21 +126,8 @@ async function main(): Promise<void> {
 
   for (const envVar of REQUIRED_VARS) {
     const value = process.env[envVar];
-    if (envVar === 'CLIENT_ID') {
-      if (!value) {
-        console.log(formatStatus(false, envVar, 'not set'));
-      } else if (value === '1000000000000000013') {
-        console.log(formatStatus(true, envVar, 'set (staging)'));
-      } else {
-        console.log(formatStatus(true, envVar, 'set (production)'));
-      }
-      continue;
-    }
     console.log(formatStatus(Boolean(value), envVar, value ? 'set' : 'not set'));
   }
-
-  const environment = process.env.CLIENT_ID === '1000000000000000013' ? 'STAGING' : 'PRODUCTION';
-  console.log(`Environment: ${environment}`);
 
   const db = await checkDatabase(process.env.DATABASE_URL);
   console.log(formatStatus(db.connected, 'Database', db.detail));
