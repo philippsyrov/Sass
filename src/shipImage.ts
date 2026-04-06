@@ -51,12 +51,12 @@ interface TemplateConfig {
 const TEMPLATES: Record<string, TemplateConfig> = {
   sakura: {
     path: join(__dirname, '..', 'assets', 'ship-sakura.png'),
-    offsetY: -250,
-    avatar1Cx: 155,
+    offsetY: -280,
+    avatar1Cx: 175,
     avatar1Cy: 650,
-    avatar2Cx: 870,
+    avatar2Cx: 850,
     avatar2Cy: 650,
-    avatarRadius: 160,
+    avatarRadius: 140,
   },
   storm: {
     path: join(__dirname, '..', 'assets', 'ship-storm.png'),
@@ -65,7 +65,7 @@ const TEMPLATES: Record<string, TemplateConfig> = {
     avatar1Cy: 650,
     avatar2Cx: 845,
     avatar2Cy: 650,
-    avatarRadius: 160,
+    avatarRadius: 140,
   },
 };
 
@@ -138,18 +138,21 @@ export async function generateShipImage(opts: ShipCardOptions): Promise<Buffer> 
   // Step 5: Affinity bar (drawn, not emoji — canvas can't render emoji)
   const barY = 800;
   const barWidth = 300;
-  const barHeight = 8;
+  const barHeight = 10;
   const barX = CENTER_X - barWidth / 2;
   const fillWidth = (percent / 100) * barWidth;
 
+  // Dark outline for visibility
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  roundRect(ctx, barX - 2, barY - 2, barWidth + 4, barHeight + 4, 6);
   // Background bar
-  ctx.fillStyle = 'rgba(255,255,255,0.2)';
-  roundRect(ctx, barX, barY, barWidth, barHeight, 4);
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  roundRect(ctx, barX, barY, barWidth, barHeight, 5);
   // Filled portion
   const barColor = percent >= 70 ? '#ff6b9d' : percent >= 40 ? '#c084fc' : '#64748b';
   ctx.fillStyle = barColor;
   if (fillWidth > 0) {
-    roundRect(ctx, barX, barY, fillWidth, barHeight, 4);
+    roundRect(ctx, barX, barY, fillWidth, barHeight, 5);
   }
 
   // Step 6: Ship name
