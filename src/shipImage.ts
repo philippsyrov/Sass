@@ -60,7 +60,7 @@ const TEMPLATES: Record<string, TemplateConfig> = {
   },
   storm: {
     path: join(__dirname, '..', 'assets', 'ship-storm.png'),
-    offsetY: -335,
+    offsetY: -340,
     accentColor: '#8bb8d0',
     barColor: '#5a8fa8',
   },
