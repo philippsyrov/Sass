@@ -50,7 +50,7 @@ const TEMPLATES: Record<string, TemplateConfig> = {
     avatarRadius: 158,
     accentColor: '#8bb8d0',
     embedColor: 0x2a3040,
-    borderEmoji: '\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F',
+    borderEmoji: '\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F\u{1F5A4}\u26C8\uFE0F',
   },
   overcast: {
     path: join(__dirname, '..', 'assets', 'overcast_dusk.jpg'),
@@ -60,7 +60,7 @@ const TEMPLATES: Record<string, TemplateConfig> = {
     avatarRadius: 158,
     accentColor: '#b0c4de',
     embedColor: 0x4A6FA5,
-    borderEmoji: '\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}',
+    borderEmoji: '\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}\u{1F9CA}\u{1F90D}',
   },
   sunset: {
     path: join(__dirname, '..', 'assets', 'warm_sunset.jpg'),
@@ -80,7 +80,7 @@ const TEMPLATES: Record<string, TemplateConfig> = {
     avatarRadius: 150,
     accentColor: '#e8a0b8',
     embedColor: 0xE8A0B8,
-    borderEmoji: '\u{1F338}\u{1F497}\u{1F338}\u{1F497}\u{1F338}\u{1F497}\u{1F338}\u{1F497}\u{1F338}\u{1F497}\u{1F338}\u{1F497}\u{1F338}\u{1F497}\u{1F338}\u{1F497}\u{1F338}\u{1F497}\u{1F338}\u{1F497}\u{1F338}\u{1F497}\u{1F338}',
+    borderEmoji: '\u{1F338}\u{1F497}\u{1F338}\u{1F497}\u{1F338}\u{1F497}\u{1F338}\u{1F497}\u{1F338}\u{1F497}\u{1F338}\u{1F497}\u{1F338}\u{1F497}\u{1F338}\u{1F497}\u{1F338}',
   },
   full_sakura: {
     path: join(__dirname, '..', 'assets', 'full_sakura_bloom.jpg'),
