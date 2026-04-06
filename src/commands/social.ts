@@ -46,8 +46,8 @@ export async function handleSocialCommand(
         await warmPairCache(guildId, user1.id, user2.id);
         percent = await getShipScore(guildId, user1.id, user2.id);
       }
-      const avatar1 = user1.displayAvatarURL({ extension: 'png', size: 128 });
-      const avatar2 = user2.displayAvatarURL({ extension: 'png', size: 128 });
+      const avatar1 = user1.displayAvatarURL({ extension: 'png', size: 512 });
+      const avatar2 = user2.displayAvatarURL({ extension: 'png', size: 512 });
 
       // Get template config for tier-specific styling
       const tier = getTemplateTier(percent);

@@ -100,6 +100,7 @@ export async function generateShipImage(
 ): Promise<Buffer> {
   const canvas = createCanvas(CANVAS_WIDTH, CANVAS_HEIGHT);
   const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
 
   const tier = getTemplateTier(percent);
   const tmpl = getTemplateConfig(tier);
