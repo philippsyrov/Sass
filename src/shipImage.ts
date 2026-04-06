@@ -44,8 +44,8 @@ interface TemplateConfig {
 const TEMPLATES: Record<string, TemplateConfig> = {
   dark_storm: {
     path: join(__dirname, '..', 'assets', 'dark_storm_clouds.jpg'),
-    avatar1Cx: 340,
-    avatar2Cx: 1050,
+    avatar1Cx: 315,
+    avatar2Cx: 1075,
     avatarCy: 340,
     avatarRadius: 158,
     accentColor: '#8bb8d0',
@@ -54,8 +54,8 @@ const TEMPLATES: Record<string, TemplateConfig> = {
   },
   overcast: {
     path: join(__dirname, '..', 'assets', 'overcast_dusk.jpg'),
-    avatar1Cx: 340,
-    avatar2Cx: 1050,
+    avatar1Cx: 315,
+    avatar2Cx: 1075,
     avatarCy: 340,
     avatarRadius: 158,
     accentColor: '#b0c4de',
@@ -64,8 +64,8 @@ const TEMPLATES: Record<string, TemplateConfig> = {
   },
   sunset: {
     path: join(__dirname, '..', 'assets', 'warm_sunset.jpg'),
-    avatar1Cx: 340,
-    avatar2Cx: 1050,
+    avatar1Cx: 315,
+    avatar2Cx: 1075,
     avatarCy: 340,
     avatarRadius: 158,
     accentColor: '#f0a868',
@@ -74,8 +74,8 @@ const TEMPLATES: Record<string, TemplateConfig> = {
   },
   light_sakura: {
     path: join(__dirname, '..', 'assets', 'light_sakura.jpg'),
-    avatar1Cx: 320,
-    avatar2Cx: 1070,
+    avatar1Cx: 335,
+    avatar2Cx: 1055,
     avatarCy: 340,
     avatarRadius: 150,
     accentColor: '#e8a0b8',
@@ -84,8 +84,8 @@ const TEMPLATES: Record<string, TemplateConfig> = {
   },
   full_sakura: {
     path: join(__dirname, '..', 'assets', 'full_sakura_bloom.jpg'),
-    avatar1Cx: 340,
-    avatar2Cx: 1050,
+    avatar1Cx: 350,
+    avatar2Cx: 1040,
     avatarCy: 340,
     avatarRadius: 145,
     accentColor: '#ff8fab',
