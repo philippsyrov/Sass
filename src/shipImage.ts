@@ -24,13 +24,13 @@ try {
 const CANVAS_WIDTH = 1024;
 const CANVAS_HEIGHT = 1536;
 
-// Avatar circle positions (measured from template via pixel scanning)
+// Avatar circle positions (measured from template via pixel scanning, radius padded to cover checkerboard)
 const AVATAR1_CX = 178;
 const AVATAR1_CY = 650;
-const AVATAR1_RADIUS = 140;
+const AVATAR1_RADIUS = 160;
 const AVATAR2_CX = 845;
 const AVATAR2_CY = 650;
-const AVATAR2_RADIUS = 140;
+const AVATAR2_RADIUS = 160;
 
 // Text layout
 const CENTER_X = CANVAS_WIDTH / 2;

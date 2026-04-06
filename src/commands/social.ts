@@ -1,4 +1,5 @@
 import {
+  EmbedBuilder,
   AttachmentBuilder,
   type ChatInputCommandInteraction,
 } from 'discord.js';
@@ -104,7 +105,10 @@ export async function handleSocialCommand(
         const files = shipBuffer ? [new AttachmentBuilder(shipBuffer, { name: 'ship.png' })] : [];
 
         if (files.length > 0) {
-          await interaction.editReply({ files });
+          const embed = new EmbedBuilder()
+            .setColor(percent >= 50 ? 0xFF4D6D : 0x4A6FA5)
+            .setImage('attachment://ship.png');
+          await interaction.editReply({ embeds: [embed], files });
         } else {
           // Fallback: text-only if image generation fails
           await interaction.editReply(
