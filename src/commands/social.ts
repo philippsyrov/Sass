@@ -123,9 +123,8 @@ export async function handleSocialCommand(
           `\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 \u273F \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n` +
           `${tierEmoji} **${tierName}**\n` +
           `*"${tierQuote}"*\n\n` +
-          `\`${progressBar}\` **${percent}%**` +
-          (nextTier ? `\n*next: ${nextTier}*` : `\n${maxLine}`) +
-          `\n\n${tmplConfig.borderEmoji}`;
+          `\`${progressBar}\`` +
+          (nextTier ? `\n*next: ${nextTier}*` : `\n${maxLine}`);
 
         const files = shipBuffer ? [new AttachmentBuilder(shipBuffer, { name: 'ship.png' })] : [];
 
