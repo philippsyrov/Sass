@@ -39,8 +39,8 @@ const CENTER_X = CANVAS_WIDTH / 2;
  * because the AI-generated images have circles in slightly different spots.
  */
 // Shared avatar layout — identical across all templates (canvas coordinates)
-const AVATAR1_CX = 169;
-const AVATAR2_CX = 856;
+const AVATAR1_CX = 172;
+const AVATAR2_CX = 853;
 const AVATAR_CY = 324;    // sakura: 628 + (-304) = 324, locked
 const AVATAR_RADIUS = 153;
 
@@ -60,7 +60,7 @@ const TEMPLATES: Record<string, TemplateConfig> = {
   },
   storm: {
     path: join(__dirname, '..', 'assets', 'ship-storm.png'),
-    offsetY: -330,
+    offsetY: -335,
     accentColor: '#8bb8d0',
     barColor: '#5a8fa8',
   },
