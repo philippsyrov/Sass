@@ -106,7 +106,7 @@ export async function handleSocialCommand(
 
         if (files.length > 0) {
           const embed = new EmbedBuilder()
-            .setColor(percent >= 50 ? 0xFF4D6D : 0x4A6FA5)
+            .setColor(percent >= 30 ? 0xFF4D6D : 0x4A6FA5)
             .setImage('attachment://ship.png');
           await interaction.editReply({ embeds: [embed], files });
         } else {

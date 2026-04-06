@@ -47,21 +47,27 @@ const AVATAR_RADIUS = 153;
 interface TemplateConfig {
   path: string;
   offsetY: number;       // Only moves the background image, not avatars
+  accentColor: string;   // Stats text color (pink for sakura, icy blue for storm)
+  barColor: string;      // Affinity bar fill color
 }
 
 const TEMPLATES: Record<string, TemplateConfig> = {
   sakura: {
     path: join(__dirname, '..', 'assets', 'ship-sakura.png'),
     offsetY: -304,
+    accentColor: '#ff8fab',
+    barColor: '#ff6b9d',
   },
   storm: {
     path: join(__dirname, '..', 'assets', 'ship-storm.png'),
     offsetY: -304,
+    accentColor: '#8bb8d0',
+    barColor: '#5a8fa8',
   },
 };
 
 function getTemplate(score: number): TemplateConfig {
-  const key = score >= 50 ? 'sakura' : 'storm';
+  const key = score >= 30 ? 'sakura' : 'storm';
   const config = TEMPLATES[key];
   if (!config) throw new Error(`Missing template config for key: ${key}`);
   return config;
@@ -138,8 +144,7 @@ export async function generateShipImage(opts: ShipCardOptions): Promise<Buffer> 
   ctx.fillStyle = 'rgba(255,255,255,0.3)';
   roundRect(ctx, barX, barY, barWidth, barHeight, 5);
   // Filled portion
-  const barColor = percent >= 70 ? '#ff6b9d' : percent >= 40 ? '#c084fc' : '#64748b';
-  ctx.fillStyle = barColor;
+  ctx.fillStyle = tmpl.barColor;
   if (fillWidth > 0) {
     roundRect(ctx, barX, barY, fillWidth, barHeight, 5);
   }
@@ -153,7 +158,7 @@ export async function generateShipImage(opts: ShipCardOptions): Promise<Buffer> 
   // Percentage and tier on same line
   ctx.font = 'bold 44px ShipFont';
   const statsLine = tierLabel ? `${percent}%  \u00b7  ${tierLabel}` : `${percent}%`;
-  drawTextWithShadow(ctx, statsLine, CENTER_X, 925, '#ff8fab');
+  drawTextWithShadow(ctx, statsLine, CENTER_X, 925, tmpl.accentColor);
 
   // Step 7: Verdict text in quotes
   if (verdict) {
