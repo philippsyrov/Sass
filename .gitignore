@@ -16,3 +16,9 @@ npm-debug.log*
 .claude/projects/
 dist/
 .playwright-cli/
+
+# Codex local config
+.codex/
+
+# Agent worktrees
+.claude/worktrees/
