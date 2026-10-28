@@ -39,6 +39,11 @@ function startFlushInterval(): void {
 /**
  * Flush all pending seen() updates to Postgres in a batch.
  */
+/** Drop batched seen() state so /forgetme cannot resurrect a wiped user row. */
+export function clearPendingSeen(guildId: string, userId: string): void {
+  pendingSeen.delete(`${guildId}:${userId}`);
+}
+
 export async function flushSeen(): Promise<void> {
   if (pendingSeen.size === 0) return;
   const pool = getPool();

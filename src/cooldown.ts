@@ -122,6 +122,14 @@ export function trackMentionEscalation(guildId: string, userId: string): Escalat
 /**
  * Get the tag count for a user in the current escalation window.
  */
+/** Clear in-memory cooldown/escalation state after /forgetme. */
+export function clearUserRuntimeState(guildId: string, userId: string): void {
+  userCooldowns.delete(userId);
+  slashCooldowns.delete(userId);
+  shipCooldowns.delete(userId);
+  escalationTracker.delete(`${guildId}:${userId}`);
+}
+
 export function getEscalationCount(guildId: string, userId: string): number {
   const entry = escalationTracker.get(`${guildId}:${userId}`);
   if (!entry) return 0;

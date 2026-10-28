@@ -104,7 +104,7 @@ export async function getTrainingData(limit = 1000): Promise<TrainingDataRow[]> 
 
 /**
  * Delete all data for a user in a guild — for /forgetme command.
- * Removes from users, vector_memories, beefs, pair_interactions.
+ * Removes profile, memories, beefs, pair stats, quotes, interaction logs, reactions, and command usage.
  */
 export async function deleteUserData(guildId: string, userId: string): Promise<{ deleted: boolean; tables: string[] }> {
   if (!isDatabaseConnected()) return { deleted: false, tables: [] };
@@ -135,6 +135,24 @@ export async function deleteUserData(guildId: string, userId: string): Promise<{
 
     const wqResult = await pool.query('DELETE FROM wild_quotes WHERE server_id = $1 AND user_id = $2', [guildId, userId]);
     if ((wqResult.rowCount ?? 0) > 0) deletedTables.push('wild_quotes');
+
+    const interactionsResult = await pool.query(
+      'DELETE FROM interactions WHERE server_id = $1 AND user_id = $2',
+      [guildId, userId]
+    );
+    if ((interactionsResult.rowCount ?? 0) > 0) deletedTables.push('interactions');
+
+    const reactionsResult = await pool.query(
+      'DELETE FROM reactions WHERE server_id = $1 AND reactor_id = $2',
+      [guildId, userId]
+    );
+    if ((reactionsResult.rowCount ?? 0) > 0) deletedTables.push('reactions');
+
+    const commandUsageResult = await pool.query(
+      'DELETE FROM command_usage WHERE server_id = $1 AND user_id = $2',
+      [guildId, userId]
+    );
+    if ((commandUsageResult.rowCount ?? 0) > 0) deletedTables.push('command_usage');
 
     await pool.query('COMMIT');
     return { deleted: true, tables: deletedTables };

@@ -9,6 +9,7 @@ import {
 import { queryAI } from '../ai/index.js';
 import * as userMemory from '../userMemory.js';
 import { getTopReactions, deleteUserData } from '../database/index.js';
+import { clearUserRuntimeState } from '../cooldown.js';
 import { hasUsedToday, markUsedToday } from '../shared/commandUtils.js';
 import { activeBattles } from '../roastBattle.js';
 import { messageBuffer } from '../messageBuffer.js';
@@ -226,7 +227,8 @@ export async function handleEntertainmentCommand(
           '- all vector memories\n' +
           '- all beef records\n' +
           '- all pair interactions\n' +
-          '- all wild quotes\n\n' +
+          '- all wild quotes\n' +
+          '- your interaction & command logs in this server\n\n' +
           '**this cannot be undone.**',
         components: [confirmRow],
         ephemeral: true,
@@ -245,6 +247,8 @@ export async function handleEntertainmentCommand(
           return;
         }
         if (btn.customId === 'forgetme_confirm') {
+          userMemory.clearPendingSeen(guildId, interaction.user.id);
+          clearUserRuntimeState(guildId, interaction.user.id);
           const result = await deleteUserData(guildId, interaction.user.id);
           if (result.deleted) {
             await btn.update({
