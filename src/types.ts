@@ -41,6 +41,10 @@ export interface BufferEntry {
   content: string;
   timestamp: number;
   isBot: boolean;
+  /** Discord message id, so a handler can leave the message it is answering out of the log. */
+  messageId?: string;
+  /** True for Sass's own messages. */
+  isSelf?: boolean;
 }
 
 // --- User Memory ---
@@ -134,6 +138,8 @@ export interface GetSassResponseOptions {
   mentionsCreator?: boolean;
   creatorName?: string | null;
   imageUrl?: string | null;
+  /** Speaker label from speakerLabel(), matching how this person appears in recentContext. */
+  speaker?: string;
 }
 
 // --- Database ---

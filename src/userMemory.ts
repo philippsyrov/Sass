@@ -9,6 +9,7 @@
  */
 
 import { getPool, isDatabaseConnected } from './database/index.js';
+import { speakerLabel } from './shared/speaker.js';
 import type {
   UserData, ColdShoulderStatus, WildQuote, BeefRecord,
   LeaderboardEntry, ServerStats, BufferEntry,
@@ -329,7 +330,7 @@ export async function buildPeopleContext(guildId: string, recentMessages: Buffer
       parts.push('unknown — first time seeing them');
     }
 
-    lines.push(`- ${displayName} (${parts.join(', ')})`);
+    lines.push(`- ${speakerLabel({ authorId: userId, author: displayName, isBot: false }, creatorId)}: ${parts.join(', ')}`);
   }
 
   return lines.join('\n');

@@ -17,13 +17,22 @@ const existingEnv = [
   'AI_PROVIDER=openai', `OPENAI_API_KEY=${apiKey}`, 'OPENAI_MODEL=gpt-4o-mini', `DATABASE_URL=${dbUrl}`, '',
 ].join('\n');
 
-async function startWizard(t, terminal, { dotenv } = {}) {
+async function startWizard(t, terminal, { dotenv, emoji = false, profile = false } = {}) {
   const cwd = await mkdtemp(join(tmpdir(), 'sass-setup-test-'));
   await mkdir(join(cwd, 'src'));
   await writeFile(join(cwd, 'src/index.ts'), '');
   await writeFile(join(cwd, 'package.json'), '{}');
   await writeFile(join(cwd, '.env.example'), await readFile(join(root, '.env.example')));
   if (dotenv !== undefined) await writeFile(join(cwd, '.env'), dotenv);
+  if (emoji) {
+    await mkdir(join(cwd, 'assets/emoji'), { recursive: true });
+    await writeFile(join(cwd, 'assets/emoji/sass_fire.png'), 'not-a-real-png');
+  }
+  if (profile) {
+    await mkdir(join(cwd, 'assets'), { recursive: true });
+    await writeFile(join(cwd, 'assets/avatar.png'), 'not-a-real-png');
+    await writeFile(join(cwd, 'assets/banner.png'), 'not-a-real-png');
+  }
   const child = spawn(process.execPath, [
     '--import', import.meta.resolve('tsx'),
     '--import', fileURLToPath(new URL('./fixtures/setup-input.mjs', import.meta.url)),
@@ -270,4 +279,36 @@ test('piped answers retain defaults and can cancel before writing', { timeout: 6
   assert.ok(!wizard.output().includes(token));
   assert.ok(!wizard.output().includes(apiKey));
   await assert.rejects(access(join(wizard.cwd, '.env')), { code: 'ENOENT' });
+});
+
+for (const [answer, expected] of [['y', 'Emoji upload failed: Could not reach Discord'], ['n', 'Run `npm run assets` any time']]) {
+  test(`setup offers the bundled emoji upload; "${answer}" never fails setup`, { timeout: 60_000 }, async (t) => {
+    const wizard = await startWizard(t, false, { emoji: true });
+    wizard.child.stdin.end([
+      token, '', '234567890123456789', 'n', '1', apiKey, '', 'n', 'n', '', 'n', 'y', answer, 'n', '',
+    ].join('\n'));
+    const [code] = await wizard.exited;
+    const output = wizard.output();
+    assert.equal(code, 0, output);
+    assert.ok(output.includes('Upload them to your app now? [Y/n]'));
+    assert.ok(output.includes(expected), output);
+    assert.ok(!output.includes('avatar and a banner'), 'no profile art, no profile offer');
+    assert.ok(!output.includes(token));
+    await access(join(wizard.cwd, '.env'));
+  });
+}
+
+test('setup offers the bundled avatar and banner; a failure never fails setup', { timeout: 60_000 }, async (t) => {
+  const wizard = await startWizard(t, false, { emoji: true, profile: true });
+  wizard.child.stdin.end([
+    token, '', '234567890123456789', 'n', '1', apiKey, '', 'n', 'n', '', 'n', 'y', 'y', 'n', '',
+  ].join('\n'));
+  const [code] = await wizard.exited;
+  const output = wizard.output();
+  assert.equal(code, 0, output);
+  assert.ok(output.includes('your own images are kept'), output);
+  assert.ok(output.includes('Emoji upload failed: Could not reach Discord'), output);
+  assert.ok(output.includes('Avatar/banner check failed: Could not reach Discord'), output);
+  assert.ok(!output.includes(token));
+  await access(join(wizard.cwd, '.env'));
 });

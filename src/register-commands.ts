@@ -21,6 +21,8 @@ try {
     { body: commandData },
   );
   console.log('Slash commands registered globally!');
+  // Imported command modules start cleanup timers that would keep this one-shot script alive.
+  process.exit(0);
 } catch (error) {
   const err = error as Error & { status?: number };
   console.error(`Failed to register commands${err.status ? ` (HTTP ${err.status})` : ''}: ${err.message}`);

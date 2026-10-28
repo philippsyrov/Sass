@@ -1,6 +1,7 @@
 import { messageBuffer } from '../messageBuffer.js';
 import * as userMemory from '../userMemory.js';
 import type { BufferEntry } from '../types.js';
+import { speakerLabel } from './speaker.js';
 
 /**
  * Shared context assembly for mention and auto-sass handlers.
@@ -21,14 +22,18 @@ export async function buildBaseContext(
   guildId: string,
   channelId: string,
   messageCount: number,
+  { excludeMessageId }: { excludeMessageId?: string } = {},
 ): Promise<BaseContext> {
-  const recentMessages = messageBuffer.getRecentRaw(channelId, messageCount);
+  // The message being answered is passed to the model separately; leaving it in the log too
+  // makes one person saying something once look like two people saying the same thing.
+  const recentMessages = messageBuffer.getRecentRaw(channelId, messageCount)
+    .filter((msg) => !excludeMessageId || msg.messageId !== excludeMessageId);
   const bufferSummary = messageBuffer.getSummary(channelId);
 
   const recentContext = [
     bufferSummary,
     ...recentMessages.map(
-      (msg) => `${msg.author}${msg.isBot ? ' [BOT]' : ''}: ${msg.content}`
+      (msg) => `${speakerLabel(msg)}: ${msg.content}`
     ),
   ].filter(Boolean).join('\n');
 

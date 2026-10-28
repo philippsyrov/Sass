@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { Ollama, type Message as OllamaMessage } from 'ollama';
 import * as mood from '../mood.js';
 import type { GetSassResponseOptions, AIResponse, BufferEntry } from '../types.js';
+import { speakerLabel } from '../shared/speaker.js';
 import { queryAI, queryAIWithUsage, getOpenAI, chatOllama } from './providers.js';
 import { CREATOR_SYSTEM_PROMPT, UTILITY_SYSTEM_PROMPT, PROFILE_SYSTEM_PROMPT, SASS_LITE_PROMPT } from './prompts.js';
 
@@ -19,10 +20,11 @@ export async function getSassResponse(userMessage: string, {
   mentionsCreator = false,
   creatorName = null,
   imageUrl = null,
+  speaker,
 }: GetSassResponseOptions = {}): Promise<AIResponse> {
   // Creator gets a completely different prompt — no roasting at all
   if (isCreator) {
-    const text = await queryCreatorMode(userMessage, recentContext, peopleContext, imageUrl ?? null);
+    const text = await queryCreatorMode(userMessage, recentContext, peopleContext, imageUrl ?? null, speaker);
     return { text };
   }
 
@@ -130,22 +132,8 @@ export async function getReactionDecision(recentContext: string): Promise<string
   return null;
 }
 
-/**
- * Pick a custom Sass emoji ID for reacting to a message.
- * Returns the emoji identifier string (e.g., "sass_stare:100000000000000900") for message.react().
- */
-export function pickCustomReaction(context: string): string | null {
-  const lower = context.toLowerCase();
-  // Match context to appropriate custom emoji
-  if (/\b(dumb|stupid|idiot|clown|braindead)\b/.test(lower)) return 'sass_clown:100000000000000906';
-  if (/\b(boring|bored|tired|sleep|zzz)\b/.test(lower)) return 'sass_sleep:100000000000000908';
-  if (/\b(love|cute|sweet|wholesome|ily|❤️)\b/.test(lower)) return 'sass_blush:100000000000000903';
-  if (/\b(fire|insane|goated|cooked|peak)\b/.test(lower)) return 'sass_fire:100000000000000904';
-  if (/\b(mid|meh|okay|whatever|idc)\b/.test(lower)) return 'sass_mid:100000000000000909';
-  if (/\b(sus|cap|lie|lying|fake)\b/.test(lower)) return 'sass_judge:100000000000000902';
-  if (/\b(yawn|lame|cringe|corny)\b/.test(lower)) return 'sass_yawn:100000000000000910';
-  return null;
-}
+// Lives in emoji.ts so it can be tested without the AI clients; re-exported for callers.
+export { pickCustomReaction } from '../emoji.js';
 
 /**
  * Summarize a batch of messages into 1-2 short factual sentences.
@@ -155,7 +143,7 @@ export async function summarizeMessages(messages: BufferEntry[]): Promise<string
   if (messages.length === 0) return null;
 
   const formatted = messages.map(
-    (msg) => `${msg.author}: ${msg.content}`
+    (msg) => `${speakerLabel(msg)}: ${msg.content}`
   ).join('\n');
 
   const prompt = `Summarize this Discord conversation in 1-2 short sentences. Key topics and who said what. Be factual, no personality.\n\n${formatted}`;
@@ -169,17 +157,29 @@ export async function summarizeMessages(messages: BufferEntry[]): Promise<string
 
 // --- Creator mode (separate brain, no roasting) ---
 
-async function queryCreatorMode(userMessage: string, recentContext: string, peopleContext: string = '', imageUrl: string | null = null): Promise<string | null> {
-  const provider = process.env.AI_PROVIDER || 'ollama';
+/**
+ * The user message for creator mode. The creator is named with the same label the chat
+ * log uses, so their earlier lines and this one read as one person, not "ExampleUser" plus a
+ * separate "creator".
+ */
+export function buildCreatorPrompt(userMessage: string, recentContext: string, peopleContext = '', imageUrl: string | null = null, speaker?: string): string {
   const parts: string[] = [];
   if (peopleContext) parts.push(peopleContext);
   if (recentContext) parts.push(`Recent chat:\n${recentContext}`);
+  const who = speaker
+    ? `${speaker} — same person as their lines above — just said to you`
+    : 'Your creator just said to you';
   if (imageUrl) {
-    parts.push(`Your creator says: ${userMessage || 'check this out'}\n[They sent an image — react to it like a friend would.]`);
+    parts.push(`${who}: ${userMessage || 'check this out'}\n[They sent an image — react to it like a friend would.]`);
   } else {
-    parts.push(`Your creator says: ${userMessage}`);
+    parts.push(`${who}: ${userMessage}`);
   }
-  const prompt = parts.join('\n\n');
+  return parts.join('\n\n');
+}
+
+async function queryCreatorMode(userMessage: string, recentContext: string, peopleContext: string = '', imageUrl: string | null = null, speaker?: string): Promise<string | null> {
+  const provider = process.env.AI_PROVIDER || 'ollama';
+  const prompt = buildCreatorPrompt(userMessage, recentContext, peopleContext, imageUrl, speaker);
 
   if (provider === 'openai') {
     // Build user content — text only or text + image

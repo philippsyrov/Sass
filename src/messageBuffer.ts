@@ -1,5 +1,6 @@
 import type { Message, BufferEntry, ChannelSummary } from './types.js';
 import { summarizeMessages } from './ai/index.js';
+import { resolveMentions, speakerLabel } from './shared/speaker.js';
 
 /**
  * Rolling message buffer per channel.
@@ -48,12 +49,15 @@ class MessageBuffer {
 
     const buffer = this.channels.get(channelId);
     if (!buffer) return;
+    const selfId = message.client?.user?.id;
     buffer.push({
       authorId: message.author.id,
       author: message.author.displayName || message.author.username,
-      content: message.content,
+      content: resolveMentions(message.content, selfId, message.mentions?.users?.values() ?? []),
       timestamp: message.createdTimestamp,
       isBot: message.author.bot || false,
+      messageId: message.id,
+      isSelf: selfId !== undefined && message.author.id === selfId,
     });
 
     // Compact and trim when buffer overflows
@@ -80,7 +84,7 @@ class MessageBuffer {
   getRecent(channelId: string, count = 3): string {
     const buffer = this.channels.get(channelId) || [];
     return buffer.slice(-count).map(
-      (msg) => `${msg.author}: ${msg.content}`
+      (msg) => `${speakerLabel(msg)}: ${msg.content}`
     ).join('\n');
   }
 
@@ -131,6 +135,7 @@ class MessageBuffer {
       content: summary,
       timestamp: Date.now(),
       isBot: true,
+      isSelf: true,
     });
 
     if (buffer.length > MAX_MESSAGES_PER_CHANNEL) {

@@ -2,6 +2,7 @@ import type { Message, Client } from 'discord.js';
 import * as userMemory from '../../userMemory.js';
 import { storeMemory } from '../../vectorMemory.js';
 import { setRememberCooldown } from './spamDetection.js';
+import { SASS_EMOJI } from '../../emoji.js';
 import { pickRandom } from '../../shared/commandUtils.js';
 
 /**
@@ -56,9 +57,9 @@ export async function handleRemember(
     if (isInsult) {
       // They're trying to make Sass remember an insult about herself
       const insultResponses = [
-        'cute. not saving that <:sass_eyeroll:100000000000000905>',
+        `cute. not saving that ${SASS_EMOJI.eyeroll}`,
         'i\'ll remember you tried tho',
-        'that says more about you than me <:sass_judge:100000000000000902>',
+        `that says more about you than me ${SASS_EMOJI.judge}`,
         'you really thought that would work huh',
       ];
       await message.reply(pickRandom(insultResponses)).catch((err) => console.error('Reply failed:', (err as Error).message));
@@ -68,8 +69,8 @@ export async function handleRemember(
     if (isSelfHype || isGarbage) {
       // They're hyping themselves up or typing garbage
       const hypeResponses = [
-        'sure you are <:sass_stare:100000000000000900>',
-        'saved under "delusion" <:sass_judge:100000000000000902>',
+        `sure you are ${SASS_EMOJI.stare}`,
+        `saved under "delusion" ${SASS_EMOJI.judge}`,
         'okay i wrote it down. in pencil tho.',
         'the confidence is almost impressive. almost.',
       ];
@@ -85,7 +86,7 @@ export async function handleRemember(
       'noted. you just handed me a weapon',
       'filed. you\'ll regret this',
       'saved. this is going to come back to haunt you',
-      'interesting... i\'ll keep that in mind <:sass_judge:100000000000000902>',
+      `interesting... i'll keep that in mind ${SASS_EMOJI.judge}`,
     ];
     await message.reply(pickRandom(responses)).catch((err) => console.error('Reply failed:', (err as Error).message));
     return true;

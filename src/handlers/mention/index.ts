@@ -17,8 +17,10 @@ import { getRecentResponses } from '../../responseMemory.js';
 import { isSpamPing, isSensitiveTopic, isOnRememberCooldown, getSensitiveHint } from './spamDetection.js';
 import { buildPersonalityContext } from './personality.js';
 import { handleRemember } from './memoryOps.js';
+import { SASS_EMOJI } from '../../emoji.js';
 import type { SassEvent } from '../../types.js';
 import { pickRandom } from '../../shared/commandUtils.js';
+import { speakerLabel, resolveMentions } from '../../shared/speaker.js';
 
 /**
  * Handle direct @Sass mentions and replies to Sass.
@@ -44,9 +46,12 @@ export async function handleMention(message: Message, client: Client, event?: Sa
   const channel = message.channel as TextChannel;
 
   // Strip the @mention to get the actual user message
-  const cleanContent = message.content
-    .replace(new RegExp(`<@!?${client.user.id}>`, 'g'), '')
-    .trim();
+  // Other users' mentions become "@Name" so the model sees who is meant, not a raw id.
+  const cleanContent = resolveMentions(
+    message.content.replace(new RegExp(`<@!?${client.user.id}>`, 'g'), ''),
+    client.user.id,
+    message.mentions.users.values(),
+  ).trim();
 
   // Check if this is the creator
   const isCreator = userId === process.env.CREATOR_ID;
@@ -134,7 +139,7 @@ export async function handleMention(message: Message, client: Client, event?: Sa
   // Remember cooldown — prevent spam
   if (isOnRememberCooldown(guildId, userId) && cleanContent.startsWith('remember')) {
     const rememberSpamResponses = [
-      'slow down, my notes app isn\'t that fast <:sass_done:100000000000000901>',
+      `slow down, my notes app isn't that fast ${SASS_EMOJI.done}`,
       'you\'re speed-running the remember command and it shows',
       'one at a time. i\'m not your diary.',
     ];
@@ -211,7 +216,7 @@ export async function handleMention(message: Message, client: Client, event?: Sa
   }
 
   // Build context — include who is speaking so the AI understands the conversation
-  const { recentContext, peopleContext } = await buildBaseContext(guildId, channel.id, 25);
+  const { recentContext, peopleContext } = await buildBaseContext(guildId, channel.id, 25, { excludeMessageId: message.id });
   const userContext = await userMemory.getContext(guildId, userId, displayName);
 
   // Check if someone is talking about the creator — protect them
@@ -246,10 +251,11 @@ export async function handleMention(message: Message, client: Client, event?: Sa
   // Escalation tag count — needed for unified personality context
   const tagCount = getEscalationCount(guildId, userId);
 
-  // Frame the message with the speaker's name
-  // Creator mode should receive the raw message, not a quoted "X says:" wrapper.
-  // Otherwise the model can misread it like the creator is relaying someone else's words.
-  const framedMessage = isCreator ? cleanContent : `${displayName} says: ${cleanContent}`;
+  // Frame the message with the same speaker label the chat log uses, so the person
+  // talking now is recognisably the same person as their earlier lines. Creator mode
+  // gets the label separately (see queryCreatorMode) and the raw text here.
+  const speaker = speakerLabel({ authorId: userId, author: displayName, isBot: false });
+  const framedMessage = isCreator ? cleanContent : `${speaker} says: ${cleanContent}`;
 
   try {
     await channel.sendTyping().catch((err) => console.error('sendTyping failed:', (err as Error).message));
@@ -300,7 +306,7 @@ export async function handleMention(message: Message, client: Client, event?: Sa
     }
 
     const fullUserContext = [userContext, vectorContext, responseHistory, personalityContext, sensitiveHint, questionHint].filter(Boolean).join('\n\n');
-    const aiResult = await getSassResponse(framedMessage, { guildId, recentContext, userContext: fullUserContext, peopleContext, isCreator, mentionsCreator, creatorName, imageUrl });
+    const aiResult = await getSassResponse(framedMessage, { guildId, recentContext, userContext: fullUserContext, peopleContext, isCreator, mentionsCreator, creatorName, imageUrl, speaker });
     const response = aiResult.text;
     if (!response) {
       await message.reply("My brain just short-circuited. Even AI has bad days, okay?");

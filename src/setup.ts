@@ -31,6 +31,8 @@ import {
   renderEnv,
 } from './setup/validate.js';
 import { fetchDiscordApp, hasOllamaModel, listOllamaModels, listOpenAIModels } from './setup/checks.js';
+import { EMOJI_DIR, listEmojiFiles, summarizeUpload, uploadMissingEmoji } from './emojiUpload.js';
+import { AVATAR_PATH, BANNER_PATH, setMissingProfileImages, summarizeProfile } from './profileAssets.js';
 
 const ENV_PATH = '.env';
 const EXAMPLE_PATH = '.env.example';
@@ -333,7 +335,7 @@ async function setupOpenAICompatible(p: Prompter, preset: ProviderPreset, env: R
     apiKey = preset.localKey;
     note(`${preset.label} ignores the API key; using "${apiKey}".`);
   } else {
-    apiKey = await p.askValid(`${preset.label} API key`, (raw) => checkApiKey(raw, preset.key), {
+    apiKey = await p.askValid(preset.askBaseUrl ? 'API key' : `${preset.label} API key`, (raw) => checkApiKey(raw, preset.key), {
       fallback: sameProvider ? env.OPENAI_API_KEY : undefined,
       secret: true,
     });
@@ -468,6 +470,51 @@ function writeEnv(values: Record<string, string | undefined>): void {
   note('Wrote .env (readable only by you).');
 }
 
+/**
+ * Offer to put the bundled art on the app: the custom emoji (when assets/emoji has files)
+ * and the avatar and banner (only where the bot has none, so custom images are kept).
+ * A failure is a warning: the bot still works and falls back to Unicode emoji.
+ */
+async function offerAssetUpload(p: Prompter, values: Record<string, string | undefined>): Promise<void> {
+  let count: number;
+  try {
+    count = existsSync(EMOJI_DIR) ? listEmojiFiles(EMOJI_DIR).length : 0;
+  } catch {
+    count = 0;
+  }
+  const hasProfileArt = existsSync(AVATAR_PATH) || existsSync(BANNER_PATH);
+  if (count === 0 && !hasProfileArt) return;
+  heading('Custom emoji, avatar and banner');
+  if (count > 0) note(`Sass ships ${count} custom emoji in ${EMOJI_DIR}. They need to be on your Discord app to show up.`);
+  if (hasProfileArt) note('She also ships an avatar and a banner. They are only set if the bot has none yet; your own images are kept.');
+  note('Nothing is deleted or replaced.');
+  if (!(await p.confirm('Upload them to your app now?', true))) {
+    note('Skipped. Run `npm run assets` any time. Until then she uses Unicode emoji.');
+    return;
+  }
+  const token = values.DISCORD_TOKEN ?? '';
+  if (count > 0) {
+    try {
+      const result = await uploadMissingEmoji({ token, appId: values.CLIENT_ID ?? '' });
+      note(summarizeUpload(result));
+      if (result.failed.length > 0) warn('Some emoji were not uploaded. Run `npm run assets` to retry; she uses Unicode for those.');
+    } catch (err) {
+      warn(`Emoji upload failed: ${err instanceof Error ? err.message : String(err)}`);
+      warn('Setup continues. Run `npm run assets` later; until then she uses Unicode emoji.');
+    }
+  }
+  if (hasProfileArt) {
+    try {
+      const result = await setMissingProfileImages({ token });
+      note(summarizeProfile(result));
+      if (result.failed.length > 0) warn('Setup continues. Run `npm run assets` later, or set them in the Developer Portal → Bot.');
+    } catch (err) {
+      warn(`Avatar/banner check failed: ${err instanceof Error ? err.message : String(err)}`);
+      warn('Setup continues. Run `npm run assets` later, or set them in the Developer Portal → Bot.');
+    }
+  }
+}
+
 async function main(): Promise<void> {
   const major = Number(process.versions.node.split('.')[0]);
   if (major < 20) {
@@ -525,6 +572,7 @@ async function main(): Promise<void> {
     return;
   }
   writeEnv(values);
+  await offerAssetUpload(p, values);
 
   heading('Next steps');
   const clientId = values.CLIENT_ID ?? '';

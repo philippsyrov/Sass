@@ -50,14 +50,36 @@ export async function fetchDiscordApp(token: string): Promise<Result<DiscordApp>
   }
 }
 
-/** GET {baseUrl}/models on an OpenAI-compatible API and return the model IDs. */
-export async function listOpenAIModels(baseUrl: string, apiKey: string): Promise<Result<string[]>> {
+/** True for Anthropic's API, whose /models wants x-api-key instead of a Bearer token. */
+export function isAnthropicBaseUrl(baseUrl: string): boolean {
   try {
-    const res = await fetch(`${baseUrl}/models`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
+    return new URL(baseUrl).hostname === 'api.anthropic.com';
+  } catch {
+    return false;
+  }
+}
+
+/** Headers for GET {baseUrl}/models. */
+export function modelListHeaders(baseUrl: string, apiKey: string): Record<string, string> {
+  if (isAnthropicBaseUrl(baseUrl)) return { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' };
+  return { Authorization: `Bearer ${apiKey}` };
+}
+
+/** GET {baseUrl}/models on an OpenAI-compatible API and return the model IDs. */
+export async function listOpenAIModels(baseUrl: string, apiKey: string, fetchImpl: typeof fetch = fetch): Promise<Result<string[]>> {
+  try {
+    const res = await fetchImpl(`${baseUrl}/models`, {
+      headers: modelListHeaders(baseUrl, apiKey),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     if (res.status === 401 || res.status === 403) return { ok: false, error: `The API rejected the key (HTTP ${res.status}).` };
+    if (res.status === 400 || res.status === 404 || res.status === 405) {
+      return {
+        ok: false,
+        error: `Couldn't verify the model list (${baseUrl}/models answered HTTP ${res.status}); continuing. `
+          + 'Some providers don\'t offer an OpenAI-style model list. Double-check the model name on the provider\'s site.',
+      };
+    }
     if (!res.ok) return { ok: false, error: `${baseUrl}/models answered HTTP ${res.status}.` };
     const body = await res.json() as { data?: Array<{ id?: unknown }> };
     const ids = (body.data ?? []).map((m) => m.id).filter((id): id is string => typeof id === 'string');

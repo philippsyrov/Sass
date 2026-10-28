@@ -5,7 +5,9 @@
   "main": "dist/index.js",
   "scripts": {
     "setup": "tsx src/setup.ts",
-    "test": "node --test tests/setup-history.test.mjs",
+    "assets": "tsx scripts/upload-assets.ts",
+    "emoji": "tsx scripts/upload-assets.ts",
+    "test": "node --test tests/*.test.mjs",
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx --watch src/index.ts",

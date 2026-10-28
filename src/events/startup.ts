@@ -4,6 +4,7 @@ import * as userMemory from '../userMemory.js';
 import { distillAllGuilds } from '../vectorMemory.js';
 import { pickRandom } from '../shared/commandUtils.js';
 import { AUTO_SASS_CHANCE } from '../handlers/autoSass.js';
+import { loadSassEmoji } from '../emoji.js';
 
 // Send a message to the first available text channel in a guild
 async function sendToFirstChannel(guild: Guild, text: string): Promise<void> {
@@ -16,12 +17,15 @@ async function sendToFirstChannel(guild: Guild, text: string): Promise<void> {
 }
 
 export function setupStartup(client: Client): void {
-  client.once('ready', async () => {
+  client.once('clientReady', async () => {
     if (!client.user) return;
     console.log(`Sass is online as ${client.user.tag}`);
     console.log(`AI Provider: ${process.env.AI_PROVIDER || 'ollama'}`);
     console.log(`Auto-sass chance: ${AUTO_SASS_CHANCE * 100}%`);
     console.log(`Creator mode: ${process.env.CREATOR_ID ? 'configured' : 'not set'}`);
+
+    // Look up the app's custom emoji by name (missing ones fall back to Unicode)
+    await loadSassEmoji(client);
 
     // Initialize database (fails silently if no DATABASE_URL)
     await initDatabase();
