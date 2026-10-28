@@ -35,40 +35,101 @@ import { fetchDiscordApp, hasOllamaModel, listOllamaModels, listOpenAIModels } f
 const ENV_PATH = '.env';
 const EXAMPLE_PATH = '.env.example';
 const EMBEDDING_MODEL = 'text-embedding-3-small';
+const CRLF_DELAY_MS = 100;
+// If Ctrl+Z's stop signal is discarded (no job control), no SIGCONT follows.
+const SUSPEND_FALLBACK_MS = 250;
+
+/** Set once .env has been written, so cancel messages stay truthful. */
+let envWritten = false;
+
+function nothingWrittenNote(): string {
+  return envWritten ? 'The new .env was already written.' : 'Nothing was written.';
+}
+
+function setRawMode(enabled: boolean): void {
+  if (typeof process.stdin.setRawMode === 'function') process.stdin.setRawMode(enabled);
+}
 
 class InputEnded extends Error {}
 
 /** Line-based prompts that work both in a terminal and with piped input. */
 class Prompter {
-  private readonly rl: readline.Interface;
+  private rl: readline.Interface;
   private readonly queue: string[] = [];
   private readonly waiting: Array<(line: string | null) => void> = [];
   private closed = false;
   private muted = false;
+  private lastReturnAt: number | undefined;
+  private ignoreLineFeed = false;
   readonly interactive = Boolean(process.stdin.isTTY);
 
+  private readonly handleKeypress = (_text: string, key: readline.Key): void => {
+    const now = Date.now();
+    // Keep CRLF a single submission even when the secret's editor was replaced
+    // between the two bytes. Match readline's normal CRLF delay.
+    this.ignoreLineFeed = key?.sequence === '\n' && this.lastReturnAt !== undefined && now - this.lastReturnAt <= CRLF_DELAY_MS;
+    this.lastReturnAt = key?.sequence === '\r' ? now : undefined;
+  };
+
+  private readonly handleClose = (): void => {
+    process.stdin.off('keypress', this.handleKeypress);
+    this.closed = true;
+    for (const next of this.waiting.splice(0)) next(null);
+  };
+
   constructor() {
+    this.rl = this.createReadline();
+    if (this.interactive) process.stdin.prependListener('keypress', this.handleKeypress);
+  }
+
+  private createReadline(): readline.Interface {
+    let active = true;
     const output = new Writable({
       write: (chunk: Buffer, _encoding, callback) => {
-        if (!this.muted) process.stdout.write(chunk);
+        if (active && !this.muted) process.stdout.write(chunk);
         callback();
       },
     });
-    this.rl = readline.createInterface({ input: process.stdin, output, terminal: this.interactive });
-    this.rl.on('line', (line) => {
+    const rl = readline.createInterface({ input: process.stdin, output, terminal: this.interactive, historySize: 0, crlfDelay: CRLF_DELAY_MS });
+    rl.on('line', (line) => {
+      if (this.ignoreLineFeed) {
+        this.ignoreLineFeed = false;
+        return;
+      }
       const next = this.waiting.shift();
       if (next) next(line);
       else this.queue.push(line);
     });
-    this.rl.on('close', () => {
-      this.closed = true;
-      for (const next of this.waiting.splice(0)) next(null);
+    // A queued SIGCONT callback can still refresh a closed readline instance.
+    // Its output must stay retired, regardless of the next prompt's mute state.
+    rl.once('close', () => { active = false; });
+    rl.on('close', this.handleClose);
+    // Ctrl+Z: readline's default stops only this process, which leaves npm and tsx
+    // running, the shell without control, and the terminal echoing a hidden prompt.
+    // Stop the whole foreground process group instead and restore raw mode on resume.
+    rl.on('SIGTSTP', () => {
+      if (!this.interactive) return;
+      let resumed = false;
+      const resume = (): void => {
+        if (resumed) return;
+        resumed = true;
+        process.off('SIGCONT', resume);
+        clearTimeout(fallback);
+        if (!active) return;
+        setRawMode(true);
+        rl.prompt(true);
+      };
+      setRawMode(false);
+      const fallback = setTimeout(resume, SUSPEND_FALLBACK_MS);
+      process.on('SIGCONT', resume);
+      process.kill(0, 'SIGTSTP');
     });
-    this.rl.on('SIGINT', () => {
+    rl.on('SIGINT', () => {
       this.muted = false;
-      console.log('\n\nSetup cancelled. Nothing was written.');
+      console.log(`\n\nSetup cancelled. ${nothingWrittenNote()}`);
       process.exit(130);
     });
+    return rl;
   }
 
   private nextLine(): Promise<string | null> {
@@ -85,6 +146,17 @@ class Prompter {
     this.rl.prompt();
     if (secret && this.interactive) this.muted = true;
     const line = await this.nextLine();
+    if (secret && this.interactive) {
+      // Readline also retains deleted text in its kill ring. Start a fresh editor
+      // before unmuting, dropping terminal type-ahead that may contain yanked secrets.
+      // Piped answers keep their queue and never use the terminal editor.
+      this.queue.length = 0;
+      if (!this.closed) {
+        this.rl.off('close', this.handleClose);
+        this.rl.close();
+        this.rl = this.createReadline();
+      }
+    }
     if (this.muted) {
       this.muted = false;
       process.stdout.write('\n');
@@ -318,7 +390,13 @@ async function setupMemory(p: Prompter, preset: ProviderPreset, env: Record<stri
   heading('Database and memory (optional)');
   note('Without Postgres the bot runs, but memory, affinity, /forgetme and most persistence are off.');
   note('Tables are created on first start.');
-  const databaseUrl = await p.askValid('Postgres URL (DATABASE_URL, Enter to skip)', checkDatabaseUrl, { fallback: env.DATABASE_URL });
+  note('Your input is hidden; the URL usually contains a password.');
+  // Hidden like the other secrets, so an existing URL and its password are never shown.
+  const databaseUrl = await p.askValid(
+    env.DATABASE_URL ? 'Postgres URL (DATABASE_URL, "none" removes it)' : 'Postgres URL (DATABASE_URL, Enter to skip)',
+    checkDatabaseUrl,
+    { fallback: env.DATABASE_URL, secret: true },
+  );
   values.DATABASE_URL = databaseUrl;
   if (!databaseUrl) return;
 
@@ -385,6 +463,7 @@ function writeEnv(values: Record<string, string | undefined>): void {
     note(`Old .env saved as ${backup}`);
   }
   writeFileSync(ENV_PATH, content, { mode: 0o600 });
+  envWritten = true;
   chmodSync(ENV_PATH, 0o600);
   note('Wrote .env (readable only by you).');
 }
@@ -460,14 +539,16 @@ async function main(): Promise<void> {
   const startNow = await p.confirm('Build, register slash commands and start Sass now?', p.interactive);
   p.close();
   if (!startNow) return;
-  if (!(await runStep('npm', ['run', 'build']))) return;
-  if (!(await runStep('node', ['dist/register-commands.js']))) return;
-  await runStep('npm', ['start']);
+  // A failed step must fail the setup command too.
+  const ok = await runStep('npm', ['run', 'build'])
+    && await runStep('node', ['dist/register-commands.js'])
+    && await runStep('npm', ['start']);
+  if (!ok) process.exitCode = 1;
 }
 
 main().catch((err: unknown) => {
   if (err instanceof InputEnded) {
-    console.log('\nInput ended before setup finished. Nothing was written.');
+    console.log(`\nInput ended before setup finished. ${nothingWrittenNote()}`);
     process.exit(1);
   }
   console.error('Setup failed:', err instanceof Error ? err.message : err);

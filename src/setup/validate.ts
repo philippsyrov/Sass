@@ -156,7 +156,8 @@ export function checkModel(raw: string): Check {
 
 export function checkDatabaseUrl(raw: string): Check {
   const value = cleanInput(raw);
-  if (!value) return { ok: true, value: '' };
+  // "none" clears an existing URL, since Enter keeps it.
+  if (!value || /^none$/i.test(value)) return { ok: true, value: '' };
   if (!/^postgres(ql)?:\/\//i.test(value)) {
     return { ok: false, error: 'DATABASE_URL should start with postgres:// or postgresql://. Leave it empty to run without a database.' };
   }
