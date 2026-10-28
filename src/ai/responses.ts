@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import { Ollama, type Message as OllamaMessage } from 'ollama';
 import * as mood from '../mood.js';
 import type { GetSassResponseOptions, AIResponse, BufferEntry } from '../types.js';
-import { queryAI, queryAIWithUsage, getOpenAI } from './providers.js';
+import { queryAI, queryAIWithUsage, getOpenAI, chatOllama } from './providers.js';
 import { CREATOR_SYSTEM_PROMPT, UTILITY_SYSTEM_PROMPT, PROFILE_SYSTEM_PROMPT, SASS_LITE_PROMPT } from './prompts.js';
 
 type UserContent = string | OpenAI.ChatCompletionContentPart[];
@@ -208,14 +208,7 @@ async function queryCreatorMode(userMessage: string, recentContext: string, peop
     return response.choices[0]?.message?.content ?? null;
   }
 
-  const ollamaMessages: OllamaMessage[] = [
-    { role: 'system', content: CREATOR_SYSTEM_PROMPT },
-    { role: 'user', content: prompt },
-  ];
-
-  const ollama = new Ollama({ host: process.env.OLLAMA_HOST || 'http://localhost:11434' });
-  const response = await ollama.chat({ model: process.env.OLLAMA_MODEL || 'llama3.1:8b', messages: ollamaMessages });
-  return response.message.content;
+  return chatOllama(CREATOR_SYSTEM_PROMPT, prompt, imageUrl);
 }
 
 /**

@@ -28,7 +28,7 @@ export async function queryAIWithUsage(prompt: string, { systemPrompt = SASS_SYS
   let result: AIResponse;
   switch (provider) {
     case 'ollama':
-      result = { text: await queryOllama(prompt, systemPrompt) };
+      result = { text: await queryOllama(prompt, systemPrompt, imageUrl ?? null) };
       break;
     case 'openai':
       result = await queryOpenAIWithUsage(prompt, systemPrompt, imageUrl ?? null, maxTokens, temperature);
@@ -53,25 +53,51 @@ export async function queryAI(prompt: string, options: QueryAIOptions = {}): Pro
 
 // --- Provider implementations ---
 
-async function queryOllama(prompt: string, systemPrompt: string): Promise<string | null> {
+async function queryOllama(prompt: string, systemPrompt: string, imageUrl: string | null = null): Promise<string | null> {
   try {
-    const ollama = new Ollama({
-      host: process.env.OLLAMA_HOST || 'http://localhost:11434',
-    });
-
-    const messages: OllamaMessage[] = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: prompt },
-    ];
-
-    const response = await ollama.chat({
-      model: process.env.OLLAMA_MODEL || 'llama3.1:8b',
-      messages,
-    });
-
-    return response.message.content;
+    return await chatOllama(systemPrompt, prompt, imageUrl);
   } catch (err) {
     console.error('Ollama query failed:', (err as Error).message);
+    return null;
+  }
+}
+
+/**
+ * Chat with Ollama's native API. It takes image bytes rather than URLs, so an attached
+ * image is downloaded first. Text-only models can reject images, so that retries once without it.
+ */
+export async function chatOllama(systemPrompt: string, prompt: string, imageUrl: string | null = null): Promise<string> {
+  const ollama = new Ollama({
+    host: process.env.OLLAMA_HOST || 'http://localhost:11434',
+  });
+  const model = process.env.OLLAMA_MODEL || 'llama3.1:8b';
+
+  const ask = async (images?: Uint8Array[]): Promise<string> => {
+    const messages: OllamaMessage[] = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: prompt, ...(images ? { images } : {}) },
+    ];
+    const response = await ollama.chat({ model, messages });
+    return response.message.content;
+  };
+
+  const image = imageUrl ? await fetchImageBytes(imageUrl) : null;
+  if (!image) return ask();
+  try {
+    return await ask([image]);
+  } catch (err) {
+    console.error(`Ollama image input failed (is ${model} a vision model?), retrying without it:`, (err as Error).message);
+    return ask();
+  }
+}
+
+async function fetchImageBytes(url: string): Promise<Uint8Array | null> {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+    if (!res.ok) return null;
+    return new Uint8Array(await res.arrayBuffer());
+  } catch (err) {
+    console.error('Image download failed:', (err as Error).message);
     return null;
   }
 }
