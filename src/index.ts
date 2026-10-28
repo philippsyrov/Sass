@@ -1,11 +1,9 @@
+import './env.js';
 import { Client, GatewayIntentBits, Partials } from 'discord.js';
-import dotenv from 'dotenv';
 import { setupMessageHandler } from './events/messageCreate.js';
 import { setupReactionHandler } from './events/reactionAdd.js';
 import { setupInteractionHandler } from './events/interactionCreate.js';
 import { setupStartup, setupShutdown } from './events/startup.js';
-
-dotenv.config({ quiet: true });
 
 const token = process.env.DISCORD_TOKEN?.trim();
 if (!token || /^your_.*_here$/.test(token)) {

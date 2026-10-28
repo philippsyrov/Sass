@@ -29,6 +29,10 @@ setInterval(() => {
   }
 }, 30 * 60 * 1000);
 
+// Track messages per server since the last mood-shifting one; a long dull streak makes her bored
+const dullStreaks = new Map<string, number>();
+const BORED_AFTER_MESSAGES = 30;
+
 /**
  * Quality gate: ask AI if a response is worth sending.
  * Returns true if the response passes, false if it should be skipped.
@@ -79,7 +83,7 @@ async function buildAffinityContext(guildId: string, recentMessages: { authorId:
   return parts.length > 0 ? `AFFINITY LEVELS:\n${parts.join('\n')}` : '';
 }
 
-const AUTO_SASS_CHANCE = parseFloat(process.env.AUTO_SASS_CHANCE ?? '0.55') || 0.55;
+export const AUTO_SASS_CHANCE = parseFloat(process.env.AUTO_SASS_CHANCE ?? '0.55') || 0.55;
 const MIN_MESSAGES = parseInt(process.env.AUTO_SASS_MIN_MESSAGES ?? '2', 10) || 2;
 
 // Short reaction texts — no AI call needed, instant and human
@@ -127,6 +131,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
 
   // Wild quote detection — store genuinely unhinged statements, not reactions
   const text = message.content;
+  let wasWild = false;
   if (text.length > 15 && text.length < 200) {
     const wordCount = text.split(/\s+/).length;
     if (wordCount >= 4) {
@@ -147,6 +152,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
           const authorName = message.author.displayName || message.author.username;
           userMemory.addWildQuote(guildId, message.author.id, authorName, text).catch((err) => console.error('Add wild quote failed:', (err as Error).message));
           mood.shift(guildId, 'chaos').catch((err) => console.error('Mood shift failed:', (err as Error).message));
+          wasWild = true;
         }
       }
     }
@@ -167,6 +173,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
   const isMild = !isSevere && !isMedium && mildFightPatterns.test(lowerText);
 
   if (isSevere || isMedium || isMild) {
+    dullStreaks.delete(guildId);
     mood.shift(guildId, 'fighting').catch((err) => console.error('Mood shift failed:', (err as Error).message));
 
     // Severe: extra affinity penalty
@@ -201,7 +208,18 @@ export async function handleAutoSass(message: Message, _client: Client, options:
       }
     }
   } else if (wholesomePatterns.test(lowerText)) {
+    dullStreaks.delete(guildId);
     mood.shift(guildId, 'nice_to_each_other').catch((err) => console.error('Mood shift failed:', (err as Error).message));
+  } else if (wasWild) {
+    dullStreaks.delete(guildId);
+  } else {
+    const dull = (dullStreaks.get(guildId) ?? 0) + 1;
+    if (dull >= BORED_AFTER_MESSAGES) {
+      dullStreaks.delete(guildId);
+      mood.shift(guildId, 'boring').catch((err) => console.error('Mood shift failed:', (err as Error).message));
+    } else {
+      dullStreaks.set(guildId, dull);
+    }
   }
 
   const channelId = channel.id;
