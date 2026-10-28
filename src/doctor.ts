@@ -14,14 +14,24 @@ if (existsSync('.env')) {
 
 const { Pool } = pg;
 
-const REQUIRED_VARS = [
-  'DISCORD_TOKEN',
-  'CLIENT_ID',
-  'AI_PROVIDER',
-  'OPENAI_API_KEY',
-  'DATABASE_URL',
-  'CREATOR_ID',
-] as const;
+const REQUIRED_VARS = ['DISCORD_TOKEN', 'CLIENT_ID', 'CREATOR_ID', 'AI_PROVIDER'] as const;
+
+// Values copied straight from .env.example look like "your_..._here".
+function isPlaceholder(value: string | undefined): boolean {
+  return value != null && /^your_.*_here$/i.test(value.trim());
+}
+
+function realValue(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  return value && !isPlaceholder(value) ? value : undefined;
+}
+
+function varDetail(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) return 'not set';
+  if (isPlaceholder(value)) return 'still the placeholder from .env.example';
+  return 'set';
+}
 
 const REQUIRED_TABLES = [
   'users',
@@ -42,7 +52,7 @@ async function checkDatabase(url: string | undefined): Promise<{
   detail: string;
 }> {
   if (!url) {
-    return { connected: false, pool: null, detail: 'missing DATABASE_URL' };
+    return { connected: false, pool: null, detail: 'DATABASE_URL not set (optional; memory and persistence are off)' };
   }
 
   try {
@@ -61,8 +71,8 @@ async function checkDatabase(url: string | undefined): Promise<{
 }
 
 async function checkEmbeddings(): Promise<{ ok: boolean; detail: string }> {
-  if (!process.env.OPENAI_API_KEY) {
-    return { ok: false, detail: 'missing OPENAI_API_KEY' };
+  if (!realValue('OPENAI_API_KEY')) {
+    return { ok: false, detail: `OPENAI_API_KEY ${varDetail('OPENAI_API_KEY')}` };
   }
 
   try {
@@ -123,12 +133,26 @@ async function main(): Promise<void> {
   console.log('Sass Doctor');
   console.log('═══════════════════════════════');
 
+  let missing = 0;
   for (const envVar of REQUIRED_VARS) {
-    const value = process.env[envVar];
-    console.log(formatStatus(Boolean(value), envVar, value ? 'set' : 'not set'));
+    const ok = Boolean(realValue(envVar));
+    if (!ok) missing++;
+    console.log(formatStatus(ok, envVar, varDetail(envVar)));
   }
 
-  const db = await checkDatabase(process.env.DATABASE_URL);
+  const provider = realValue('AI_PROVIDER')?.toLowerCase();
+  if (provider === 'openai') {
+    const ok = Boolean(realValue('OPENAI_API_KEY'));
+    if (!ok) missing++;
+    console.log(formatStatus(ok, 'OPENAI_API_KEY', varDetail('OPENAI_API_KEY')));
+  } else if (provider === 'ollama') {
+    console.log(formatStatus(true, 'OLLAMA_MODEL', process.env.OLLAMA_MODEL || 'default'));
+  } else if (provider) {
+    missing++;
+    console.log(formatStatus(false, 'AI_PROVIDER', `"${provider}" is not "openai" or "ollama"`));
+  }
+
+  const db = await checkDatabase(realValue('DATABASE_URL'));
   console.log(formatStatus(db.connected, 'Database', db.detail));
 
   const embeddings = await checkEmbeddings();
@@ -143,6 +167,11 @@ async function main(): Promise<void> {
   await db.pool?.end().catch((err) => {
     console.error('Doctor pool shutdown failed:', (err as Error).message);
   });
+
+  if (missing > 0) {
+    console.log(`\n${missing} required setting(s) still need a real value in .env.`);
+    process.exitCode = 1;
+  }
 }
 
 void main().catch((err) => {
