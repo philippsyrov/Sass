@@ -6,8 +6,16 @@ import { SASS_SYSTEM_PROMPT, fixCustomEmoji } from './prompts.js';
 type UserContent = string | OpenAI.ChatCompletionContentPart[];
 
 let openaiClient: OpenAI | null = null;
+
+/** OpenAI SDK client; optional OPENAI_BASE_URL for OpenAI-compatible hosts (OpenRouter, Groq, Together, etc.). */
 export function getOpenAI(): OpenAI {
-  if (!openaiClient) openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  if (!openaiClient) {
+    const baseURL = process.env.OPENAI_BASE_URL?.trim();
+    openaiClient = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+      ...(baseURL ? { baseURL } : {}),
+    });
+  }
   return openaiClient;
 }
 

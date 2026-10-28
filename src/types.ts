@@ -9,6 +9,7 @@ declare global {
       CLIENT_ID: string;
       AI_PROVIDER?: string;
       OPENAI_API_KEY?: string;
+      OPENAI_BASE_URL?: string;
       OPENAI_MODEL?: string;
       OLLAMA_HOST?: string;
       OLLAMA_MODEL?: string;

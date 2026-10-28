@@ -6,17 +6,10 @@
  * No local SQLite — everything goes through Postgres.
  */
 
-import OpenAI from 'openai';
 import { getPool, isDatabaseConnected } from './database/index.js';
-import { queryAI } from './ai/providers.js';
+import { queryAI, getOpenAI } from './ai/providers.js';
 import { UTILITY_SYSTEM_PROMPT } from './ai/prompts.js';
 import type { MemoryType, SearchResult, MemoryRow } from './types.js';
-
-let openaiClient: OpenAI | null = null;
-function getOpenAI(): OpenAI {
-  if (!openaiClient) openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  return openaiClient;
-}
 
 async function embed(text: string): Promise<number[]> {
   const response = await getOpenAI().embeddings.create({

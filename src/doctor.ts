@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'fs';
 import dotenv from 'dotenv';
-import OpenAI from 'openai';
 import pg from 'pg';
+import { getOpenAI } from './ai/providers.js';
 
 if (existsSync('.env')) {
   const parsed = dotenv.parse(readFileSync('.env'));
@@ -66,8 +66,7 @@ async function checkEmbeddings(): Promise<{ ok: boolean; detail: string }> {
   }
 
   try {
-    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    await client.embeddings.create({
+    await getOpenAI().embeddings.create({
       model: 'text-embedding-3-small',
       input: 'test',
     });
