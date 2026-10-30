@@ -50,3 +50,14 @@ test('setup cancellation before runtime starts keeps its own message without Oll
   assert.equal(result.markers['PARENT_EXIT:130'], 1);
   assert.equal(result.terminalRestored, true);
 });
+
+
+test('setup forwards a terminal hangup once and waits for runtime cleanup', { skip: process.platform === 'win32' }, () => {
+  const result = run('hangup');
+  assert.equal(result.started, true);
+  assert.equal(result.shutdownBeforeParentExit, true);
+  assert.equal(result.markers['CHILD_STOP_BEGIN:SIGHUP'], 1);
+  assert.equal(result.markers['CHILD_STOP_BEGIN:SIGTERM'], 0);
+  assert.equal(result.markers['PARENT_EXIT:0'], 1);
+  assert.equal(result.markers['Setup cancelled.'], 0);
+});

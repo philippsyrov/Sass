@@ -169,7 +169,7 @@ export function setupMessageHandler(client: Client): void {
         channel: message.channel as TextChannel,
       };
 
-      // 1. Direct mention or reply to Sass — always respond
+      // 1. Direct mention — route through mention cooldown and spam checks
       // Include an explicitly tagged role containing Sass, while keeping reply
       // metadata and everyone/here broadcasts out of this direct-mention path.
       const isMentionInText = mentionsSass(message.content, client.user.id, message.guild.members.me?.roles.cache, guildId);
@@ -190,7 +190,7 @@ export function setupMessageHandler(client: Client): void {
             if (wordCount < 3) {
               // Still let it flow to auto-sass for possible pickup
             } else {
-              // 70% chance she responds to replies to her messages
+              // 70% chance to enter auto-sass; its remaining checks can still skip
               if (Math.random() < 0.7) {
                 if (isUserOnCooldown(message.author.id)) return;
                 if (isSpamming(message.author.id, message.content)) return;

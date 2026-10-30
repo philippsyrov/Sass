@@ -76,6 +76,26 @@ test('terminal SIGINT drains once before PG stops and restart preserves the data
   assert.equal(await readFile(join(dir, 'local-db.json'), 'utf8'), config);
 });
 
+test('terminal SIGHUP drains once before PG stops and restart preserves the database', { skip: !hasBinaries || platform() === 'win32', timeout: 30000 }, async (t) => {
+  const state = await testDirectory(t, 'sass-pg-lifecycle-');
+  const { dir } = state;
+  const first = await fixture(t, state);
+  assert.equal(first.ready.count, 1);
+  process.kill(-first.child.pid, 'SIGHUP');
+  first.child.kill('SIGHUP');
+  assert.deepEqual(await first.closed, [0, null], first.output());
+  assert.equal((first.output().match(/SIGHUP received/g) ?? []).length, 1);
+  assert.match(first.output(), /FLUSHED/);
+  assert.doesNotMatch(first.output(), /Connection terminated|Unexpected pool error|shutdown failed|Failed to close database/);
+  const config = await readFile(join(dir, 'local-db.json'), 'utf8');
+  const second = await fixture(t, state);
+  assert.equal(second.ready.count, 2);
+  second.child.kill('SIGTERM');
+  assert.deepEqual(await second.closed, [0, null], second.output());
+  assert.doesNotMatch(second.output(), /already exists|ERROR:/);
+  assert.equal(await readFile(join(dir, 'local-db.json'), 'utf8'), config);
+});
+
 test('parent death stops its detached Postgres cluster through IPC disconnect', { skip: !hasBinaries, timeout: 20000 }, async (t) => {
   const state = await testDirectory(t, 'sass-pg-disconnect-');
   const { dir } = state;
