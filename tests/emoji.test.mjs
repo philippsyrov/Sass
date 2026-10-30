@@ -111,7 +111,7 @@ async function emojiDir(t, names) {
 
 /** A fake Discord API that records requests and keeps an emoji list. */
 function fakeDiscord(existing = [], { failPost = new Set(), listStatus = 200 } = {}) {
-  const items = existing.map((name, i) => ({ id: String(100000000000000911 + i), name }));
+  const items = existing.map((name, i) => ({ id: String(1000000000000000000n + BigInt(i)), name }));
   const requests = [];
   const fetchImpl = async (url, init = {}) => {
     const method = init.method ?? 'GET';
@@ -122,7 +122,7 @@ function fakeDiscord(existing = [], { failPost = new Set(), listStatus = 200 } =
     if (method === 'GET') return listStatus === 200 ? json(200, { items }) : json(listStatus, { message: 'nope' });
     if (method === 'POST') {
       if (failPost.has(body.name)) return json(400, { message: 'Invalid Form Body' });
-      items.push({ id: String(100000000000000912 + items.length), name: body.name });
+      items.push({ id: String(1000000000000000000n + BigInt(items.length)), name: body.name });
       return json(201, items.at(-1));
     }
     return json(405, { message: 'unexpected method' });

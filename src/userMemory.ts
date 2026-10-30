@@ -9,6 +9,8 @@
  */
 
 import { getPool, isDatabaseConnected } from './database/index.js';
+import { captureUserDataToken, isUserDataTokenCurrent, withUserDataWrite, type UserDataToken } from './database/userDataGuard.js';
+import { isUsableDistilledProfile } from './memory/profilePolicy.js';
 import { speakerLabel } from './shared/speaker.js';
 import type {
   UserData, ColdShoulderStatus, WildQuote, BeefRecord,
@@ -22,6 +24,7 @@ interface SeenUpdate {
   displayName: string;
   messageCount: number;
   lastSeen: number;
+  token: UserDataToken;
 }
 
 const pendingSeen = new Map<string, SeenUpdate>();
@@ -53,33 +56,24 @@ export async function flushSeen(): Promise<void> {
   const entries = [...pendingSeen.values()];
   pendingSeen.clear();
 
-  try {
-    // Build batch upsert
-    const values: unknown[] = [];
-    const placeholders: string[] = [];
-    let idx = 1;
-    for (const entry of entries) {
-      placeholders.push(`($${idx}, $${idx + 1}, $${idx + 2}, $${idx + 3}, to_timestamp($${idx + 4}))`);
-      values.push(entry.guildId, entry.userId, entry.displayName, entry.messageCount, entry.lastSeen / 1000);
-      idx += 5;
+  await Promise.all(entries.map(async (entry) => {
+    try {
+      await withUserDataWrite(entry.token, async () => {
+        await pool.query(
+          `INSERT INTO users (server_id, user_id, name, message_count, last_seen)
+           VALUES ($1, $2, $3, $4, to_timestamp($5))
+           ON CONFLICT (server_id, user_id) DO UPDATE SET
+             name = EXCLUDED.name,
+             message_count = users.message_count + EXCLUDED.message_count,
+             last_seen = EXCLUDED.last_seen,
+             profile_updated_at = CASE WHEN users.name != EXCLUDED.name THEN NULL ELSE users.profile_updated_at END`,
+          [entry.guildId, entry.userId, entry.displayName, entry.messageCount, entry.lastSeen / 1000]
+        );
+      });
+    } catch (err) {
+      console.error('Batch seen flush failed:', (err as Error).message);
     }
-
-    await pool.query(
-      `INSERT INTO users (server_id, user_id, name, message_count, last_seen)
-       VALUES ${placeholders.join(', ')}
-       ON CONFLICT (server_id, user_id) DO UPDATE SET
-         name = EXCLUDED.name,
-         message_count = users.message_count + EXCLUDED.message_count,
-         last_seen = EXCLUDED.last_seen,
-         profile_updated_at = CASE
-           WHEN users.name != EXCLUDED.name THEN NULL
-           ELSE users.profile_updated_at
-         END`,
-      values
-    );
-  } catch (err) {
-    console.error('Batch seen flush failed:', (err as Error).message);
-  }
+  }));
 }
 
 /**
@@ -143,8 +137,10 @@ export function seen(guildId: string, userId: string, displayName: string): void
   startFlushInterval();
 
   const key = `${guildId}:${userId}`;
+  const token = captureUserDataToken(guildId, userId);
+  if (!isUserDataTokenCurrent(token)) return;
   const existing = pendingSeen.get(key);
-  if (existing) {
+  if (existing && existing.token.state === token.state && existing.token.generation === token.generation) {
     existing.messageCount++;
     existing.displayName = displayName;
     existing.lastSeen = Date.now();
@@ -155,7 +151,7 @@ export function seen(guildId: string, userId: string, displayName: string): void
       if (oldest !== undefined) pendingSeen.delete(oldest);
     }
     pendingSeen.set(key, {
-      guildId, userId, displayName, messageCount: 1, lastSeen: Date.now(),
+      guildId, userId, displayName, messageCount: 1, lastSeen: Date.now(), token,
     });
   }
 }
@@ -164,30 +160,35 @@ export function seen(guildId: string, userId: string, displayName: string): void
  * Store a roast topic so Sass can reference it later. Keeps last 5 per user.
  */
 export async function addRoast(guildId: string, userId: string, topic: string): Promise<void> {
-  const pool = getPool();
-  if (!pool) return;
+  await withUserDataWrite(captureUserDataToken(guildId, userId), async () => {
+    const pool = getPool();
+    if (!pool) return;
 
-  try {
-    // Append to array, keep last 5
-    await pool.query(
-      `INSERT INTO users (server_id, user_id, name, roasts)
-       VALUES ($1, $2, '', ARRAY[$3]::TEXT[])
-       ON CONFLICT (server_id, user_id) DO UPDATE SET
-         roasts = (SELECT array_agg(r) FROM (
-           SELECT unnest(array_append(users.roasts, $3)) AS r
-         ) sub OFFSET GREATEST(0, array_length(array_append(users.roasts, $3), 1) - 5)),
-         profile_updated_at = NULL`,
-      [guildId, userId, topic]
-    );
-  } catch (err) {
-    console.error('addRoast failed:', (err as Error).message);
-  }
+    try {
+      // An outer OFFSET discards the aggregate result. Trim its input rows instead.
+      await pool.query(
+        `INSERT INTO users (server_id, user_id, name, roasts)
+         VALUES ($1, $2, '', ARRAY[$3]::TEXT[])
+         ON CONFLICT (server_id, user_id) DO UPDATE SET
+           roasts = (SELECT array_agg(r ORDER BY ordinal) FROM (
+             SELECT r, ordinal
+             FROM unnest(array_append(COALESCE(users.roasts, ARRAY[]::TEXT[]), $3)) WITH ORDINALITY AS topics(r, ordinal)
+             ORDER BY ordinal
+             OFFSET GREATEST(0, COALESCE(cardinality(users.roasts), 0) + 1 - 5)
+           ) sub),
+           profile_updated_at = NULL`,
+        [guildId, userId, topic]
+      );
+    } catch (err) {
+      console.error('addRoast failed:', (err as Error).message);
+    }
+  });
 }
 
 /**
  * Get context string about a user for the AI prompt.
  */
-export async function getContext(guildId: string, userId: string, currentDisplayName?: string): Promise<string> {
+export async function getContext(guildId: string, userId: string, currentDisplayName?: string, { neutral = false }: { neutral?: boolean } = {}): Promise<string> {
   const pool = getPool();
   if (!pool) return '';
 
@@ -202,19 +203,14 @@ export async function getContext(guildId: string, userId: string, currentDisplay
     // Use current display name to avoid name mismatch (DB name may be stale)
     const name = currentDisplayName ?? (row?.name as string | undefined) ?? 'unknown';
 
-    if (row?.distilled_profile) {
-      const updatedAt = row.profile_updated_at ? new Date(row.profile_updated_at as string).getTime() : 0;
-      const isRecent = Date.now() - updatedAt < 24 * 60 * 60 * 1000; // 24h
-
-      if (isRecent) {
+    if (row && isUsableDistilledProfile(row.distilled_profile, row.profile_updated_at)) {
         const parts: string[] = [`ABOUT ${name}: ${row.distilled_profile as string}`];
         // Keep raw facts as specific ammo the AI can reference
         const facts = row.facts as string[] | null;
         if (facts?.length) {
-          parts.push(`things you know about ${name}: ${facts.join('; ')}. weaponize this.`);
+          parts.push(`things you know about ${name}: ${facts.join('; ')}.${neutral ? '' : ' weaponize this.'}`);
         }
         return parts.join('\n');
-      }
     }
   } catch (err) {
     console.error('getContext profile fetch failed:', (err as Error).message);
@@ -229,15 +225,16 @@ export async function getContext(guildId: string, userId: string, currentDisplay
   const parts: string[] = [];
   if (user.facts && user.facts.length > 0) {
     parts.push(
-      `things you know about ${name}: ${user.facts.join('; ')}. weaponize this.`
+      `things you know about ${name}: ${user.facts.join('; ')}.${neutral ? '' : ' weaponize this.'}`
     );
   }
   if (user.roasts.length > 0) {
-    parts.push(
-      `you've already destroyed ${name} before about: ${user.roasts.join(', ')}. ` +
-      `use this. be petty. remind them they never learn.`
+    parts.push(neutral
+      ? `previous conversation topics with ${name}: ${user.roasts.join(', ')}.`
+      : `you've already destroyed ${name} before about: ${user.roasts.join(', ')}. use this. be petty. remind them they never learn.`
     );
   }
+  if (neutral) return parts.join('\n');
   if (user.messageCount > 50) {
     parts.push(`${name} is basically a fixture here. they can take whatever you throw at them — no mercy.`);
   } else if (user.messageCount > 20) {
@@ -287,12 +284,8 @@ export async function buildPeopleContext(guildId: string, recentMessages: Buffer
           facts: (row.facts as string[]) || [],
           gender: (row.gender as UserData['gender']) ?? undefined,
         };
-        // Store distilled profile if available and fresh (< 24h)
-        if (row.distilled_profile && row.profile_updated_at) {
-          const updatedAt = new Date(row.profile_updated_at as string).getTime();
-          if (Date.now() - updatedAt < 24 * 60 * 60 * 1000) {
-            profilesMap[row.user_id as string] = row.distilled_profile as string;
-          }
+        if (isUsableDistilledProfile(row.distilled_profile, row.profile_updated_at)) {
+          profilesMap[row.user_id as string] = row.distilled_profile as string;
         }
       }
     } catch (err) {
@@ -340,20 +333,22 @@ export async function buildPeopleContext(guildId: string, recentMessages: Buffer
  * Increment the roast counter for a user.
  */
 export async function recordRoast(guildId: string, userId: string): Promise<void> {
-  const pool = getPool();
-  if (!pool) return;
+  await withUserDataWrite(captureUserDataToken(guildId, userId), async () => {
+    const pool = getPool();
+    if (!pool) return;
 
-  try {
-    await pool.query(
-      `INSERT INTO users (server_id, user_id, name, times_roasted)
-       VALUES ($1, $2, '', 1)
-       ON CONFLICT (server_id, user_id) DO UPDATE SET
-         times_roasted = users.times_roasted + 1`,
-      [guildId, userId]
-    );
-  } catch (err) {
-    console.error('recordRoast failed:', (err as Error).message);
-  }
+    try {
+      await pool.query(
+        `INSERT INTO users (server_id, user_id, name, times_roasted)
+         VALUES ($1, $2, '', 1)
+         ON CONFLICT (server_id, user_id) DO UPDATE SET
+           times_roasted = users.times_roasted + 1`,
+        [guildId, userId]
+      );
+    } catch (err) {
+      console.error('recordRoast failed:', (err as Error).message);
+    }
+  });
 }
 
 /**
@@ -383,51 +378,59 @@ export async function getLeaderboard(guildId: string, limit = 10): Promise<Leade
 }
 
 /**
- * Store a fact about a user. Keeps last 10 facts. Auto-detects gender.
+ * Store a fact about a user. Keeps last 20 facts. Auto-detects gender.
  */
 export async function remember(guildId: string, userId: string, fact: string): Promise<void> {
-  const pool = getPool();
-  if (!pool) return;
+  await withUserDataWrite(captureUserDataToken(guildId, userId), async () => {
+    const pool = getPool();
+    if (!pool) return;
 
-  // Auto-detect gender from fact
-  const lower = fact.toLowerCase();
-  const femalePatterns = /\b(i'?m a (girl|woman|female)|i'?m (she|her)|my pronouns are she|call me (she|her)|i'm female)\b/i;
-  const malePatterns = /\b(i'?m a (guy|boy|man|male|dude)|i'?m (he|him)|my pronouns are he|call me (he|him)|i'm male)\b/i;
-  const nbPatterns = /\b(i'?m (nonbinary|non-binary|enby|nb)|my pronouns are they|call me they)\b/i;
+    // Auto-detect gender from fact
+    const lower = fact.toLowerCase();
+    const femalePatterns = /\b(i'?m a (girl|woman|female)|i'?m (she|her)|my pronouns are she|call me (she|her)|i'm female)\b/i;
+    const malePatterns = /\b(i'?m a (guy|boy|man|male|dude)|i'?m (he|him)|my pronouns are he|call me (he|him)|i'm male)\b/i;
+    const nbPatterns = /\b(i'?m (nonbinary|non-binary|enby|nb)|my pronouns are they|call me they)\b/i;
 
-  let gender: string | null = null;
-  if (femalePatterns.test(lower)) gender = 'female';
-  else if (malePatterns.test(lower)) gender = 'male';
-  else if (nbPatterns.test(lower)) gender = 'nonbinary';
+    let gender: string | null = null;
+    if (femalePatterns.test(lower)) gender = 'female';
+    else if (malePatterns.test(lower)) gender = 'male';
+    else if (nbPatterns.test(lower)) gender = 'nonbinary';
 
-  try {
-    if (gender) {
-      await pool.query(
-        `INSERT INTO users (server_id, user_id, name, facts, gender)
-         VALUES ($1, $2, '', ARRAY[$3]::TEXT[], $4)
-         ON CONFLICT (server_id, user_id) DO UPDATE SET
-           facts = (SELECT array_agg(f) FROM (
-             SELECT unnest(array_append(users.facts, $3)) AS f
-           ) sub OFFSET GREATEST(0, array_length(array_append(users.facts, $3), 1) - 20)),
-           gender = $4,
-           profile_updated_at = NULL`,
-        [guildId, userId, fact, gender]
-      );
-    } else {
-      await pool.query(
-        `INSERT INTO users (server_id, user_id, name, facts)
-         VALUES ($1, $2, '', ARRAY[$3]::TEXT[])
-         ON CONFLICT (server_id, user_id) DO UPDATE SET
-           facts = (SELECT array_agg(f) FROM (
-             SELECT unnest(array_append(users.facts, $3)) AS f
-           ) sub OFFSET GREATEST(0, array_length(array_append(users.facts, $3), 1) - 20)),
-           profile_updated_at = NULL`,
-        [guildId, userId, fact]
-      );
+    try {
+      if (gender) {
+        await pool.query(
+          `INSERT INTO users (server_id, user_id, name, facts, gender)
+           VALUES ($1, $2, '', ARRAY[$3]::TEXT[], $4)
+           ON CONFLICT (server_id, user_id) DO UPDATE SET
+             facts = (SELECT array_agg(f ORDER BY ordinal) FROM (
+               SELECT f, ordinal
+               FROM unnest(array_append(COALESCE(users.facts, ARRAY[]::TEXT[]), $3)) WITH ORDINALITY AS entries(f, ordinal)
+               ORDER BY ordinal
+               OFFSET GREATEST(0, COALESCE(cardinality(users.facts), 0) + 1 - 20)
+             ) sub),
+             gender = $4,
+             profile_updated_at = NULL`,
+          [guildId, userId, fact, gender]
+        );
+      } else {
+        await pool.query(
+          `INSERT INTO users (server_id, user_id, name, facts)
+           VALUES ($1, $2, '', ARRAY[$3]::TEXT[])
+           ON CONFLICT (server_id, user_id) DO UPDATE SET
+             facts = (SELECT array_agg(f ORDER BY ordinal) FROM (
+               SELECT f, ordinal
+               FROM unnest(array_append(COALESCE(users.facts, ARRAY[]::TEXT[]), $3)) WITH ORDINALITY AS entries(f, ordinal)
+               ORDER BY ordinal
+               OFFSET GREATEST(0, COALESCE(cardinality(users.facts), 0) + 1 - 20)
+             ) sub),
+             profile_updated_at = NULL`,
+          [guildId, userId, fact]
+        );
+      }
+    } catch (err) {
+      console.error('remember failed:', (err as Error).message);
     }
-  } catch (err) {
-    console.error('remember failed:', (err as Error).message);
-  }
+  });
 }
 
 /**
@@ -442,23 +445,25 @@ export async function getFacts(guildId: string, userId: string): Promise<string[
  * Put a user on the cold shoulder list.
  */
 export async function coldShoulder(guildId: string, userId: string): Promise<void> {
-  const pool = getPool();
-  if (!pool) return;
+  await withUserDataWrite(captureUserDataToken(guildId, userId), async () => {
+    const pool = getPool();
+    if (!pool) return;
 
-  const attemptsNeeded = 3 + Math.floor(Math.random() * 3); // 3-5
-  try {
-    await pool.query(
-      `INSERT INTO users (server_id, user_id, name, cold_shoulder_active, cold_shoulder_attempts_needed, cold_shoulder_attempts_made)
-       VALUES ($1, $2, '', TRUE, $3, 0)
-       ON CONFLICT (server_id, user_id) DO UPDATE SET
-         cold_shoulder_active = TRUE,
-         cold_shoulder_attempts_needed = $3,
-         cold_shoulder_attempts_made = 0`,
-      [guildId, userId, attemptsNeeded]
-    );
-  } catch (err) {
-    console.error('coldShoulder failed:', (err as Error).message);
-  }
+    const attemptsNeeded = 3 + Math.floor(Math.random() * 3); // 3-5
+    try {
+      await pool.query(
+        `INSERT INTO users (server_id, user_id, name, cold_shoulder_active, cold_shoulder_attempts_needed, cold_shoulder_attempts_made)
+         VALUES ($1, $2, '', TRUE, $3, 0)
+         ON CONFLICT (server_id, user_id) DO UPDATE SET
+           cold_shoulder_active = TRUE,
+           cold_shoulder_attempts_needed = $3,
+           cold_shoulder_attempts_made = 0`,
+        [guildId, userId, attemptsNeeded]
+      );
+    } catch (err) {
+      console.error('coldShoulder failed:', (err as Error).message);
+    }
+  });
 }
 
 /**
@@ -478,69 +483,73 @@ export async function getColdShoulder(guildId: string, userId: string): Promise<
  * Record an attempt to win Sass back.
  */
 export async function coldShoulderAttempt(guildId: string, userId: string): Promise<false | ColdShoulderStatus> {
-  const pool = getPool();
-  if (!pool) return false;
+  return (await withUserDataWrite(captureUserDataToken(guildId, userId), async (): Promise<false | ColdShoulderStatus> => {
+    const pool = getPool();
+    if (!pool) return false;
 
-  try {
-    const result = await pool.query(
-      `UPDATE users SET cold_shoulder_attempts_made = cold_shoulder_attempts_made + 1
-       WHERE server_id = $1 AND user_id = $2 AND cold_shoulder_active = TRUE
-       RETURNING cold_shoulder_attempts_needed, cold_shoulder_attempts_made`,
-      [guildId, userId]
-    );
-    const row = result.rows[0];
-    if (!row) return false;
-
-    const needed = row.cold_shoulder_attempts_needed as number;
-    const made = row.cold_shoulder_attempts_made as number;
-    const forgiven = made >= needed;
-
-    if (forgiven) {
-      await pool.query(
-        'UPDATE users SET cold_shoulder_active = FALSE WHERE server_id = $1 AND user_id = $2',
+    try {
+      const result = await pool.query(
+        `UPDATE users SET cold_shoulder_attempts_made = cold_shoulder_attempts_made + 1
+         WHERE server_id = $1 AND user_id = $2 AND cold_shoulder_active = TRUE
+         RETURNING cold_shoulder_attempts_needed, cold_shoulder_attempts_made`,
         [guildId, userId]
       );
-      return { phase: 'forgiven' };
-    }
+      const row = result.rows[0];
+      if (!row) return false;
 
-    const progress = made / needed;
-    if (progress >= 0.6) return { phase: 'warming', attemptsMade: made, attemptsNeeded: needed };
-    return { phase: 'icy', attemptsMade: made, attemptsNeeded: needed };
-  } catch (err) {
-    console.error('coldShoulderAttempt failed:', (err as Error).message);
-    return false;
-  }
+      const needed = row.cold_shoulder_attempts_needed as number;
+      const made = row.cold_shoulder_attempts_made as number;
+      const forgiven = made >= needed;
+
+      if (forgiven) {
+        await pool.query(
+          'UPDATE users SET cold_shoulder_active = FALSE WHERE server_id = $1 AND user_id = $2',
+          [guildId, userId]
+        );
+        return { phase: 'forgiven' };
+      }
+
+      const progress = made / needed;
+      if (progress >= 0.6) return { phase: 'warming', attemptsMade: made, attemptsNeeded: needed };
+      return { phase: 'icy', attemptsMade: made, attemptsNeeded: needed };
+    } catch (err) {
+      console.error('coldShoulderAttempt failed:', (err as Error).message);
+      return false;
+    }
+  })) ?? false;
 }
 
 /**
  * Store a wild quote. Keeps max 20 per guild.
  */
 export async function addWildQuote(guildId: string, userId: string, name: string, quote: string): Promise<void> {
-  const pool = getPool();
-  if (!pool) return;
+  await withUserDataWrite(captureUserDataToken(guildId, userId), async () => {
+    const pool = getPool();
+    if (!pool) return;
 
-  try {
-    // Single atomic insert — unique constraint on (server_id, quote) prevents duplicates
-    await pool.query(
-      `INSERT INTO wild_quotes (server_id, user_id, name, quote)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT DO NOTHING`,
-      [guildId, userId, name, quote]
-    );
-    // Cap at 20 per guild — delete oldest
-    await pool.query(
-      `DELETE FROM wild_quotes WHERE id IN (
-        SELECT id FROM wild_quotes WHERE server_id = $1
-        ORDER BY timestamp ASC
-        OFFSET 0 LIMIT GREATEST(0,
-          (SELECT COUNT(*) FROM wild_quotes WHERE server_id = $1) - 20
-        )
-      )`,
-      [guildId]
-    );
-  } catch (err) {
-    console.error('addWildQuote failed:', (err as Error).message);
-  }
+    try {
+      // Single atomic insert — unique constraint on (server_id, quote) prevents duplicates
+      await pool.query(
+        `INSERT INTO wild_quotes (server_id, user_id, name, quote)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT DO NOTHING`,
+        [guildId, userId, name, quote]
+      );
+      // Cap at 20 per guild — delete oldest
+      await pool.query(
+        `DELETE FROM wild_quotes WHERE id IN (
+          SELECT id FROM wild_quotes WHERE server_id = $1
+          ORDER BY timestamp ASC
+          OFFSET 0 LIMIT GREATEST(0,
+            (SELECT COUNT(*) FROM wild_quotes WHERE server_id = $1) - 20
+          )
+        )`,
+        [guildId]
+      );
+    } catch (err) {
+      console.error('addWildQuote failed:', (err as Error).message);
+    }
+  });
 }
 
 /**
@@ -572,23 +581,32 @@ export async function getWildQuotes(guildId: string, limit = 10): Promise<WildQu
  * Track beef between two users in a guild.
  */
 export async function addBeef(guildId: string, userId1: string, userId2: string, topic: string | null = null): Promise<void> {
-  const pool = getPool();
-  if (!pool) return;
+  const [first, second] = [userId1, userId2].sort() as [string, string];
+  const firstToken = captureUserDataToken(guildId, first);
+  const secondToken = captureUserDataToken(guildId, second);
+  await withUserDataWrite(firstToken, async () => {
+    const write = async () => {
+      const pool = getPool();
+      if (!pool) return;
 
-  const [id1, id2] = [userId1, userId2].sort();
-  try {
-    await pool.query(
-      `INSERT INTO beefs (server_id, user1_id, user2_id, incidents, first_beef, last_beef, last_topic)
-       VALUES ($1, $2, $3, 1, NOW(), NOW(), $4)
-       ON CONFLICT (server_id, user1_id, user2_id) DO UPDATE SET
-         incidents = beefs.incidents + 1,
-         last_beef = NOW(),
-         last_topic = COALESCE($4, beefs.last_topic)`,
-      [guildId, id1, id2, topic]
-    );
-  } catch (err) {
-    console.error('addBeef failed:', (err as Error).message);
-  }
+      const [id1, id2] = [userId1, userId2].sort();
+      try {
+        await pool.query(
+          `INSERT INTO beefs (server_id, user1_id, user2_id, incidents, first_beef, last_beef, last_topic)
+           VALUES ($1, $2, $3, 1, NOW(), NOW(), $4)
+           ON CONFLICT (server_id, user1_id, user2_id) DO UPDATE SET
+             incidents = beefs.incidents + 1,
+             last_beef = NOW(),
+             last_topic = COALESCE($4, beefs.last_topic)`,
+          [guildId, id1, id2, topic]
+        );
+      } catch (err) {
+        console.error('addBeef failed:', (err as Error).message);
+      }
+    };
+    if (first === second) await write();
+    else await withUserDataWrite(secondToken, write);
+  });
 }
 
 /**

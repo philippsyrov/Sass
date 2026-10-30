@@ -2,6 +2,7 @@
  * queries.ts — Pair interactions, stats, interaction exports, top reactions
  */
 
+import { captureUserDataToken, withUserDataWrite, withUserDataDeletion } from './userDataGuard.js';
 import { isDatabaseConnected, getPool } from './pool.js';
 import type { StatsResult, TrainingDataRow } from '../types.js';
 
@@ -14,15 +15,20 @@ export async function recordPairInteractionDB(guildId: string, userId1: string, 
   if (!isDatabaseConnected()) return;
   const pool = getPool();
   if (!pool) return;
-  const [id1, id2] = [userId1, userId2].sort();
+  const [id1, id2] = [userId1, userId2].sort() as [string, string];
   try {
-    await pool.query(
+    const tokens = [captureUserDataToken(guildId, id1), captureUserDataToken(guildId, id2)] as const;
+    await withUserDataWrite(tokens[0], async () => {
+      const write = async () => { await pool.query(
       `INSERT INTO pair_interactions (server_id, user1_id, user2_id, interaction_count, last_interaction)
        VALUES ($1, $2, $3, 1, NOW())
        ON CONFLICT (server_id, user1_id, user2_id)
        DO UPDATE SET interaction_count = pair_interactions.interaction_count + 1, last_interaction = NOW()`,
       [guildId, id1, id2]
-    );
+    ); };
+      if (id1 === id2) await write();
+      else await withUserDataWrite(tokens[1], write);
+    });
   } catch (err) {
     console.error('Failed to record pair interaction:', (err as Error).message);
   }
@@ -35,7 +41,7 @@ export async function getPairInteractionCountDB(guildId: string, userId1: string
   if (!isDatabaseConnected()) return 0;
   const pool = getPool();
   if (!pool) return 0;
-  const [id1, id2] = [userId1, userId2].sort();
+  const [id1, id2] = [userId1, userId2].sort() as [string, string];
   try {
     const result = await pool.query(
       'SELECT interaction_count FROM pair_interactions WHERE server_id = $1 AND user1_id = $2 AND user2_id = $3',
@@ -111,55 +117,66 @@ export async function deleteUserData(guildId: string, userId: string): Promise<{
   const pool = getPool();
   if (!pool) return { deleted: false, tables: [] };
 
-  const deletedTables: string[] = [];
   try {
-    await pool.query('BEGIN');
+    return await withUserDataDeletion(guildId, userId, async () => {
+      const deletedTables: string[] = [];
+      let client;
+      try {
+        client = await pool.connect();
+        await client.query('BEGIN');
 
-    const userResult = await pool.query('DELETE FROM users WHERE server_id = $1 AND user_id = $2', [guildId, userId]);
-    if ((userResult.rowCount ?? 0) > 0) deletedTables.push('users');
+        const userResult = await client.query('DELETE FROM users WHERE server_id = $1 AND user_id = $2', [guildId, userId]);
+        if ((userResult.rowCount ?? 0) > 0) deletedTables.push('users');
 
-    const vmResult = await pool.query('DELETE FROM vector_memories WHERE server_id = $1 AND user_id = $2', [guildId, userId]);
-    if ((vmResult.rowCount ?? 0) > 0) deletedTables.push('vector_memories');
+        const vmResult = await client.query('DELETE FROM vector_memories WHERE server_id = $1 AND user_id = $2', [guildId, userId]);
+        if ((vmResult.rowCount ?? 0) > 0) deletedTables.push('vector_memories');
 
-    const beefResult = await pool.query(
-      'DELETE FROM beefs WHERE server_id = $1 AND (user1_id = $2 OR user2_id = $2)',
-      [guildId, userId]
-    );
-    if ((beefResult.rowCount ?? 0) > 0) deletedTables.push('beefs');
+        const beefResult = await client.query(
+          'DELETE FROM beefs WHERE server_id = $1 AND (user1_id = $2 OR user2_id = $2)',
+          [guildId, userId]
+        );
+        if ((beefResult.rowCount ?? 0) > 0) deletedTables.push('beefs');
 
-    const pairResult = await pool.query(
-      'DELETE FROM pair_interactions WHERE server_id = $1 AND (user1_id = $2 OR user2_id = $2)',
-      [guildId, userId]
-    );
-    if ((pairResult.rowCount ?? 0) > 0) deletedTables.push('pair_interactions');
+        const pairResult = await client.query(
+          'DELETE FROM pair_interactions WHERE server_id = $1 AND (user1_id = $2 OR user2_id = $2)',
+          [guildId, userId]
+        );
+        if ((pairResult.rowCount ?? 0) > 0) deletedTables.push('pair_interactions');
 
-    const wqResult = await pool.query('DELETE FROM wild_quotes WHERE server_id = $1 AND user_id = $2', [guildId, userId]);
-    if ((wqResult.rowCount ?? 0) > 0) deletedTables.push('wild_quotes');
+        const wqResult = await client.query('DELETE FROM wild_quotes WHERE server_id = $1 AND user_id = $2', [guildId, userId]);
+        if ((wqResult.rowCount ?? 0) > 0) deletedTables.push('wild_quotes');
 
-    const interactionsResult = await pool.query(
-      'DELETE FROM interactions WHERE server_id = $1 AND user_id = $2',
-      [guildId, userId]
-    );
-    if ((interactionsResult.rowCount ?? 0) > 0) deletedTables.push('interactions');
+        const interactionsResult = await client.query(
+          'DELETE FROM interactions WHERE server_id = $1 AND user_id = $2',
+          [guildId, userId]
+        );
+        if ((interactionsResult.rowCount ?? 0) > 0) deletedTables.push('interactions');
 
-    const reactionsResult = await pool.query(
-      'DELETE FROM reactions WHERE server_id = $1 AND reactor_id = $2',
-      [guildId, userId]
-    );
-    if ((reactionsResult.rowCount ?? 0) > 0) deletedTables.push('reactions');
+        const reactionsResult = await client.query(
+          'DELETE FROM reactions WHERE server_id = $1 AND reactor_id = $2',
+          [guildId, userId]
+        );
+        if ((reactionsResult.rowCount ?? 0) > 0) deletedTables.push('reactions');
 
-    const commandUsageResult = await pool.query(
-      'DELETE FROM command_usage WHERE server_id = $1 AND user_id = $2',
-      [guildId, userId]
-    );
-    if ((commandUsageResult.rowCount ?? 0) > 0) deletedTables.push('command_usage');
+        const commandUsageResult = await client.query(
+          'DELETE FROM command_usage WHERE server_id = $1 AND user_id = $2',
+          [guildId, userId]
+        );
+        if ((commandUsageResult.rowCount ?? 0) > 0) deletedTables.push('command_usage');
 
-    await pool.query('COMMIT');
-    return { deleted: true, tables: deletedTables };
-  } catch (err) {
-    await pool.query('ROLLBACK').catch((rollbackErr) => {
-      console.error('deleteUserData rollback failed:', (rollbackErr as Error).message);
+        await client.query('COMMIT');
+        return { deleted: true, tables: deletedTables };
+      } catch (err) {
+        await client?.query('ROLLBACK').catch((rollbackErr) => {
+          console.error('deleteUserData rollback failed:', (rollbackErr as Error).message);
+        });
+        console.error('deleteUserData failed:', (err as Error).message);
+        return { deleted: false, tables: [] };
+      } finally {
+        client?.release();
+      }
     });
+  } catch (err) {
     console.error('deleteUserData failed:', (err as Error).message);
     return { deleted: false, tables: [] };
   }

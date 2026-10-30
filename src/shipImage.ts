@@ -15,7 +15,7 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Register bundled font before any canvas creation
-const fontPath = join(__dirname, '..', 'assets', 'fonts', 'Nunito-Bold.ttf');
+const fontPath = join(__dirname, '..', 'assets', 'fonts', 'Poppins-Bold.ttf');
 try {
   registerFont(fontPath, { family: 'ShipFont' });
 } catch (err) {

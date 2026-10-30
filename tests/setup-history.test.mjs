@@ -8,8 +8,20 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+const clientId = '123456789012345678';
 const token = 'MTIzNDU2Nzg5MDEyMzQ1Njc4.fake-test.signature';
 const apiKey = 'sk-fake-test-key-not-a-credential';
+/** OpenAI is option 2 in the cloud-first menu (1 = Anthropic). */
+const OPENAI_PROVIDER = '2';
+/** Piped tail after Discord: OpenAI, embedded DB, skip vision/advanced, write .env, skip start. */
+function openAiPipedTail({ writeEnv = 'y', startNow = 'n', uploadAssets, cloudMemory = false } = {}) {
+  return [
+    'n', OPENAI_PROVIDER, apiKey, '',
+    '', cloudMemory ? 'y' : 'n', ...(cloudMemory ? [] : ['n', 'n']),
+    'n', 'n', writeEnv, ...(uploadAssets === undefined ? [] : [uploadAssets]), startNow,
+  ].join('\n');
+}
+const openAiWizardFull = [clientId, token, '234567890123456789', openAiPipedTail()].join('\n');
 const dbPassword = 'fake-db-pass-not-real';
 const dbUrl = `postgres://sass:${dbPassword}@localhost:5432/sass`;
 const existingEnv = [
@@ -39,7 +51,14 @@ async function startWizard(t, terminal, { dotenv, emoji = false, profile = false
     join(root, 'src/setup.ts'),
   ], {
     cwd,
-    env: { PATH: process.env.PATH, TERM: 'xterm', SASS_TEST_TERMINAL: terminal ? '1' : '0' },
+    env: {
+      SASS_SETUP_ADVANCED: '1',
+      PATH: process.env.PATH,
+      TERM: 'xterm',
+      SASS_TEST_TERMINAL: terminal ? '1' : '0',
+      SASS_TEST_SKIP_EMBEDDED: '1',
+      SASS_TEST_SKIP_LOCAL_EMBED: '1',
+    },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   let output = '';
@@ -55,7 +74,8 @@ async function startWizard(t, terminal, { dotenv, emoji = false, profile = false
   });
   function until(text, from = 0) {
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => finish(new Error(`Setup did not reach ${JSON.stringify(text)}`)), 30_000);
+      const waitMs = terminal ? 60_000 : 30_000;
+      const timer = setTimeout(() => finish(new Error(`Setup did not reach ${JSON.stringify(text)}`)), waitMs);
       const check = () => { if (output.slice(from).includes(text)) finish(); };
       const stopped = () => finish(new Error(`Setup exited before ${JSON.stringify(text)}`));
       function finish(error) {
@@ -76,7 +96,7 @@ async function startWizard(t, terminal, { dotenv, emoji = false, profile = false
     child.stdin.write(`${value}\n`);
     return until(nextPrompt, from);
   }
-  await until(dotenv === undefined ? 'Bot token: ' : 'Go through setup and update it?');
+  await until(dotenv === undefined ? 'Application ID (CLIENT_ID)' : 'Go through setup and update it?');
   return { child, cwd, exited, until, answer, output: () => output };
 }
 
@@ -86,15 +106,16 @@ for (const [name, key] of [['Up arrow', '\u001b[A'], ['Ctrl+P', '\u0010'], ['Ctr
       const wizard = await startWizard(t, true);
       const discarded = 'discarded-fake-secret';
       const edited = key === '\u0019' ? `${discarded}\u0015` : '';
-      const firstPrompt = await wizard.answer(`${edited}${token}`, 'Application ID (CLIENT_ID)');
+      await wizard.answer(clientId, 'Bot token (DISCORD_TOKEN)');
+      const firstPrompt = await wizard.answer(`${edited}${token}`, 'Your Discord user ID (CREATOR_ID)');
       assert.ok(!firstPrompt.includes(token), 'token must be hidden while entered');
       let sensitive = token;
       if (secret === 'API key') {
-        await wizard.answer('', 'Your Discord user ID (CREATOR_ID)');
         await wizard.answer('234567890123456789', 'Check the token with Discord now?');
-        await wizard.answer('n', 'Provider [1]');
-        await wizard.answer('1', 'OpenAI API key: ');
-        const modelPrompt = await wizard.answer(`${edited}${apiKey}`, 'Chat model (OPENAI_MODEL)');
+        await wizard.answer('n', 'Provider');
+        await wizard.answer(OPENAI_PROVIDER, 'OpenAI API key');
+        const modelPrompt = await wizard.answer(`${edited}${apiKey}`, 'Chat model');
+        await wizard.answer('', 'How should Postgres run?');
         assert.ok(!modelPrompt.includes(apiKey), 'API key must be hidden while entered');
         sensitive = apiKey;
       }
@@ -107,7 +128,7 @@ for (const [name, key] of [['Up arrow', '\u001b[A'], ['Ctrl+P', '\u0010'], ['Ctr
       assert.ok(!recalled.includes(discarded), 'deleted secret text must not survive in the kill ring');
       // Editing and accepting the ordinary default still work after history navigation.
       await wizard.answer('\u0015', secret === 'API key'
-        ? 'Check the key and model name against the API now?'
+        ? 'How should Postgres run?'
         : 'Your Discord user ID (CREATOR_ID)');
     });
   }
@@ -115,9 +136,10 @@ for (const [name, key] of [['Up arrow', '\u001b[A'], ['Ctrl+P', '\u0010'], ['Ctr
 
 test('a same-chunk yank cannot carry deleted secret text into the next prompt', { timeout: 60_000 }, async (t) => {
   const wizard = await startWizard(t, true);
+  await wizard.answer(clientId, 'Bot token (DISCORD_TOKEN)');
   const from = wizard.output().length;
   wizard.child.stdin.write(`discarded-fake-secret\u0015${token}\n\u0019`);
-  await wizard.until('Application ID (CLIENT_ID)', from);
+  await wizard.until('Your Discord user ID (CREATOR_ID)', from);
   wizard.child.stdin.write('PUBLIC_MARKER');
   const output = await wizard.until('PUBLIC_MARKER', from);
   assert.ok(!output.includes('discarded-fake-secret'));
@@ -127,9 +149,10 @@ test('a same-chunk yank cannot carry deleted secret text into the next prompt', 
 
 test('rejected and raw-form secret attempts cannot be recalled', { timeout: 60_000 }, async (t) => {
   const wizard = await startWizard(t, true);
-  await wizard.answer('rejected-secret-attempt', 'Bot token: ');
+  await wizard.answer('rejected-secret-attempt', 'Application ID (CLIENT_ID)');
+  await wizard.answer(clientId, 'Bot token (DISCORD_TOKEN)');
   const raw = `  "Bot ${token}"  `;
-  await wizard.answer(raw, 'Application ID (CLIENT_ID)');
+  await wizard.answer(raw, 'Your Discord user ID (CREATOR_ID)');
   const from = wizard.output().length;
   wizard.child.stdin.write('\u001b[A\u0010PUBLIC_MARKER');
   const output = await wizard.until('PUBLIC_MARKER', from);
@@ -153,12 +176,13 @@ test('same-chunk CRLF keeps the next public prompt visible', { timeout: 60_000 }
 
 test('a split CRLF after a secret does not submit the next prompt', { timeout: 60_000 }, async (t) => {
   const wizard = await startWizard(t, true);
-  wizard.child.stdin.write(`${token}\r`);
-  await wizard.until('Application ID (CLIENT_ID)');
+  await wizard.answer(clientId, 'Bot token (DISCORD_TOKEN)');
   const from = wizard.output().length;
+  wizard.child.stdin.write(`${token}\r`);
+  await wizard.until('Your Discord user ID (CREATOR_ID)', from);
   wizard.child.stdin.write('\nPUBLIC_MARKER\n');
-  const output = await wizard.until('should be a number with 17 to 20 digits', from);
-  assert.ok(output.includes('The Application ID should be'), 'CRLF must be one submission');
+  const output = await wizard.until('PUBLIC_MARKER', from);
+  assert.ok(!output.includes('234567890123456789'), 'CRLF must not submit CREATOR_ID early');
   await wizard.answer('', 'Your Discord user ID (CREATOR_ID)');
 });
 
@@ -166,14 +190,15 @@ test('resuming a retired editor cannot render its secret draft', {
   timeout: 60_000, skip: process.platform === 'win32',
 }, async (t) => {
   const wizard = await startWizard(t, true);
-  wizard.child.stdin.write(`discarded-fake-secret\u0015${token}\u001a\n\u0019`);
-  await wizard.until('Application ID (CLIENT_ID)');
+  await wizard.answer(clientId, 'Bot token (DISCORD_TOKEN)');
   const from = wizard.output().length;
+  wizard.child.stdin.write(`discarded-fake-secret\u0015${token}\u001a\n\u0019`);
+  await wizard.until('SUSPEND_GROUP', from);
   wizard.child.kill('SIGCONT');
-  const output = await wizard.until('SIGNAL_HANDLED', from);
+  await wizard.until('SIGNAL_HANDLED', from);
+  const output = wizard.output().slice(from);
   assert.ok(!output.includes('discarded-fake-secret'), 'retired editor output must remain disabled');
   assert.ok(!output.includes(token));
-  // The wizard keeps working after the resume.
   await wizard.answer('\u0015', 'Your Discord user ID (CREATOR_ID)');
 });
 
@@ -181,13 +206,14 @@ test('Ctrl+Z suspends the whole process group and a secret typed after resume st
   timeout: 60_000, skip: process.platform === 'win32',
 }, async (t) => {
   const wizard = await startWizard(t, true);
+  await wizard.answer(clientId, 'Bot token (DISCORD_TOKEN)');
   const from = wizard.output().length;
   wizard.child.stdin.write('discarded-fake-secret\u001a');
   await wizard.until('SUSPEND_GROUP', from);
   assert.ok(!wizard.output().slice(from).includes('SUSPEND_SELF'), 'must not stop only the wizard process');
   wizard.child.kill('SIGCONT');
   await wizard.until('SIGNAL_HANDLED', from);
-  await wizard.answer(`\u0015${token}`, 'Application ID (CLIENT_ID)');
+  await wizard.answer(`\u0015${token}`, 'Your Discord user ID (CREATOR_ID)');
   const output = wizard.output().slice(from);
   assert.ok(!output.includes('discarded-fake-secret'), 'a draft must stay hidden after resume');
   assert.ok(!output.includes(token), 'a secret typed after resume must stay hidden');
@@ -195,36 +221,48 @@ test('Ctrl+Z suspends the whole process group and a secret typed after resume st
   await wizard.answer('\u0015', 'Your Discord user ID (CREATOR_ID)');
 });
 
-for (const [name, dbAnswer, expected] of [['Enter keeps', '', `DATABASE_URL=${dbUrl}`], ['"none" removes', 'none', 'DATABASE_URL=\n']]) {
+for (const [name, dbAnswer, expected, afterDb] of [
+  ['Enter keeps', '', dbUrl, ['n', 'n', 'n', 'n', 'n']],
+  ['"none" removes', 'none', '', ['n', 'n']],
+]) {
   test(`an existing DATABASE_URL is never displayed; ${name} it`, { timeout: 60_000 }, async (t) => {
     const wizard = await startWizard(t, false, { dotenv: existingEnv });
     wizard.child.stdin.end([
-      'y', '', '', '', 'n', '', '', '', 'n', 'n', dbAnswer, 'n', 'y', 'n', '',
+      'y', '', '', '', 'n', OPENAI_PROVIDER, '', '', '2', dbAnswer, ...afterDb, 'y', 'n',
     ].join('\n'));
     const [code] = await wizard.exited;
     const output = wizard.output();
     assert.equal(code, 0, output);
-    assert.match(output, /DATABASE_URL, "none" removes it\) \[Enter keeps the current value\]/);
+    assert.match(output, /Your input is hidden; the URL usually contains a password\./);
     for (const secret of [dbPassword, token, apiKey]) assert.ok(!output.includes(secret));
     const written = await readFile(join(wizard.cwd, '.env'), 'utf8');
-    assert.ok(written.includes(expected));
+    if (name === '"none" removes') {
+      assert.ok(!written.includes('postgres://sass'), written);
+    } else {
+      assert.ok(written.includes(expected), written);
+    }
   });
 }
 
-test('a typed DATABASE_URL and the stored one stay hidden in a terminal', { timeout: 60_000 }, async (t) => {
+test('a typed DATABASE_URL and the stored one stay hidden in a terminal', {
+  timeout: 30_000,
+}, async (t) => {
   const wizard = await startWizard(t, true, { dotenv: existingEnv });
   const typedPassword = 'typed-db-pass-not-real';
-  await wizard.answer('y', 'Bot token');
-  await wizard.answer('', 'Application ID (CLIENT_ID)');
+  await wizard.answer('y', 'Application ID (CLIENT_ID)');
+  await wizard.answer('', 'Bot token (DISCORD_TOKEN)');
   await wizard.answer('', 'Your Discord user ID (CREATOR_ID)');
   await wizard.answer('', 'Check the token with Discord now?');
-  await wizard.answer('n', 'Provider [1]');
-  await wizard.answer('', 'OpenAI API key');
-  await wizard.answer('', 'Chat model (OPENAI_MODEL)');
-  await wizard.answer('', 'Check the key and model name against the API now?');
-  await wizard.answer('n', 'Do you want image roasts?');
-  await wizard.answer('n', 'Postgres URL (DATABASE_URL');
-  await wizard.answer(`postgres://sass:${typedPassword}@localhost/sass`, 'Change how often?');
+  await wizard.answer('n', 'Provider');
+  await wizard.answer(OPENAI_PROVIDER, 'OpenAI API key');
+  await wizard.answer('', 'Chat model');
+  await wizard.answer('', 'How should Postgres run?');
+  await wizard.answer('2', 'Postgres URL (DATABASE_URL');
+  await wizard.answer(`postgres://sass:${typedPassword}@127.0.0.1:5432/sass`, 'Use your OpenAI key for memory search too?');
+  await wizard.answer('n', 'Advanced: cloud or Ollama embeddings instead?');
+  await wizard.answer('n', 'Download or prepare this local memory search model?');
+  await wizard.answer('n', 'Enable image roasts?');
+  await wizard.answer('n', 'Customize auto-sass frequency?');
   await wizard.answer('n', 'Back up the old .env and write the new one?');
   wizard.child.stdin.write('\u0003');
   const [code] = await wizard.exited;
@@ -235,21 +273,16 @@ test('a typed DATABASE_URL and the stored one stay hidden in a terminal', { time
   assert.equal(await readFile(join(wizard.cwd, '.env'), 'utf8'), existingEnv, '.env must be unchanged');
 });
 
-test('Ctrl+C after .env was written says so', { timeout: 60_000 }, async (t) => {
-  const wizard = await startWizard(t, true);
-  await wizard.answer(token, 'Application ID (CLIENT_ID)');
-  await wizard.answer('', 'Your Discord user ID (CREATOR_ID)');
-  await wizard.answer('234567890123456789', 'Check the token with Discord now?');
-  await wizard.answer('n', 'Provider [1]');
-  await wizard.answer('1', 'OpenAI API key: ');
-  await wizard.answer(apiKey, 'Chat model (OPENAI_MODEL)');
-  await wizard.answer('', 'Check the key and model name against the API now?');
-  await wizard.answer('n', 'Do you want image roasts?');
-  await wizard.answer('n', 'Postgres URL (DATABASE_URL');
-  await wizard.answer('', 'Change how often?');
-  await wizard.answer('n', 'Write .env?');
-  await wizard.answer('y', 'start Sass now?');
-  wizard.child.stdin.write('\u0003');
+test('Ctrl+C after .env was written says so', {
+  timeout: 120_000,
+}, async (t) => {
+  const wizard = await startWizard(t, false);
+  const tailLines = openAiPipedTail({ writeEnv: 'y', startNow: 'n' }).split('\n');
+  tailLines.pop();
+  const throughWrite = [clientId, token, '234567890123456789', ...tailLines].join('\n');
+  wizard.child.stdin.write(`${throughWrite}\n`);
+  await wizard.until('Build, register slash commands, and start Sass now?');
+  wizard.child.kill('SIGINT');
   const [code] = await wizard.exited;
   assert.equal(code, 130);
   assert.ok(wizard.output().includes('Setup cancelled. The new .env was already written.'));
@@ -259,38 +292,68 @@ test('Ctrl+C after .env was written says so', { timeout: 60_000 }, async (t) => 
 
 test('a failed build step makes setup exit non-zero', { timeout: 60_000 }, async (t) => {
   const wizard = await startWizard(t, false);
-  wizard.child.stdin.end([
-    token, '', '234567890123456789', 'n', '1', apiKey, '', 'n', 'n', '', 'n', 'y', 'y', '',
-  ].join('\n'));
+  wizard.child.stdin.end([clientId, token, '234567890123456789', openAiPipedTail({ startNow: 'y' })].join('\n'));
   const [code] = await wizard.exited;
   assert.equal(code, 1, 'the temp project has no build script, so npm run build fails');
   assert.ok(wizard.output().includes('$ npm run build'));
   await access(join(wizard.cwd, '.env'));
 });
 
-test('piped answers retain defaults and can cancel before writing', { timeout: 60_000 }, async (t) => {
+test('default database choice writes SASS_EMBEDDED_PG', { timeout: 60_000 }, async (t) => {
+  const wizard = await startWizard(t, false);
+  wizard.child.stdin.end(openAiWizardFull);
+  const [code] = await wizard.exited;
+  assert.equal(code, 0, wizard.output());
+  assert.match(wizard.output(), /Step 3 of 5 · Memory \(database\)/);
+  const written = await readFile(join(wizard.cwd, '.env'), 'utf8');
+  assert.match(written, /SASS_EMBEDDED_PG=1/);
+});
+
+test('skip database requires confirmation then accepts embedded', { timeout: 60_000 }, async (t) => {
   const wizard = await startWizard(t, false);
   wizard.child.stdin.end([
-    token, '', '234567890123456789', 'n', '1', apiKey, '', 'n', 'n', '', 'n', 'n', '',
+    clientId, token, '234567890123456789', 'n', OPENAI_PROVIDER, apiKey, '',
+    '4', 'n', '1', '', '', 'n', '', '', 'y', 'n',
   ].join('\n'));
   const [code] = await wizard.exited;
+  assert.equal(code, 0, wizard.output());
+  assert.match(wizard.output(), /Without Postgres, Sass still roasts/);
+  const written = await readFile(join(wizard.cwd, '.env'), 'utf8');
+  assert.match(written, /SASS_EMBEDDED_PG=1/);
+});
+
+test('piped answers retain defaults and can cancel before writing', { timeout: 60_000 }, async (t) => {
+  const wizard = await startWizard(t, false);
+  wizard.child.stdin.end([clientId, token, '234567890123456789', openAiPipedTail({ writeEnv: 'n' })].join('\n'));
+  const [code] = await wizard.exited;
   assert.equal(code, 0);
-  assert.match(wizard.output(), /OPENAI_MODEL\s+gpt-4o-mini/);
+  assert.match(wizard.output(), /OPENAI_MODEL.*gpt-4o-mini/);
   assert.ok(!wizard.output().includes(token));
   assert.ok(!wizard.output().includes(apiKey));
   await assert.rejects(access(join(wizard.cwd, '.env')), { code: 'ENOENT' });
 });
 
-for (const [answer, expected] of [['y', 'Emoji upload failed: Could not reach Discord'], ['n', 'Run `npm run assets` any time']]) {
+test('setup summary keeps the embedding key hidden as well as the chat key', { timeout: 60_000 }, async (t) => {
+  const wizard = await startWizard(t, false);
+  wizard.child.stdin.end([clientId, token, '234567890123456789', openAiPipedTail({ cloudMemory: true })].join('\n'));
+  const [code] = await wizard.exited;
+  const output = wizard.output();
+  assert.equal(code, 0, output);
+  assert.ok(output.includes('EMBEDDING_OPENAI_API_KEY'));
+  assert.ok(!output.includes(apiKey));
+  assert.ok(!output.includes(token));
+});
+
+for (const [answer, expected] of [['y', 'Emoji upload failed: Could not reach Discord'], ['n', 'Run `sass setup` any time']]) {
   test(`setup offers the bundled emoji upload; "${answer}" never fails setup`, { timeout: 60_000 }, async (t) => {
     const wizard = await startWizard(t, false, { emoji: true });
     wizard.child.stdin.end([
-      token, '', '234567890123456789', 'n', '1', apiKey, '', 'n', 'n', '', 'n', 'y', answer, 'n', '',
+      clientId, token, '234567890123456789', openAiPipedTail({ uploadAssets: answer }),
     ].join('\n'));
     const [code] = await wizard.exited;
     const output = wizard.output();
     assert.equal(code, 0, output);
-    assert.ok(output.includes('Upload them to your app now? [Y/n]'));
+    assert.ok(output.includes('Upload them to your app now?'));
     assert.ok(output.includes(expected), output);
     assert.ok(!output.includes('avatar and a banner'), 'no profile art, no profile offer');
     assert.ok(!output.includes(token));
@@ -301,7 +364,7 @@ for (const [answer, expected] of [['y', 'Emoji upload failed: Could not reach Di
 test('setup offers the bundled avatar and banner; a failure never fails setup', { timeout: 60_000 }, async (t) => {
   const wizard = await startWizard(t, false, { emoji: true, profile: true });
   wizard.child.stdin.end([
-    token, '', '234567890123456789', 'n', '1', apiKey, '', 'n', 'n', '', 'n', 'y', 'y', 'n', '',
+    clientId, token, '234567890123456789', openAiPipedTail({ uploadAssets: 'y' }),
   ].join('\n'));
   const [code] = await wizard.exited;
   const output = wizard.output();

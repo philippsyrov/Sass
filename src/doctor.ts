@@ -1,7 +1,9 @@
 import { existsSync, readFileSync } from 'fs';
 import dotenv from 'dotenv';
 import pg from 'pg';
-import { getOpenAI } from './ai/providers.js';
+import { describeApiEndpoint, resolveChatOpenAIConfig } from './ai/clientConfig.js';
+import { checkEmbeddingHealth } from './embeddings/health.js';
+import { ensureEmbeddedPostgresRunning, isEmbeddedPostgresEnabled, stopEmbeddedPostgres } from './database/embeddedPostgres.js';
 
 if (existsSync('.env')) {
   const parsed = dotenv.parse(readFileSync('.env'));
@@ -70,22 +72,6 @@ async function checkDatabase(url: string | undefined): Promise<{
   }
 }
 
-async function checkEmbeddings(): Promise<{ ok: boolean; detail: string }> {
-  if (!realValue('OPENAI_API_KEY')) {
-    return { ok: false, detail: `OPENAI_API_KEY ${varDetail('OPENAI_API_KEY')}` };
-  }
-
-  try {
-    await getOpenAI().embeddings.create({
-      model: 'text-embedding-3-small',
-      input: 'test',
-    });
-    return { ok: true, detail: 'working' };
-  } catch (err) {
-    return { ok: false, detail: (err as Error).message };
-  }
-}
-
 async function checkSchema(pool: InstanceType<typeof Pool> | null): Promise<{
   presentCount: number;
   detail: string;
@@ -142,20 +128,33 @@ async function main(): Promise<void> {
 
   const provider = realValue('AI_PROVIDER')?.toLowerCase();
   if (provider === 'openai') {
-    const ok = Boolean(realValue('OPENAI_API_KEY'));
+    const chatCfg = resolveChatOpenAIConfig();
+    const chatHost = describeApiEndpoint(chatCfg.baseURL, 'api.openai.com');
+    const ok = Boolean(chatCfg.apiKey);
     if (!ok) missing++;
-    console.log(formatStatus(ok, 'OPENAI_API_KEY', varDetail('OPENAI_API_KEY')));
+    console.log(formatStatus(ok, 'Chat API', `${chatHost} · key ${varDetail('OPENAI_API_KEY')}`));
+    console.log(formatStatus(Boolean(realValue('OPENAI_MODEL')), 'OPENAI_MODEL', process.env.OPENAI_MODEL || 'not set'));
   } else if (provider === 'ollama') {
-    console.log(formatStatus(true, 'OLLAMA_MODEL', process.env.OLLAMA_MODEL || 'default'));
+    console.log(formatStatus(true, 'Chat (Ollama)', `${process.env.OLLAMA_HOST || 'http://localhost:11434'} · ${process.env.OLLAMA_MODEL || 'default'}`));
   } else if (provider) {
     missing++;
     console.log(formatStatus(false, 'AI_PROVIDER', `"${provider}" is not "openai" or "ollama"`));
   }
 
-  const db = await checkDatabase(realValue('DATABASE_URL'));
-  console.log(formatStatus(db.connected, 'Database', db.detail));
+  let databaseUrl = realValue('DATABASE_URL');
+  if (isEmbeddedPostgresEnabled()) {
+    try {
+      databaseUrl = await ensureEmbeddedPostgresRunning();
+    } catch (err) {
+      console.log(formatStatus(false, 'Database', `local embedded: ${(err as Error).message}`));
+      databaseUrl = undefined;
+    }
+  }
+  const db = await checkDatabase(databaseUrl);
+  const dbLabel = isEmbeddedPostgresEnabled() && db.connected ? 'Database (local embedded)' : 'Database';
+  console.log(formatStatus(db.connected, dbLabel, isEmbeddedPostgresEnabled() && db.connected ? 'connected (.sass-data/)' : db.detail));
 
-  const embeddings = await checkEmbeddings();
+  const embeddings = await checkEmbeddingHealth();
   console.log(formatStatus(embeddings.ok, 'Embeddings', embeddings.detail));
 
   const schema = await checkSchema(db.pool);
@@ -167,6 +166,9 @@ async function main(): Promise<void> {
   await db.pool?.end().catch((err) => {
     console.error('Doctor pool shutdown failed:', (err as Error).message);
   });
+  if (isEmbeddedPostgresEnabled()) {
+    await stopEmbeddedPostgres();
+  }
 
   if (missing > 0) {
     console.log(`\n${missing} required setting(s) still need a real value in .env.`);

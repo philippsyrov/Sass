@@ -4,6 +4,7 @@ node_modules/
 .env.*.local
 .env.backup-*
 data/
+.sass-data/
 *.db
 *.sqlite
 *.sqlite3
@@ -23,3 +24,6 @@ dist/
 
 # Agent worktrees
 .claude/worktrees/
+
+# Local release inputs and artifacts
+.release-work/

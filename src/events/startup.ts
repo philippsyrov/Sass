@@ -1,17 +1,17 @@
 import type { Client, Guild, TextChannel } from 'discord.js';
-import { initDatabase, closeDatabase } from '../database/index.js';
-import * as userMemory from '../userMemory.js';
-import { distillAllGuilds } from '../vectorMemory.js';
+import { initDatabase } from '../database/index.js';
+import { startDistillationScheduler } from '../memory/distillScheduler.js';
 import { pickRandom } from '../shared/commandUtils.js';
 import { AUTO_SASS_CHANCE } from '../handlers/autoSass.js';
 import { loadSassEmoji } from '../emoji.js';
+import { inviteInstructions } from '../shared/discordInvite.js';
 
 // Send a message to the first available text channel in a guild
 async function sendToFirstChannel(guild: Guild, text: string): Promise<void> {
   const me = guild.members.me;
   if (!me) return;
   const channel = guild.channels.cache.find(
-    (ch) => ch.isTextBased() && !ch.isVoiceBased() && ch.permissionsFor(me)?.has('SendMessages')
+    (ch) => ch.isTextBased() && !ch.isVoiceBased() && ch.permissionsFor(me)?.has(['ViewChannel', 'SendMessages'])
   ) as TextChannel | undefined;
   if (channel) await channel.send(text).catch((err) => console.error('Guild join send failed:', (err as Error).message));
 }
@@ -30,16 +30,9 @@ export function setupStartup(client: Client): void {
     // Initialize database (fails silently if no DATABASE_URL)
     await initDatabase();
 
-    // Memory distillation: 5-min startup delay, then every 6 hours
-    const DISTILL_DELAY_MS = 5 * 60 * 1000;
-    const DISTILL_INTERVAL_MS = 6 * 60 * 60 * 1000;
+    console.log(inviteInstructions(client.user.id));
 
-    setTimeout(() => {
-      distillAllGuilds().catch((err) => console.error('Startup distillation failed:', (err as Error).message));
-      setInterval(() => {
-        distillAllGuilds().catch((err) => console.error('Periodic distillation failed:', (err as Error).message));
-      }, DISTILL_INTERVAL_MS);
-    }, DISTILL_DELAY_MS);
+    startDistillationScheduler();
   });
 
   // Guild join — announce arrival
@@ -55,14 +48,4 @@ export function setupStartup(client: Client): void {
   });
 }
 
-export function setupShutdown(client: Client): void {
-  async function shutdown(signal: string): Promise<void> {
-    console.log(`\n${signal} received — shutting down gracefully...`);
-    await userMemory.shutdownUserMemory();
-    await client.destroy();
-    await closeDatabase();
-    process.exit(0);
-  }
-  process.on('SIGTERM', () => void shutdown('SIGTERM'));
-  process.on('SIGINT', () => void shutdown('SIGINT'));
-}
+export { setupShutdown } from './shutdown.js';

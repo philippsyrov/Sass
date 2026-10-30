@@ -1,12 +1,8 @@
-import OpenAI from 'openai';
-import { Ollama, type Message as OllamaMessage } from 'ollama';
 import * as mood from '../mood.js';
 import type { GetSassResponseOptions, AIResponse, BufferEntry } from '../types.js';
 import { speakerLabel } from '../shared/speaker.js';
-import { queryAI, queryAIWithUsage, getOpenAI, chatOllama } from './providers.js';
+import { queryAI, queryAIWithUsage } from './providers.js';
 import { CREATOR_SYSTEM_PROMPT, UTILITY_SYSTEM_PROMPT, PROFILE_SYSTEM_PROMPT, SASS_LITE_PROMPT } from './prompts.js';
-
-type UserContent = string | OpenAI.ChatCompletionContentPart[];
 
 /**
  * Get a sassy response to a direct mention.
@@ -24,7 +20,7 @@ export async function getSassResponse(userMessage: string, {
 }: GetSassResponseOptions = {}): Promise<AIResponse> {
   // Creator gets a completely different prompt — no roasting at all
   if (isCreator) {
-    const text = await queryCreatorMode(userMessage, recentContext, peopleContext, imageUrl ?? null, speaker);
+    const text = await queryCreatorMode(userMessage, recentContext, [peopleContext, userContext].filter(Boolean).join('\n\n'), imageUrl ?? null, speaker);
     return { text };
   }
 
@@ -159,7 +155,7 @@ export async function summarizeMessages(messages: BufferEntry[]): Promise<string
 
 /**
  * The user message for creator mode. The creator is named with the same label the chat
- * log uses, so their earlier lines and this one read as one person, not "ExampleUser" plus a
+ * log uses, so their earlier lines and this one read as one person, not "Creator" plus a
  * separate "creator".
  */
 export function buildCreatorPrompt(userMessage: string, recentContext: string, peopleContext = '', imageUrl: string | null = null, speaker?: string): string {
@@ -178,37 +174,8 @@ export function buildCreatorPrompt(userMessage: string, recentContext: string, p
 }
 
 async function queryCreatorMode(userMessage: string, recentContext: string, peopleContext: string = '', imageUrl: string | null = null, speaker?: string): Promise<string | null> {
-  const provider = process.env.AI_PROVIDER || 'ollama';
   const prompt = buildCreatorPrompt(userMessage, recentContext, peopleContext, imageUrl, speaker);
-
-  if (provider === 'openai') {
-    // Build user content — text only or text + image
-    let userContent: UserContent;
-    if (imageUrl) {
-      userContent = [
-        { type: 'text', text: prompt },
-        { type: 'image_url', image_url: { url: imageUrl, detail: 'low' } },
-      ];
-    } else {
-      userContent = prompt;
-    }
-
-    const messages: OpenAI.ChatCompletionMessageParam[] = [
-      { role: 'system', content: CREATOR_SYSTEM_PROMPT },
-      { role: 'user', content: userContent },
-    ];
-
-    const openai = getOpenAI();
-    const response = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || 'gpt-5.4-mini',
-      messages,
-      max_completion_tokens: 100,
-      temperature: 1.2,
-    });
-    return response.choices[0]?.message?.content ?? null;
-  }
-
-  return chatOllama(CREATOR_SYSTEM_PROMPT, prompt, imageUrl);
+  return queryAI(prompt, { systemPrompt: CREATOR_SYSTEM_PROMPT, imageUrl, ...(process.env.AI_PROVIDER === 'openai' ? { temperature: 1.2 } : {}) });
 }
 
 /**
@@ -216,35 +183,5 @@ async function queryCreatorMode(userMessage: string, recentContext: string, peop
  */
 export async function analyzeProfile(userName: string, messages: string): Promise<string | null> {
   const prompt = `Analyze ${userName}'s personality based on these messages:\n\n${messages}`;
-  const provider = process.env.AI_PROVIDER || 'ollama';
-
-  if (provider === 'openai') {
-    const openai = getOpenAI();
-    const response = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || 'gpt-5.4-mini',
-      messages: [
-        { role: 'system', content: PROFILE_SYSTEM_PROMPT },
-        { role: 'user', content: prompt },
-      ],
-      max_completion_tokens: 150,
-      temperature: 1.0,
-    });
-    return response.choices[0]?.message?.content ?? null;
-  }
-
-  const ollama = new Ollama({
-    host: process.env.OLLAMA_HOST || 'http://localhost:11434',
-  });
-
-  const ollamaMessages: OllamaMessage[] = [
-    { role: 'system', content: PROFILE_SYSTEM_PROMPT },
-    { role: 'user', content: prompt },
-  ];
-
-  const response = await ollama.chat({
-    model: process.env.OLLAMA_MODEL || 'llama3.1:8b',
-    messages: ollamaMessages,
-  });
-
-  return response.message.content;
+  return queryAI(prompt, { systemPrompt: PROFILE_SYSTEM_PROMPT, ...(process.env.AI_PROVIDER === 'openai' ? { maxTokens: 150, temperature: 1.0 } : {}) });
 }

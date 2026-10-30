@@ -1,0 +1,13 @@
+Sass bundled memory model license
+
+The bundled model is EmbeddingGemma 2, developed by Google DeepMind and
+converted to ONNX by ONNX Community. The model is licensed under the Apache
+License, Version 2.0. The complete license is enclosed as APACHE-2.0.txt.
+Retain applicable upstream notices in NOTICE. No model weights are modified;
+Sass loads only the text encoder and selects the upstream q8 conversion.
+
+Model: https://huggingface.co/google/embeddinggemma-2
+Conversion: https://huggingface.co/onnx-community/embeddinggemma-2-ONNX
+License: https://www.apache.org/licenses/LICENSE-2.0
+
+This notice covers the model. The Sass application has its own license.

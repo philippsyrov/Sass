@@ -15,44 +15,49 @@ import { getRawPool } from './pool.js';
 async function migratePairInteractions(): Promise<void> {
   const pool = getRawPool();
   if (!pool) return;
-  // Check if pair_interactions has server_id in the PK (new schema)
-  // If not, migrate from old schema to new
+  const columnQuery = `SELECT attname AS column_name FROM pg_attribute
+    WHERE attrelid = 'pair_interactions'::regclass AND attname = 'server_id' AND NOT attisdropped`;
+  const colCheck = await pool.query(columnQuery);
+  if (colCheck.rows.length > 0) return;
+
+  // One connection and an exclusive lock keep the source intact if any migration step fails.
+  const client = await pool.connect();
+  let releaseError: Error | undefined;
   try {
-    const colCheck = await pool.query(
-      `SELECT column_name FROM information_schema.columns
-       WHERE table_name = 'pair_interactions' AND column_name = 'server_id'`
-    );
-    if (colCheck.rows.length === 0) {
+    await client.query('BEGIN');
+    await client.query('LOCK TABLE pair_interactions IN ACCESS EXCLUSIVE MODE');
+    const lockedCheck = await client.query(columnQuery);
+    if (lockedCheck.rows.length === 0) {
       console.log('Migrating pair_interactions to guild-scoped schema...');
-      const oldData = await pool.query('SELECT user1_id, user2_id, interaction_count, last_interaction FROM pair_interactions');
-      await pool.query('DROP TABLE pair_interactions');
-      await pool.query(`
-        CREATE TABLE pair_interactions (
-          server_id TEXT NOT NULL,
-          user1_id TEXT NOT NULL,
-          user2_id TEXT NOT NULL,
-          interaction_count INTEGER DEFAULT 1,
-          last_interaction TIMESTAMPTZ DEFAULT NOW(),
-          PRIMARY KEY (server_id, user1_id, user2_id)
-        )
-      `);
-      // Find the most active server to assign old data to
-      const serverResult = await pool.query(
+      const serverResult = await client.query<{ server_id: string }>(
         `SELECT server_id, COUNT(*) as cnt FROM interactions
          WHERE server_id IS NOT NULL GROUP BY server_id ORDER BY cnt DESC LIMIT 1`
       );
-      const fallbackServer = (serverResult.rows[0]?.server_id as string) || 'unknown';
-      for (const row of oldData.rows) {
-        await pool.query(
-          `INSERT INTO pair_interactions (server_id, user1_id, user2_id, interaction_count, last_interaction)
-           VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING`,
-          [fallbackServer, row.user1_id, row.user2_id, row.interaction_count, row.last_interaction]
-        );
+      const fallbackServer = serverResult.rows[0]?.server_id || 'unknown';
+      await client.query('ALTER TABLE pair_interactions ADD COLUMN server_id TEXT');
+      await client.query('UPDATE pair_interactions SET server_id = $1', [fallbackServer]);
+      await client.query('ALTER TABLE pair_interactions ALTER COLUMN server_id SET NOT NULL');
+      const primaryKey = await client.query<{ conname: string }>(
+        `SELECT conname FROM pg_constraint WHERE conrelid = 'pair_interactions'::regclass AND contype = 'p'`
+      );
+      for (const { conname } of primaryKey.rows) {
+        // PostgreSQL identifiers cannot use value parameters; quote the catalog name.
+        await client.query(`ALTER TABLE pair_interactions DROP CONSTRAINT "${conname.replace(/"/g, '""')}"`);
       }
-      console.log(`Migrated ${oldData.rows.length} pair_interactions rows to server ${fallbackServer}`);
+      await client.query('ALTER TABLE pair_interactions ADD PRIMARY KEY (server_id, user1_id, user2_id)');
     }
+    await client.query('COMMIT');
+    console.log('pair_interactions guild-scoped migration complete');
   } catch (err) {
-    console.error('pair_interactions migration check failed:', (err as Error).message);
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      releaseError = rollbackError instanceof Error ? rollbackError : new Error(String(rollbackError));
+      console.error('pair_interactions migration rollback failed:', releaseError.message);
+    }
+    throw err;
+  } finally {
+    client.release(releaseError);
   }
 }
 
@@ -67,160 +72,196 @@ async function migrateLocalFiles(): Promise<void> {
   const __migrateDirname = dirname(fileURLToPath(import.meta.url));
   const dataDir = join(__migrateDirname, '..', '..', 'data');
 
-  // Build user→server mapping
-  let userServers: Map<string, Set<string>>;
-  let fallbackServer: string;
+  const files = ['user-memory.json', 'wild-quotes.json', 'beefs.json', 'mood.json']
+    .map((name) => join(dataDir, name)).filter((file) => existsSync(file));
+  if (files.length === 0) return;
+
+  const client = await pool.connect();
+  const importedFiles: string[] = [];
+  let committed = false;
+  let releaseError: Error | undefined;
   try {
-    const result = await pool.query(
-      'SELECT DISTINCT user_id, server_id FROM interactions WHERE user_id IS NOT NULL AND server_id IS NOT NULL'
-    );
-    userServers = new Map();
-    for (const row of result.rows) {
-      const uid = row.user_id as string;
-      const sid = row.server_id as string;
-      if (!userServers.has(uid)) userServers.set(uid, new Set());
-      userServers.get(uid)?.add(sid);
-    }
-    const serverCounts = new Map<string, number>();
-    for (const servers of userServers.values()) {
-      for (const sid of servers) {
-        serverCounts.set(sid, (serverCounts.get(sid) || 0) + 1);
-      }
-    }
-    fallbackServer = '';
-    let maxCount = 0;
-    for (const [sid, count] of serverCounts) {
-      if (count > maxCount) { fallbackServer = sid; maxCount = count; }
-    }
-  } catch (err) {
-    console.error('Failed to build user→server mapping:', (err as Error).message);
-    return;
-  }
+    await client.query('BEGIN');
 
-  // Helper to get servers for a user
-  const getServers = (userId: string): Set<string> => {
-    const s = userServers.get(userId);
-    if (s && s.size > 0) return s;
-    return new Set(fallbackServer ? [fallbackServer] : []);
-  };
-
-  // Migrate user-memory.json
-  const memoryFile = join(dataDir, 'user-memory.json');
-  if (existsSync(memoryFile)) {
-    console.log('Migrating user-memory.json to Postgres...');
+    // Build user→server mapping
+    let userServers: Map<string, Set<string>>;
+    let fallbackServer: string;
     try {
-      const users = JSON.parse(readFileSync(memoryFile, 'utf-8')) as Record<string, {
-        name: string; roasts: string[]; lastSeen: number; messageCount: number;
-        timesRoasted: number; facts?: string[]; coldShoulder?: { active: boolean; attemptsNeeded: number; attemptsMade: number };
-        gender?: string | null;
-      }>;
-      let count = 0;
-      for (const [userId, data] of Object.entries(users)) {
-        for (const serverId of getServers(userId)) {
-          await pool.query(
-            `INSERT INTO users (server_id, user_id, name, roasts, last_seen, message_count, times_roasted, facts,
-               cold_shoulder_active, cold_shoulder_attempts_needed, cold_shoulder_attempts_made, gender)
-             VALUES ($1, $2, $3, $4, to_timestamp($5), $6, $7, $8, $9, $10, $11, $12)
-             ON CONFLICT (server_id, user_id) DO NOTHING`,
-            [serverId, userId, data.name || '', data.roasts || [],
-             (data.lastSeen || 0) / 1000, data.messageCount || 0, data.timesRoasted || 0,
-             data.facts || [], data.coldShoulder?.active ?? false,
-             data.coldShoulder?.attemptsNeeded ?? 0, data.coldShoulder?.attemptsMade ?? 0,
-             data.gender ?? null]
-          );
-          count++;
+      const result = await client.query(
+        'SELECT DISTINCT user_id, server_id FROM interactions WHERE user_id IS NOT NULL AND server_id IS NOT NULL'
+      );
+      userServers = new Map();
+      for (const row of result.rows) {
+        const uid = row.user_id as string;
+        const sid = row.server_id as string;
+        if (!userServers.has(uid)) userServers.set(uid, new Set());
+        userServers.get(uid)?.add(sid);
+      }
+      const serverCounts = new Map<string, number>();
+      for (const servers of userServers.values()) {
+        for (const sid of servers) {
+          serverCounts.set(sid, (serverCounts.get(sid) || 0) + 1);
         }
       }
-      renameSync(memoryFile, memoryFile + '.migrated');
-      console.log(`  Migrated ${count} user rows. File renamed to .migrated`);
-    } catch (err) {
-      console.error('  user-memory.json migration failed:', (err as Error).message);
-    }
-  }
-
-  // Migrate wild-quotes.json
-  const quotesFile = join(dataDir, 'wild-quotes.json');
-  if (existsSync(quotesFile)) {
-    console.log('Migrating wild-quotes.json to Postgres...');
-    try {
-      const quotes = JSON.parse(readFileSync(quotesFile, 'utf-8')) as Array<{
-        userId: string; name: string; quote: string; timestamp: number;
-      }>;
-      let count = 0;
-      for (const q of quotes) {
-        for (const serverId of getServers(q.userId)) {
-          await pool.query(
-            `INSERT INTO wild_quotes (server_id, user_id, name, quote, timestamp)
-             VALUES ($1, $2, $3, $4, to_timestamp($5))`,
-            [serverId, q.userId, q.name, q.quote, (q.timestamp || Date.now()) / 1000]
-          );
-          count++;
-        }
+      fallbackServer = '';
+      let maxCount = 0;
+      for (const [sid, count] of serverCounts) {
+        if (count > maxCount) { fallbackServer = sid; maxCount = count; }
       }
-      renameSync(quotesFile, quotesFile + '.migrated');
-      console.log(`  Migrated ${count} wild quote rows. File renamed to .migrated`);
     } catch (err) {
-      console.error('  wild-quotes.json migration failed:', (err as Error).message);
+      console.error('Failed to build user→server mapping:', (err as Error).message);
+      throw err;
     }
-  }
 
-  // Migrate beefs.json
-  const beefsFile = join(dataDir, 'beefs.json');
-  if (existsSync(beefsFile)) {
-    console.log('Migrating beefs.json to Postgres...');
-    try {
-      const beefs = JSON.parse(readFileSync(beefsFile, 'utf-8')) as Record<string, {
-        incidents: number; firstBeef: number; lastBeef: number; lastTopic: string | null;
-      }>;
-      let count = 0;
-      for (const [key, data] of Object.entries(beefs)) {
-        const [userId1, userId2] = key.split('-');
-        if (!userId1 || !userId2) continue;
-        const [id1, id2] = [userId1, userId2].sort();
-        const servers1 = getServers(userId1);
-        const servers2 = getServers(userId2);
-        const shared = new Set([...servers1].filter((s) => servers2.has(s)));
-        if (shared.size === 0 && fallbackServer) shared.add(fallbackServer);
-        for (const serverId of shared) {
-          await pool.query(
-            `INSERT INTO beefs (server_id, user1_id, user2_id, incidents, first_beef, last_beef, last_topic)
-             VALUES ($1, $2, $3, $4, to_timestamp($5), to_timestamp($6), $7)
-             ON CONFLICT (server_id, user1_id, user2_id) DO NOTHING`,
-            [serverId, id1, id2, data.incidents, (data.firstBeef || Date.now()) / 1000,
-             (data.lastBeef || Date.now()) / 1000, data.lastTopic]
-          );
-          count++;
+    // Helper to get servers for a user
+    const getServers = (userId: string): Set<string> => {
+      const s = userServers.get(userId);
+      if (s && s.size > 0) return s;
+      if (!fallbackServer) throw new Error('Legacy data has no server assignment; source files were kept.');
+      return new Set([fallbackServer]);
+    };
+
+    // Migrate user-memory.json
+    const memoryFile = join(dataDir, 'user-memory.json');
+    if (existsSync(memoryFile)) {
+      console.log('Migrating user-memory.json to Postgres...');
+      try {
+        const users = JSON.parse(readFileSync(memoryFile, 'utf-8')) as Record<string, {
+          name: string; roasts: string[]; lastSeen: number; messageCount: number;
+          timesRoasted: number; facts?: string[]; coldShoulder?: { active: boolean; attemptsNeeded: number; attemptsMade: number };
+          gender?: string | null;
+        }>;
+        let count = 0;
+        for (const [userId, data] of Object.entries(users)) {
+          for (const serverId of getServers(userId)) {
+            await client.query(
+              `INSERT INTO users (server_id, user_id, name, roasts, last_seen, message_count, times_roasted, facts,
+                 cold_shoulder_active, cold_shoulder_attempts_needed, cold_shoulder_attempts_made, gender)
+               VALUES ($1, $2, $3, $4, to_timestamp($5), $6, $7, $8, $9, $10, $11, $12)
+               ON CONFLICT (server_id, user_id) DO NOTHING`,
+              [serverId, userId, data.name || '', data.roasts || [],
+               (data.lastSeen || 0) / 1000, data.messageCount || 0, data.timesRoasted || 0,
+               data.facts || [], data.coldShoulder?.active ?? false,
+               data.coldShoulder?.attemptsNeeded ?? 0, data.coldShoulder?.attemptsMade ?? 0,
+               data.gender ?? null]
+            );
+            count++;
+          }
         }
+        importedFiles.push(memoryFile);
+        console.log(`  Prepared ${count} user rows for migration`);
+      } catch (err) {
+        console.error('  user-memory.json migration failed:', (err as Error).message);
+        throw err;
       }
-      renameSync(beefsFile, beefsFile + '.migrated');
-      console.log(`  Migrated ${count} beef rows. File renamed to .migrated`);
-    } catch (err) {
-      console.error('  beefs.json migration failed:', (err as Error).message);
     }
-  }
 
-  // Migrate mood.json
-  const moodFile = join(dataDir, 'mood.json');
-  if (existsSync(moodFile)) {
-    console.log('Migrating mood.json to Postgres...');
-    try {
-      const moodData = JSON.parse(readFileSync(moodFile, 'utf-8')) as {
-        mood: string; intensity: number; lastShift: number; lastDecay: number;
-      };
-      if (fallbackServer) {
-        await pool.query(
+    // Migrate wild-quotes.json
+    const quotesFile = join(dataDir, 'wild-quotes.json');
+    if (existsSync(quotesFile)) {
+      console.log('Migrating wild-quotes.json to Postgres...');
+      try {
+        const quotes = JSON.parse(readFileSync(quotesFile, 'utf-8')) as Array<{
+          userId: string; name: string; quote: string; timestamp: number;
+        }>;
+        let count = 0;
+        for (const q of quotes) {
+          for (const serverId of getServers(q.userId)) {
+            await client.query(
+              `INSERT INTO wild_quotes (server_id, user_id, name, quote, timestamp)
+               VALUES ($1, $2, $3, $4, to_timestamp($5))
+               ON CONFLICT (server_id, quote) DO NOTHING`,
+              [serverId, q.userId, q.name, q.quote, (q.timestamp || Date.now()) / 1000]
+            );
+            count++;
+          }
+        }
+        importedFiles.push(quotesFile);
+        console.log(`  Prepared ${count} wild quote rows for migration`);
+      } catch (err) {
+        console.error('  wild-quotes.json migration failed:', (err as Error).message);
+        throw err;
+      }
+    }
+
+    // Migrate beefs.json
+    const beefsFile = join(dataDir, 'beefs.json');
+    if (existsSync(beefsFile)) {
+      console.log('Migrating beefs.json to Postgres...');
+      try {
+        const beefs = JSON.parse(readFileSync(beefsFile, 'utf-8')) as Record<string, {
+          incidents: number; firstBeef: number; lastBeef: number; lastTopic: string | null;
+        }>;
+        let count = 0;
+        for (const [key, data] of Object.entries(beefs)) {
+          const [userId1, userId2] = key.split('-');
+          if (!userId1 || !userId2) throw new Error('Legacy beef entry has invalid user IDs; source files were kept.');
+          const [id1, id2] = [userId1, userId2].sort();
+          const servers1 = getServers(userId1);
+          const servers2 = getServers(userId2);
+          const shared = new Set([...servers1].filter((s) => servers2.has(s)));
+          if (shared.size === 0 && fallbackServer) shared.add(fallbackServer);
+          if (shared.size === 0) throw new Error('Legacy beef entry has no server assignment; source files were kept.');
+          for (const serverId of shared) {
+            await client.query(
+              `INSERT INTO beefs (server_id, user1_id, user2_id, incidents, first_beef, last_beef, last_topic)
+               VALUES ($1, $2, $3, $4, to_timestamp($5), to_timestamp($6), $7)
+               ON CONFLICT (server_id, user1_id, user2_id) DO NOTHING`,
+              [serverId, id1, id2, data.incidents, (data.firstBeef || Date.now()) / 1000,
+               (data.lastBeef || Date.now()) / 1000, data.lastTopic]
+            );
+            count++;
+          }
+        }
+        importedFiles.push(beefsFile);
+        console.log(`  Prepared ${count} beef rows for migration`);
+      } catch (err) {
+        console.error('  beefs.json migration failed:', (err as Error).message);
+        throw err;
+      }
+    }
+
+    // Migrate mood.json
+    const moodFile = join(dataDir, 'mood.json');
+    if (existsSync(moodFile)) {
+      console.log('Migrating mood.json to Postgres...');
+      try {
+        const moodData = JSON.parse(readFileSync(moodFile, 'utf-8')) as {
+          mood: string; intensity: number; lastShift: number; lastDecay: number;
+        };
+        if (!fallbackServer) throw new Error('Legacy mood has no server assignment; source files were kept.');
+        await client.query(
           `INSERT INTO mood_state (server_id, mood, intensity, last_shift, last_decay)
            VALUES ($1, $2, $3, to_timestamp($4), to_timestamp($5))
            ON CONFLICT (server_id) DO NOTHING`,
           [fallbackServer, moodData.mood || 'neutral', moodData.intensity || 0,
            (moodData.lastShift || Date.now()) / 1000, (moodData.lastDecay || Date.now()) / 1000]
         );
+        importedFiles.push(moodFile);
+        console.log('  Prepared mood state for migration');
+      } catch (err) {
+        console.error('  mood.json migration failed:', (err as Error).message);
+        throw err;
       }
-      renameSync(moodFile, moodFile + '.migrated');
-      console.log('  Migrated mood state. File renamed to .migrated');
-    } catch (err) {
-      console.error('  mood.json migration failed:', (err as Error).message);
     }
+
+    // Keep source files until every import commits; retries leave existing guild rows intact.
+    await client.query('COMMIT');
+    committed = true;
+    for (const file of importedFiles) renameSync(file, file + '.migrated');
+    console.log(`Migrated ${importedFiles.length} legacy files; sources renamed to .migrated`);
+  } catch (err) {
+    if (!committed) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackError) {
+        releaseError = rollbackError instanceof Error ? rollbackError : new Error(String(rollbackError));
+        console.error('Legacy file migration rollback failed:', releaseError.message);
+      }
+    }
+    throw err;
+  } finally {
+    client.release(releaseError);
   }
 }
 
@@ -230,9 +271,6 @@ async function migrateLocalFiles(): Promise<void> {
 export async function createSchema(): Promise<void> {
   const pool = getRawPool();
   if (!pool) return;
-
-  // Migrate old pair_interactions if needed (before CREATE TABLE IF NOT EXISTS)
-  await migratePairInteractions();
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS interactions (
@@ -378,6 +416,17 @@ export async function createSchema(): Promise<void> {
     );
   `);
 
+  // Fresh tables and interaction history must exist before legacy schema inspection.
+  await migratePairInteractions();
+
+  // Unknown legacy vectors remain untouched; only new writes identify their embedding space.
+  try {
+    await pool.query('ALTER TABLE vector_memories ADD COLUMN IF NOT EXISTS embedding_space TEXT');
+  } catch (err) {
+    console.error('Vector memory embedding-space migration failed:', (err as Error).message);
+    throw err;
+  }
+
   // Migrate affinity column INTEGER → REAL (separate query to avoid rollback if main block ever fails)
   try {
     const typeCheck = await pool.query(
@@ -391,6 +440,7 @@ export async function createSchema(): Promise<void> {
     }
   } catch (err) {
     console.error('Affinity column migration failed:', (err as Error).message);
+    throw err;
   }
 
   // Deduplicate wild quotes then add unique index (separate step to avoid breaking schema init)
@@ -422,8 +472,14 @@ export async function createSchema(): Promise<void> {
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS distilled_profile TEXT`);
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_updated_at TIMESTAMPTZ`);
   } catch (err) {
-    console.error('Distilled profile columns failed (non-fatal):', (err as Error).message);
+    console.error('Distilled profile columns failed:', (err as Error).message);
+    throw err;
   }
+
+  await pool.query(`CREATE TABLE IF NOT EXISTS maintenance_state (
+    job_name TEXT PRIMARY KEY,
+    started_at TIMESTAMPTZ NOT NULL
+  )`);
 
   // Migrate local JSON files to Postgres (one-time, on first deploy after guild-scoping)
   await migrateLocalFiles();

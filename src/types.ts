@@ -121,6 +121,8 @@ export interface QueryAIOptions {
   imageUrl?: string | null;
   maxTokens?: number;
   temperature?: number;
+  signal?: AbortSignal;
+  timeoutMs?: number;
 }
 
 export interface AIResponse {

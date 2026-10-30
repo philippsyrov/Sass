@@ -15,6 +15,8 @@ const MAX_MESSAGES_PER_CHANNEL = 30;
 const MAX_TRACKED_CHANNELS = 1000;
 const COMPACTION_BATCH_SIZE = 10;
 const MAX_SUMMARY_LENGTH = 300;
+const MAX_ACTIVE_COMPACTIONS = 2;
+const MAX_QUEUED_COMPACTION_CHANNELS = 32;
 const SUMMARY_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 const MAX_COMPACTION_FAILURES = 3; // stop trying after 3 consecutive failures (circuit breaker)
 
@@ -22,12 +24,14 @@ class MessageBuffer {
   channels: Map<string, BufferEntry[]>;
   private summaries: Map<string, ChannelSummary>;
   private pendingCompaction: Set<string>;
+  private droppedMessages: Map<string, BufferEntry[]>;
   private compactionFailures: Map<string, number>; // per-channel circuit breaker
 
   constructor() {
     this.channels = new Map();
     this.summaries = new Map();
     this.pendingCompaction = new Set();
+    this.droppedMessages = new Map();
     this.compactionFailures = new Map();
   }
 
@@ -42,6 +46,7 @@ class MessageBuffer {
           this.channels.delete(oldest);
           this.summaries.delete(oldest);
           this.compactionFailures.delete(oldest);
+          this.droppedMessages.delete(oldest);
         }
       }
       this.channels.set(channelId, []);
@@ -60,21 +65,35 @@ class MessageBuffer {
       isSelf: selfId !== undefined && message.author.id === selfId,
     });
 
-    // Compact and trim when buffer overflows
-    if (buffer.length > MAX_MESSAGES_PER_CHANNEL) {
-      const overflow = buffer.length - MAX_MESSAGES_PER_CHANNEL;
+    this.trimChannel(channelId, buffer);
+  }
 
-      // If enough messages are being dropped, no compaction in progress,
-      // and circuit breaker hasn't tripped for this channel — capture and summarize async
-      if (overflow >= COMPACTION_BATCH_SIZE && !this.pendingCompaction.has(channelId) && (this.compactionFailures.get(channelId) ?? 0) < MAX_COMPACTION_FAILURES) {
-        const dropped = buffer.slice(0, overflow);
-        this.compactChannel(channelId, dropped).catch((err) =>
-          console.error('Buffer compaction failed:', (err as Error).message)
-        );
-      }
-
-      buffer.splice(0, overflow);
+  private trimChannel(channelId: string, buffer: BufferEntry[]): void {
+    const overflow = buffer.length - MAX_MESSAGES_PER_CHANNEL;
+    if (overflow <= 0) return;
+    const dropped = buffer.splice(0, overflow);
+    if ((this.compactionFailures.get(channelId) ?? 0) >= MAX_COMPACTION_FAILURES) return;
+    if (!this.droppedMessages.has(channelId) && this.droppedMessages.size >= MAX_QUEUED_COMPACTION_CHANNELS) {
+      const oldest = this.droppedMessages.keys().next().value;
+      if (oldest !== undefined) this.droppedMessages.delete(oldest);
     }
+    const pending = this.droppedMessages.get(channelId) ?? [];
+    pending.push(...dropped);
+    // Keep the queue bounded while a slow model call is in flight.
+    if (pending.length > MAX_MESSAGES_PER_CHANNEL) pending.splice(0, pending.length - MAX_MESSAGES_PER_CHANNEL);
+    this.droppedMessages.set(channelId, pending);
+    this.startCompaction(channelId);
+  }
+
+  private startCompaction(channelId: string): void {
+    const pending = this.droppedMessages.get(channelId);
+    if (!pending || pending.length < COMPACTION_BATCH_SIZE || this.pendingCompaction.has(channelId)
+        || this.pendingCompaction.size >= MAX_ACTIVE_COMPACTIONS
+        || (this.compactionFailures.get(channelId) ?? 0) >= MAX_COMPACTION_FAILURES) return;
+    this.droppedMessages.delete(channelId);
+    this.compactChannel(channelId, pending).catch((err) =>
+      console.error('Buffer compaction failed:', (err as Error).message)
+    );
   }
 
   /**
@@ -122,6 +141,7 @@ class MessageBuffer {
           this.channels.delete(oldest);
           this.summaries.delete(oldest);
           this.compactionFailures.delete(oldest);
+          this.droppedMessages.delete(oldest);
         }
       }
       this.channels.set(channelId, []);
@@ -138,9 +158,7 @@ class MessageBuffer {
       isSelf: true,
     });
 
-    if (buffer.length > MAX_MESSAGES_PER_CHANNEL) {
-      buffer.shift();
-    }
+    this.trimChannel(channelId, buffer);
   }
 
   /**
@@ -148,9 +166,14 @@ class MessageBuffer {
    * Runs async — the buffer is already trimmed by the time this completes.
    */
   private async compactChannel(channelId: string, dropped: BufferEntry[]): Promise<void> {
+    const generation = this.channels.get(channelId);
     this.pendingCompaction.add(channelId);
     try {
-      const newSummary = await summarizeMessages(dropped);
+      const newSummary = await summarizeMessages(dropped).catch((err) => {
+        console.error('Buffer compaction failed:', (err as Error).message);
+        return null;
+      });
+      if (!generation || this.channels.get(channelId) !== generation) return;
       if (!newSummary) {
         const fails = (this.compactionFailures.get(channelId) ?? 0) + 1;
         this.compactionFailures.set(channelId, fails);
@@ -195,6 +218,10 @@ class MessageBuffer {
       });
     } finally {
       this.pendingCompaction.delete(channelId);
+      for (const queuedChannel of this.droppedMessages.keys()) {
+        if (this.pendingCompaction.size >= MAX_ACTIVE_COMPACTIONS) break;
+        this.startCompaction(queuedChannel);
+      }
     }
   }
 }

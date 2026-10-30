@@ -10,6 +10,7 @@
  * All data is scoped to guild — same pair in different servers = independent scores.
  */
 
+import { captureUserDataToken, isUserDataTokenCurrent, withUserDataWrite } from './database/userDataGuard.js';
 import { getBeef } from './userMemory.js';
 import { recordPairInteractionDB, getPairInteractionCountDB, isDatabaseConnected } from './database/index.js';
 
@@ -32,21 +33,37 @@ function pairKey(guildId: string, id1: string, id2: string): string {
   return `${guildId}:${sorted[0]}:${sorted[1]}`;
 }
 
+/** Clear only cached pairs involving this user in this guild. */
+export function clearUserPairCache(guildId: string, userId: string): void {
+  for (const key of pairCache.keys()) {
+    const [guild, first, second] = key.split(':');
+    if (guild === guildId && (first === userId || second === userId)) pairCache.delete(key);
+  }
+}
+
+function pairTokens(guildId: string, userId1: string, userId2: string) {
+  const [first, second] = [userId1, userId2].sort() as [string, string];
+  return [captureUserDataToken(guildId, first), captureUserDataToken(guildId, second)] as const;
+}
+
+function cacheCount(key: string, count: number): void {
+  pairCache.set(key, count);
+  if (pairCache.size > MAX_CACHE_SIZE) {
+    const oldest = pairCache.keys().next().value;
+    if (oldest !== undefined) pairCache.delete(oldest);
+  }
+}
+
 /**
  * Record an interaction between two users in a guild.
  * Writes to both cache and DB.
  */
 export function recordPairInteraction(guildId: string, userId1: string, userId2: string): void {
   if (userId1 === userId2) return;
+  const tokens = pairTokens(guildId, userId1, userId2);
+  if (!tokens.every(isUserDataTokenCurrent)) return;
   const key = pairKey(guildId, userId1, userId2);
-  const current = pairCache.get(key) || 0;
-  pairCache.set(key, current + 1);
-
-  // Evict oldest if over cap
-  if (pairCache.size > MAX_CACHE_SIZE) {
-    const oldest = pairCache.keys().next().value;
-    if (oldest !== undefined) pairCache.delete(oldest);
-  }
+  cacheCount(key, (pairCache.get(key) || 0) + 1);
 
   // Persist to DB (fire and forget)
   recordPairInteractionDB(guildId, userId1, userId2).catch((err) =>
@@ -59,23 +76,34 @@ export function recordPairInteraction(guildId: string, userId1: string, userId2:
  * Checks cache first, falls back to DB.
  */
 export async function getPairInteractionsAsync(guildId: string, userId1: string, userId2: string): Promise<number> {
+  const tokens = pairTokens(guildId, userId1, userId2);
+  if (!tokens.every(isUserDataTokenCurrent)) return 0;
   const key = pairKey(guildId, userId1, userId2);
   const cached = pairCache.get(key);
   if (cached !== undefined) return cached;
+  if (!isDatabaseConnected()) return 0;
 
-  if (isDatabaseConnected()) {
+  const read = async (): Promise<number> => {
+    const existing = pairCache.get(key);
+    if (existing !== undefined) return existing;
     const count = await getPairInteractionCountDB(guildId, userId1, userId2);
-    pairCache.set(key, count);
-    return count;
-  }
-
-  return 0;
+    if (!tokens.every(isUserDataTokenCurrent)) return 0;
+    // A new interaction may have populated the cache while the read was pending.
+    if (!pairCache.has(key)) cacheCount(key, count);
+    return pairCache.get(key) ?? 0;
+  };
+  const result = await withUserDataWrite(tokens[0], async () => {
+    if (userId1 === userId2) return read();
+    return withUserDataWrite(tokens[1], read);
+  });
+  return result ?? 0;
 }
 
 /**
  * Sync version — returns cached value only (0 if not cached).
  */
 export function getPairInteractions(guildId: string, userId1: string, userId2: string): number {
+  if (!pairTokens(guildId, userId1, userId2).every(isUserDataTokenCurrent)) return 0;
   return pairCache.get(pairKey(guildId, userId1, userId2)) || 0;
 }
 
@@ -83,12 +111,7 @@ export function getPairInteractions(guildId: string, userId1: string, userId2: s
  * Warm the cache for a pair from DB. Call before getShipScore.
  */
 export async function warmPairCache(guildId: string, userId1: string, userId2: string): Promise<void> {
-  const key = pairKey(guildId, userId1, userId2);
-  if (pairCache.has(key)) return;
-  if (isDatabaseConnected()) {
-    const count = await getPairInteractionCountDB(guildId, userId1, userId2);
-    pairCache.set(key, count);
-  }
+  await getPairInteractionsAsync(guildId, userId1, userId2);
 }
 
 /**

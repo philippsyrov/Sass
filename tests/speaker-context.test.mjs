@@ -17,7 +17,7 @@ const { buildCreatorPrompt } = await import('../src/ai/responses.ts');
 
 const users = {
   [SELF]: { id: SELF, username: 'Sass Test', displayName: 'Sass Test', bot: true },
-  [CREATOR]: { id: CREATOR, username: 'example_user', displayName: 'ExampleUser', bot: false },
+  [CREATOR]: { id: CREATOR, username: 'creator', displayName: 'Creator', bot: false },
   '42': { id: '42', username: 'friend', displayName: 'Friend', bot: false },
 };
 let n = 0;
@@ -35,7 +35,7 @@ function fakeMessage(channelId, authorId, content) {
 }
 
 test('speakerLabel puts the id in every human label and marks the creator and Sass', () => {
-  assert.equal(speakerLabel({ authorId: CREATOR, author: 'ExampleUser', isBot: false }), `ExampleUser (id ${CREATOR}, your creator)`);
+  assert.equal(speakerLabel({ authorId: CREATOR, author: 'Creator', isBot: false }), `Creator (id ${CREATOR}, your creator)`);
   assert.equal(speakerLabel({ authorId: '42', author: 'Friend', isBot: false }), 'Friend (id 42)');
   assert.equal(speakerLabel({ authorId: SELF, author: 'Sass Test', isBot: true, isSelf: true }), 'Sass (you)');
   assert.equal(speakerLabel({ authorId: '7', author: 'Other', isBot: true }), 'Other [BOT]');
@@ -52,7 +52,7 @@ test('the message being answered is not repeated in the log (one creator message
   const ctx = await buildBaseContext('g', 'c1', 25, { excludeMessageId: msg.id });
   assert.equal(ctx.recentContext, '');
   const prompt = buildCreatorPrompt('Sass Test hello there', ctx.recentContext, ctx.peopleContext, null,
-    speakerLabel({ authorId: CREATOR, author: 'ExampleUser', isBot: false }));
+    speakerLabel({ authorId: CREATOR, author: 'Creator', isBot: false }));
   assert.equal(prompt.match(/hello there/g).length, 1, prompt);
   assert.doesNotMatch(prompt, /<@\d+>/);
 });
@@ -63,10 +63,10 @@ test('creator earlier lines, Sass replies and the current message all use one la
   const current = fakeMessage('c2', CREATOR, `<@${SELF}> Sass Test hello there`);
   messageBuffer.add(current);
   const ctx = await buildBaseContext('g', 'c2', 25, { excludeMessageId: current.id });
-  const label = `ExampleUser (id ${CREATOR}, your creator)`;
+  const label = `Creator (id ${CREATOR}, your creator)`;
   assert.equal(ctx.recentContext, `${label}: @Sass hello there\nSass (you): yo what's good`);
   assert.equal(ctx.peopleContext.split('\n').filter((l) => l.startsWith('- ')).length, 1, ctx.peopleContext);
-  assert.match(ctx.peopleContext, new RegExp(`^- ExampleUser \\(id ${CREATOR}, your creator\\):`, 'm'));
+  assert.match(ctx.peopleContext, new RegExp(`^- Creator \\(id ${CREATOR}, your creator\\):`, 'm'));
   const prompt = buildCreatorPrompt('Sass Test hello there', ctx.recentContext, ctx.peopleContext, null, label);
   assert.match(prompt, new RegExp(`${label.replace(/[()]/g, '\\$&')} — same person as their lines above — just said to you: Sass Test hello there$`));
 });

@@ -9,6 +9,7 @@ const TIMEOUT_MS = 10_000;
 export interface DiscordApp {
   id: string;
   name: string;
+  ownerId?: string;
   presenceIntent: boolean;
   messageContentIntent: boolean;
 }
@@ -33,7 +34,7 @@ export async function fetchDiscordApp(token: string): Promise<Result<DiscordApp>
     });
     if (res.status === 401) return { ok: false, error: 'Discord rejected the token (401). Reset it in the Developer Portal and paste the new one.' };
     if (!res.ok) return { ok: false, error: `Discord answered HTTP ${res.status}.` };
-    const body = await res.json() as { id?: string; name?: string; flags?: number };
+    const body = await res.json() as { id?: string; name?: string; flags?: number; owner?: { id?: string }; team?: { owner_user_id?: string } };
     const flags = body.flags ?? 0;
     const has = (full: number, limited: number) => (flags & full) !== 0 || (flags & limited) !== 0;
     return {
@@ -41,12 +42,33 @@ export async function fetchDiscordApp(token: string): Promise<Result<DiscordApp>
       data: {
         id: body.id ?? '',
         name: body.name ?? '(unnamed app)',
+        ownerId: body.team?.owner_user_id ?? body.owner?.id,
         presenceIntent: has(ApplicationFlags.GatewayPresence, ApplicationFlags.GatewayPresenceLimited),
         messageContentIntent: has(ApplicationFlags.GatewayMessageContent, ApplicationFlags.GatewayMessageContentLimited),
       },
     };
   } catch (err) {
     return { ok: false, error: `Could not reach Discord: ${errorMessage(err)}` };
+  }
+}
+
+/** GET Anthropic /v1/models (OpenAI-compatible listing). */
+export async function listAnthropicModels(apiKey: string): Promise<Result<string[]>> {
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/models', {
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (res.status === 401 || res.status === 403) return { ok: false, error: `Anthropic rejected the key (HTTP ${res.status}).` };
+    if (!res.ok) return { ok: false, error: `Anthropic /v1/models answered HTTP ${res.status}.` };
+    const body = await res.json() as { data?: Array<{ id?: unknown }> };
+    const ids = (body.data ?? []).map((m) => m.id).filter((id): id is string => typeof id === 'string');
+    return { ok: true, data: ids };
+  } catch (err) {
+    return { ok: false, error: `Could not reach Anthropic: ${errorMessage(err)}` };
   }
 }
 

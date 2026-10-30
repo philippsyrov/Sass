@@ -4,7 +4,7 @@ import type { BufferEntry } from '../types.js';
  * One stable label per speaker, used everywhere Sass reads chat: the recent-chat log,
  * the people list and the line she is answering. The Discord user id is in every label,
  * so the same person always reads as the same person even when the display name changes,
- * and the creator is marked so creator mode knows "ExampleUser" in the log is who it's talking to.
+ * and the creator is marked so creator mode knows "Creator" in the log is who it's talking to.
  */
 export function speakerLabel(
   entry: Pick<BufferEntry, 'authorId' | 'author' | 'isBot'> & { isSelf?: boolean },

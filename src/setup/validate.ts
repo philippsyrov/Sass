@@ -24,14 +24,15 @@ export interface ProviderPreset {
 
 // Base URLs match the table in docs/CONFIGURATION.md.
 export const PROVIDERS: readonly ProviderPreset[] = [
+  { key: 'anthropic', label: 'Anthropic (Claude)', aiProvider: 'openai', baseUrl: 'https://api.anthropic.com/v1', fetchesImageUrls: true, servesEmbeddings: false },
   { key: 'openai', label: 'OpenAI', aiProvider: 'openai', fetchesImageUrls: true, servesEmbeddings: true },
   { key: 'openrouter', label: 'OpenRouter', aiProvider: 'openai', baseUrl: 'https://openrouter.ai/api/v1', fetchesImageUrls: true, servesEmbeddings: false },
   { key: 'groq', label: 'Groq', aiProvider: 'openai', baseUrl: 'https://api.groq.com/openai/v1', fetchesImageUrls: true, servesEmbeddings: false },
   { key: 'xai', label: 'xAI', aiProvider: 'openai', baseUrl: 'https://api.x.ai/v1', fetchesImageUrls: true, servesEmbeddings: false },
   { key: 'together', label: 'Together', aiProvider: 'openai', baseUrl: 'https://api.together.xyz/v1', fetchesImageUrls: true, servesEmbeddings: false },
-  { key: 'lmstudio', label: 'LM Studio (local)', aiProvider: 'openai', baseUrl: 'http://localhost:1234/v1', localKey: 'lm-studio', fetchesImageUrls: false, servesEmbeddings: false },
   { key: 'other', label: 'Another OpenAI-compatible API (you have its base URL)', aiProvider: 'openai', askBaseUrl: true, fetchesImageUrls: true, servesEmbeddings: false },
-  { key: 'ollama', label: 'Ollama (local, native API)', aiProvider: 'ollama', fetchesImageUrls: false, servesEmbeddings: false },
+  { key: 'ollama', label: 'Ollama (local, free — no API key)', aiProvider: 'ollama', fetchesImageUrls: false, servesEmbeddings: false },
+  { key: 'lmstudio', label: 'LM Studio (local, free — no API key)', aiProvider: 'openai', baseUrl: 'http://127.0.0.1:1234/v1', localKey: 'lm-studio', fetchesImageUrls: false, servesEmbeddings: false },
 ];
 
 /** Strip whitespace and quotes people paste along with a value. */
@@ -130,6 +131,7 @@ export function normalizeHost(raw: string): Check {
 /** Known key prefixes. A mismatch is only a warning: hosts change formats. */
 const KEY_PREFIXES: Record<string, string> = {
   openai: 'sk-',
+  anthropic: 'sk-ant-',
   openrouter: 'sk-or-',
   groq: 'gsk_',
   xai: 'xai-',

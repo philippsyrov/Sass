@@ -1,3 +1,4 @@
+import { clearUserPairCache } from '../shipScore.js';
 import {
   EmbedBuilder,
   ActionRowBuilder,
@@ -248,6 +249,7 @@ export async function handleEntertainmentCommand(
         }
         if (btn.customId === 'forgetme_confirm') {
           userMemory.clearPendingSeen(guildId, interaction.user.id);
+          clearUserPairCache(guildId, interaction.user.id);
           clearUserRuntimeState(guildId, interaction.user.id);
           const result = await deleteUserData(guildId, interaction.user.id);
           if (result.deleted) {

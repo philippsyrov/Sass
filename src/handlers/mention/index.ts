@@ -217,7 +217,7 @@ export async function handleMention(message: Message, client: Client, event?: Sa
 
   // Build context — include who is speaking so the AI understands the conversation
   const { recentContext, peopleContext } = await buildBaseContext(guildId, channel.id, 25, { excludeMessageId: message.id });
-  const userContext = await userMemory.getContext(guildId, userId, displayName);
+  const userContext = await userMemory.getContext(guildId, userId, displayName, { neutral: isCreator });
 
   // Check if someone is talking about the creator — protect them
   const creatorName = await userMemory.getCreatorName(guildId);
@@ -305,7 +305,7 @@ export async function handleMention(message: Message, client: Client, event?: Sa
         : '[GENUINE QUESTION — answer this directly with real information. Add personality on top, but ANSWER FIRST. Don\'t deflect.]';
     }
 
-    const fullUserContext = [userContext, vectorContext, responseHistory, personalityContext, sensitiveHint, questionHint].filter(Boolean).join('\n\n');
+    const fullUserContext = [userContext, vectorContext, responseHistory, personalityContext, isCreator ? '' : sensitiveHint, questionHint].filter(Boolean).join('\n\n');
     const aiResult = await getSassResponse(framedMessage, { guildId, recentContext, userContext: fullUserContext, peopleContext, isCreator, mentionsCreator, creatorName, imageUrl, speaker });
     const response = aiResult.text;
     if (!response) {

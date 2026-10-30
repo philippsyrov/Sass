@@ -5,6 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "setup": "tsx src/setup.ts",
+    "invite": "node dist/invite.js",
     "assets": "tsx scripts/upload-assets.ts",
     "emoji": "tsx scripts/upload-assets.ts",
     "test": "node --test tests/*.test.mjs",
@@ -14,6 +15,7 @@
     "lint": "eslint src/",
     "doctor": "node dist/doctor.js",
     "verify": "./scripts/verify.sh",
+    "generate-mascot": "python3 scripts/generate-mascot-art.py",
     "migrate": "tsx src/migrate.ts"
   },
   "keywords": [
@@ -28,13 +30,23 @@
   "engines": {
     "node": ">=20.0.0"
   },
+  "overrides": {
+    "esbuild": "^0.28.2"
+  },
   "dependencies": {
-    "canvas": "^3.2.2",
-    "discord.js": "^14.25.1",
+    "@clack/prompts": "^1.8.1",
+    "@huggingface/transformers": "^4.3.2",
+    "@types/react": "^18.3.12",
+    "canvas": "^3.2.3",
+    "discord.js": "^14.27.0",
     "dotenv": "^17.3.1",
+    "embedded-postgres": "^18.4.0-beta.17",
+    "ink": "^5.2.1",
+    "ink-text-input": "^6.0.0",
     "ollama": "^0.6.3",
     "openai": "^6.32.0",
-    "pg": "^8.20.0"
+    "pg": "^8.20.0",
+    "react": "^18.3.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
