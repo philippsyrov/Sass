@@ -89,7 +89,7 @@ export function SetupView({ onCancel }: { onCancel?: () => void } = {}): React.R
   const optionStart = prompt?.kind === 'select'
     ? Math.max(0, Math.min(selectIdx - Math.floor(optionCount / 2), prompt.options.length - optionCount))
     : 0;
-  const promptRows = questionHeight + (prompt?.kind === 'select' ? optionCount + 1 : prompt?.kind === 'text' ? 1 : 0);
+  const promptRows = questionHeight + (prompt?.kind === 'select' ? optionCount + 1 : prompt?.kind === 'text' || !prompt ? 1 : 0);
   const maxDone = Math.max(0, rows - promptRows - 6);
   // wrapPlain keeps long words intact, but Ink wraps those words physically.
   // Count their actual rows here so the details box cannot overwrite later text.

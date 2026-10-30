@@ -263,3 +263,23 @@ test('a resized narrow window cannot accept an invisible confirmation', async (t
   ui.stdin.write('\r');
   assert.equal(await response, true);
 });
+
+test('delayed validation keeps the original artwork in every rendered frame', async (t) => {
+  const { setupMascotLines } = await import('../dist/setup/mascotCompact.js');
+  const response = inkAskText('Synthetic API key', { secret: true });
+  const ui = await mount(t);
+  await ui.until('Synthetic API key');
+  await delay(30);
+  ui.stdin.write('synthetic-key');
+  await ui.until('••••');
+  const before = stripVTControlCharacters(ui.frame()).split('\n');
+  const questionRow = before.findIndex(line => line.includes('Synthetic API key'));
+  await delay(30);
+  ui.stdin.write('\r');
+  await response;
+  pushInkMessage('Working: validating connection');
+  await delay(100);
+  const frame = stripVTControlCharacters(ui.frame()).split('\n');
+  assert.equal(frame.findIndex(line => line.includes('Working…')), questionRow);
+  for (const [i, line] of setupMascotLines().entries()) assert.equal(frame[i].slice(0, 45).padEnd(45), stripVTControlCharacters(line));
+});

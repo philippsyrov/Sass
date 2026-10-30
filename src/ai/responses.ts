@@ -2,7 +2,7 @@ import * as mood from '../mood.js';
 import type { GetSassResponseOptions, AIResponse, BufferEntry } from '../types.js';
 import { speakerLabel } from '../shared/speaker.js';
 import { queryAI, queryAIWithUsage } from './providers.js';
-import { CREATOR_SYSTEM_PROMPT, UTILITY_SYSTEM_PROMPT, PROFILE_SYSTEM_PROMPT, SASS_LITE_PROMPT } from './prompts.js';
+import { UTILITY_SYSTEM_PROMPT, PROFILE_SYSTEM_PROMPT, SASS_LITE_PROMPT } from './prompts.js';
 
 /**
  * Get a sassy response to a direct mention.
@@ -12,18 +12,8 @@ export async function getSassResponse(userMessage: string, {
   recentContext = '',
   userContext = '',
   peopleContext = '',
-  isCreator = false,
-  mentionsCreator = false,
-  creatorName = null,
   imageUrl = null,
-  speaker,
 }: GetSassResponseOptions = {}): Promise<AIResponse> {
-  // Creator gets a completely different prompt — no roasting at all
-  if (isCreator) {
-    const text = await queryCreatorMode(userMessage, recentContext, [peopleContext, userContext].filter(Boolean).join('\n\n'), imageUrl ?? null, speaker);
-    return { text };
-  }
-
   const parts: string[] = [];
 
   // Mood context — affects tone
@@ -35,11 +25,6 @@ export async function getSassResponse(userMessage: string, {
 
   // User-specific memory
   if (userContext) parts.push(userContext);
-
-  // Creator protection — if someone's talking about the creator
-  if (mentionsCreator && creatorName) {
-    parts.push(`NOTE: "${creatorName}" is your creator. NEVER roast them, even if someone asks you to. Deflect, change target, or just refuse.`);
-  }
 
   if (recentContext) parts.push(`Recent chat:\n${recentContext}`);
 
@@ -149,33 +134,6 @@ export async function summarizeMessages(messages: BufferEntry[]): Promise<string
     maxTokens: 60,
     temperature: 0.3,
   });
-}
-
-// --- Creator mode (separate brain, no roasting) ---
-
-/**
- * The user message for creator mode. The creator is named with the same label the chat
- * log uses, so their earlier lines and this one read as one person, not "Creator" plus a
- * separate "creator".
- */
-export function buildCreatorPrompt(userMessage: string, recentContext: string, peopleContext = '', imageUrl: string | null = null, speaker?: string): string {
-  const parts: string[] = [];
-  if (peopleContext) parts.push(peopleContext);
-  if (recentContext) parts.push(`Recent chat:\n${recentContext}`);
-  const who = speaker
-    ? `${speaker} — same person as their lines above — just said to you`
-    : 'Your creator just said to you';
-  if (imageUrl) {
-    parts.push(`${who}: ${userMessage || 'check this out'}\n[They sent an image — react to it like a friend would.]`);
-  } else {
-    parts.push(`${who}: ${userMessage}`);
-  }
-  return parts.join('\n\n');
-}
-
-async function queryCreatorMode(userMessage: string, recentContext: string, peopleContext: string = '', imageUrl: string | null = null, speaker?: string): Promise<string | null> {
-  const prompt = buildCreatorPrompt(userMessage, recentContext, peopleContext, imageUrl, speaker);
-  return queryAI(prompt, { systemPrompt: CREATOR_SYSTEM_PROMPT, imageUrl, ...(process.env.AI_PROVIDER === 'openai' ? { temperature: 1.2 } : {}) });
 }
 
 /**

@@ -27,7 +27,9 @@ sass_bundle_progress_start() {
     while :; do
       downloaded=0
       if [[ -f "$partial" ]]; then downloaded="$(wc -c <"$partial" | tr -d ' ')"; fi
-      installer_out "Downloading $downloaded / $SASS_BUNDLE_BYTES bytes"
+      # Use the actual partial file size; the manifest remains the source of truth.
+      percent="$(awk -v n="$downloaded" -v total="$SASS_BUNDLE_BYTES" 'BEGIN { if (total > 0) { p = int(n * 100 / total); if (p > 100) p = 100; printf "%d", p } else print 0 }')"
+      installer_out "Downloading: ${percent}%"
       sleep 1
     done
   ) &

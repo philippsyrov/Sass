@@ -55,9 +55,6 @@ export async function handleMention(message: Message, client: Client, event?: Sa
     message.mentions.users.values(),
   ).trim();
 
-  // Check if this is the creator
-  const isCreator = userId === process.env.CREATOR_ID;
-
   // Check for image attachments (jpg, png, gif, webp)
   const imageAttachment = message.attachments.find((a: Attachment) =>
     a.contentType != null && a.contentType.startsWith('image/')
@@ -66,10 +63,10 @@ export async function handleMention(message: Message, client: Client, event?: Sa
   const lowerClean = cleanContent.toLowerCase();
 
   // --- Spam detection: ignore low-effort repeated pings ---
-  if (isSpamPing(guildId, userId, cleanContent, isCreator)) { console.log(`[SKIP] spam ping from ${userId.slice(-4)}`); return; }
+  if (isSpamPing(guildId, userId, cleanContent)) { console.log(`[SKIP] spam ping from ${userId.slice(-4)}`); return; }
 
   // --- Sensitive topic handling: disengage from drama bait ---
-  const sensitiveResult = await isSensitiveTopic(message, guildId, userId, displayName, cleanContent, isCreator);
+  const sensitiveResult = await isSensitiveTopic(message, guildId, userId, displayName, cleanContent);
   if (sensitiveResult === 'ignore' || sensitiveResult === 'check-in') { console.log(`[SKIP] sensitive topic (${sensitiveResult}) for ${userId.slice(-4)}`); return; }
 
   // Help — redirect to slash command
@@ -161,7 +158,7 @@ export async function handleMention(message: Message, client: Client, event?: Sa
 
   // Mood detection — detect how user is treating Sass
   // Tiered: standard insults just shift mood, severe toxicity also penalizes affinity
-  if (!isCreator && cleanContent) {
+  if (cleanContent) {
     const nicePatterns = /\b(you'?re (actually |pretty )?(cool|funny|great|awesome|the best|amazing|hilarious)|i love you|good bot|nice one|that was good|love sass|sass is the best|you'?re my fav)\b/i;
     const meanPatterns = /\b(you suck|worst bot|you'?re (trash|garbage|terrible|bad|boring|annoying|lame|stupid)|hate this bot|sass is (trash|mid|ass)|fuck you|fuck off|stfu|eat shit|piece of shit|pos)\b/i;
     const severeMeanPatterns = /\b(kys|kill yourself|go die)\b/i;
@@ -179,7 +176,7 @@ export async function handleMention(message: Message, client: Client, event?: Sa
   // Snowflake detection — someone wants Sass to stop
   const snowflakePhrases = /\b(stop roasting|leave me alone|you'?re mean|stop being mean|shut up|go away|i hate you|stop it|too far|that'?s rude|back off)\b/i;
   let coldShoulderPhase: string | null = null;
-  if (!isCreator && snowflakePhrases.test(lowerClean)) {
+  if (snowflakePhrases.test(lowerClean)) {
     mood.shift(guildId, 'insulted').catch((err) => console.error('Mood shift failed:', (err as Error).message));
     userMemory.coldShoulder(guildId, userId).catch((err) => console.error('Cold shoulder failed:', (err as Error).message));
     updateAffinity(guildId, userId, -5).catch((err) => console.error('Affinity penalty failed:', (err as Error).message));
@@ -187,7 +184,7 @@ export async function handleMention(message: Message, client: Client, event?: Sa
   }
 
   // Cold shoulder check — if they're already on the list, track their attempt
-  if (!isCreator && !coldShoulderPhase) {
+  if (!coldShoulderPhase) {
     const cs = await userMemory.getColdShoulder(guildId, userId);
     if (cs) {
       const status = await userMemory.coldShoulderAttempt(guildId, userId);
@@ -198,32 +195,23 @@ export async function handleMention(message: Message, client: Client, event?: Sa
 
   // If they just tagged us with nothing else (and no image)
   if (!cleanContent && !imageAttachment) {
-    if (isCreator) {
-      const creatorPings = ['yeah?', "what's up", 'hm?', 'you good?', "i'm here lol"];
-      await message.reply(pickRandom(creatorPings)).catch((err) => console.error('Reply failed:', (err as Error).message));
-    } else {
-      const emptyPings = [
-        'use your words',
-        'you just gonna stare or',
-        'bro typed @ and then gave up',
-        '...was there a point coming or',
-        'the silence is almost worse than what you were gonna say',
-        'you rang?',
-        'okay and?',
-        'that was a whole lot of nothing',
-      ];
-      await message.reply(pickRandom(emptyPings)).catch((err) => console.error('Reply failed:', (err as Error).message));
-    }
+    const emptyPings = [
+      'use your words',
+      'you just gonna stare or',
+      'bro typed @ and then gave up',
+      '...was there a point coming or',
+      'the silence is almost worse than what you were gonna say',
+      'you rang?',
+      'okay and?',
+      'that was a whole lot of nothing',
+    ];
+    await message.reply(pickRandom(emptyPings)).catch((err) => console.error('Reply failed:', (err as Error).message));
     return;
   }
 
   // Build context — include who is speaking so the AI understands the conversation
   const { recentContext, peopleContext } = await buildBaseContext(guildId, channel.id, 25, { excludeMessageId: message.id });
-  const userContext = await userMemory.getContext(guildId, userId, displayName, { neutral: isCreator });
-
-  // Check if someone is talking about the creator — protect them
-  const creatorName = await userMemory.getCreatorName(guildId);
-  const mentionsCreator = !isCreator && await userMemory.isAboutCreator(guildId, cleanContent);
+  const userContext = await userMemory.getContext(guildId, userId, displayName);
 
   // Detect genuine questions and server/memory queries for enhanced context
   const lowerContent = cleanContent?.toLowerCase() ?? '';
@@ -254,16 +242,15 @@ export async function handleMention(message: Message, client: Client, event?: Sa
   const tagCount = getEscalationCount(guildId, userId);
 
   // Frame the message with the same speaker label the chat log uses, so the person
-  // talking now is recognisably the same person as their earlier lines. Creator mode
-  // gets the label separately (see queryCreatorMode) and the raw text here.
+  // talking now is recognisably the same person as their earlier lines.
   const speaker = speakerLabel({ authorId: userId, author: displayName, isBot: false });
-  const framedMessage = isCreator ? cleanContent : `${speaker} says: ${cleanContent}`;
+  const framedMessage = `${speaker} says: ${cleanContent}`;
 
   try {
     await channel.sendTyping().catch((err) => console.error('sendTyping failed:', (err as Error).message));
 
-    // Caught in 4K — check for contradictions before responding (non-creator only)
-    if (!isCreator && cleanContent && cleanContent.length > 15) {
+    // Caught in 4K — check for contradictions before responding
+    if (cleanContent && cleanContent.length > 15) {
       try {
         const statement = await extractStatement(cleanContent);
         if (statement) {
@@ -290,11 +277,7 @@ export async function handleMention(message: Message, client: Client, event?: Sa
 
     // Unified personality context — combines long-term relationship (affinity) with
     // in-the-moment behavior (escalation) into ONE clear instruction for the AI.
-    let personalityContext = '';
-
-    if (!isCreator) {
-      personalityContext = buildPersonalityContext(displayName, escalationLevel, tagCount, affinity, coldShoulderPhase);
-    }
+    const personalityContext = buildPersonalityContext(displayName, escalationLevel, tagCount, affinity, coldShoulderPhase);
 
     // Sensitive topic dismiss hint
     const sensitiveHint = getSensitiveHint(guildId, userId, displayName);
@@ -307,8 +290,8 @@ export async function handleMention(message: Message, client: Client, event?: Sa
         : '[GENUINE QUESTION — answer this directly with real information. Add personality on top, but ANSWER FIRST. Don\'t deflect.]';
     }
 
-    const fullUserContext = [userContext, vectorContext, responseHistory, personalityContext, isCreator ? '' : sensitiveHint, questionHint].filter(Boolean).join('\n\n');
-    const aiResult = await getSassResponse(framedMessage, { guildId, recentContext, userContext: fullUserContext, peopleContext, isCreator, mentionsCreator, creatorName, imageUrl, speaker });
+    const fullUserContext = [userContext, vectorContext, responseHistory, personalityContext, sensitiveHint, questionHint].filter(Boolean).join('\n\n');
+    const aiResult = await getSassResponse(framedMessage, { guildId, recentContext, userContext: fullUserContext, peopleContext, imageUrl, speaker });
     const response = aiResult.text;
     if (!response) {
       await message.reply("My brain just short-circuited. Even AI has bad days, okay?");
@@ -318,7 +301,7 @@ export async function handleMention(message: Message, client: Client, event?: Sa
     // Build SassEvent for pipeline (if not passed from messageCreate)
     const pipelineEvent: SassEvent = event ?? {
       guildId, channelId: channel.id, userId, displayName,
-      content: cleanContent, isCreator, message, channel,
+      content: cleanContent, message, channel,
     };
 
     const fullContext = [recentContext, peopleContext, vectorContext, personalityContext].filter(Boolean).join('\n---\n');
@@ -330,7 +313,7 @@ export async function handleMention(message: Message, client: Client, event?: Sa
       triggerType: 'mention',
       onFiltered: 'fallback',
       sendMode: 'reply',
-      trackRoast: !isCreator,
+      trackRoast: true,
       updateAffinity: true,
       context: fullContext,
       affinity,

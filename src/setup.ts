@@ -203,7 +203,6 @@ async function setupDiscord(p: SetupPrompter, env: Record<string, string>, value
       values.DISCORD_TOKEN = token;
       values.CLIENT_ID = checked.data.id;
       values.CREATOR_ID = env.CREATOR_ID || checked.data.ownerId;
-      if (!values.CREATOR_ID) values.CREATOR_ID = await p.askValid('Your Discord user ID', raw => checkSnowflake(raw, 'Your user ID'));
       return true;
     }
   }
@@ -242,7 +241,9 @@ async function setupDiscord(p: SetupPrompter, env: Record<string, string>, value
     url: 'https://support.discord.com/hc/en-us/articles/206346498-Where-can-I-find-my-User-Server-Message-ID',
     text: 'How to copy your user ID',
   });
+  note('Owner ID is optional and only controls restricted administrator/test tools.');
   const creatorId = await p.askValid('Your Discord user ID (CREATOR_ID)', (raw) => {
+    if (!raw.trim()) return { ok: true, value: '' };
     const result = checkSnowflake(raw, 'Your user ID');
     if (result.ok && (result.value === clientId || result.value === botId)) {
       return { ok: false, error: 'That is the bot\'s ID. CREATOR_ID is your own account\'s ID.' };

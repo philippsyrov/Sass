@@ -116,7 +116,7 @@ test('Anthropic utility requests omit sampling settings rejected by current Clau
   }
 });
 
-test('Claude chat, creator and profile requests reserve thinking space and share provider rules', async () => {
+test('Claude chat and profile requests reserve thinking space and share provider rules', async () => {
   const { register } = await import('tsx/esm/api');
   register();
   const { queryAIWithUsage, resetOpenAIClientsForTests } = await import('../src/ai/providers.ts');
@@ -134,7 +134,7 @@ test('Claude chat, creator and profile requests reserve thinking space and share
     };
     resetOpenAIClientsForTests();
     assert.equal((await queryAIWithUsage('synthetic mention')).text, 'synthetic reply');
-    assert.equal((await getSassResponse('synthetic creator question', { isCreator: true })).text, 'synthetic reply');
+    assert.equal((await getSassResponse('synthetic question')).text, 'synthetic reply');
     assert.equal(await analyzeProfile('Example', 'synthetic history'), 'synthetic reply');
     assert.equal(await summarizeMessages([{ content: 'synthetic history', displayName: 'Example' }]), 'synthetic reply');
     assert.equal(requests.length, 4);
@@ -175,12 +175,12 @@ test('empty API replies log safe finish metadata without replaying private promp
   }
 });
 
-test('creator requests retain retrieved memory without changing the creator system prompt', async () => {
+test('normal requests retain retrieved memory and use the general system prompt', async () => {
   const { register } = await import('tsx/esm/api');
   register();
   const { resetOpenAIClientsForTests } = await import('../src/ai/providers.ts');
   const { getSassResponse } = await import('../src/ai/responses.ts');
-  const { CREATOR_SYSTEM_PROMPT } = await import('../src/ai/prompts.ts');
+  const { SASS_SYSTEM_PROMPT } = await import('../src/ai/prompts.ts');
   const saved = { ...process.env };
   const originalFetch = globalThis.fetch;
   let request;
@@ -191,8 +191,8 @@ test('creator requests retain retrieved memory without changing the creator syst
       return new Response(JSON.stringify({ choices: [{ message: { content: 'synthetic reply' } }] }), { headers: { 'content-type': 'application/json' } });
     };
     resetOpenAIClientsForTests();
-    await getSassResponse('what do you remember?', { isCreator: true, userContext: 'RELEVANT MEMORIES: Example likes astronomy.' });
-    assert.equal(request.messages[0].content, CREATOR_SYSTEM_PROMPT);
+    await getSassResponse('what do you remember?', { userContext: 'RELEVANT MEMORIES: Example likes astronomy.' });
+    assert.equal(request.messages[0].content, SASS_SYSTEM_PROMPT);
     assert.match(request.messages[1].content, /Example likes astronomy/);
   } finally {
     globalThis.fetch = originalFetch;
@@ -225,7 +225,7 @@ test('native Ollama replies and profiles share a configurable budget without leg
 });
 
 
-test('unknown provider cannot send creator or profile requests to Ollama', async () => {
+test('unknown provider cannot send chat or profile requests to Ollama', async () => {
   const { register } = await import('tsx/esm/api');
   register();
   const { getSassResponse, analyzeProfile } = await import('../src/ai/responses.ts');
@@ -235,7 +235,7 @@ test('unknown provider cannot send creator or profile requests to Ollama', async
   try {
     process.env.AI_PROVIDER = 'unsupported';
     globalThis.fetch = async () => { requests++; throw new Error('unexpected network request'); };
-    await assert.rejects(getSassResponse('hello', { isCreator: true }), { name: 'UnsupportedAIProviderError' });
+    await assert.rejects(getSassResponse('hello'), { name: 'UnsupportedAIProviderError' });
     await assert.rejects(analyzeProfile('Example', 'hello'), { name: 'UnsupportedAIProviderError' });
     assert.equal(requests, 0);
   } finally { globalThis.fetch = originalFetch; process.env = saved; }

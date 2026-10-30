@@ -29,7 +29,6 @@ export interface SassEvent {
   userId: string;
   displayName: string;
   content: string;        // raw message content (mentions NOT stripped — handlers strip as needed)
-  isCreator: boolean;
   message: Message;       // original Discord message
   channel: TextChannel;   // cast guild text channel
 }
@@ -136,9 +135,6 @@ export interface GetSassResponseOptions {
   recentContext?: string;
   userContext?: string;
   peopleContext?: string;
-  isCreator?: boolean;
-  mentionsCreator?: boolean;
-  creatorName?: string | null;
   imageUrl?: string | null;
   /** Speaker label from speakerLabel(), matching how this person appears in recentContext. */
   speaker?: string;

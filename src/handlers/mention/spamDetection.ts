@@ -60,9 +60,9 @@ setInterval(() => {
  * Returns true if the message should be ignored (spam threshold reached).
  * Resets tracker if the message is a real message (>5 chars).
  */
-export function isSpamPing(guildId: string, userId: string, cleanContent: string, isCreator: boolean): boolean {
+export function isSpamPing(guildId: string, userId: string, cleanContent: string): boolean {
   const spamKey = `${guildId}:${userId}`;
-  if (cleanContent.length <= 5 && !isCreator) {
+  if (cleanContent.length <= 5) {
     const now = Date.now();
     const entry = spamTracker.get(spamKey);
     if (entry && now - entry.lastTimestamp < SPAM_WINDOW_MS) {
@@ -94,9 +94,8 @@ export async function isSensitiveTopic(
   userId: string,
   displayName: string,
   cleanContent: string,
-  isCreator: boolean,
 ): Promise<'ignore' | 'check-in' | null> {
-  if (isCreator || !SENSITIVE_KEYWORDS.test(cleanContent)) return null;
+  if (!SENSITIVE_KEYWORDS.test(cleanContent)) return null;
 
   const sensitiveKey = `${guildId}:${userId}`;
   const now = Date.now();

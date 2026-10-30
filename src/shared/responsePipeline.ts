@@ -43,14 +43,12 @@ export async function handleResponse(options: ResponseOptions): Promise<boolean>
   let { response } = options;
 
   // Step 1: Validate response
-  if (!event.isCreator) {
-    const validation = validateResponse(response);
-    if (!validation.valid) {
-      console.log(`[FILTER] ${triggerType} response filtered: ${validation.reason}`);
-      if (onFiltered === 'skip') return false;
-      // Fallback — replace response with safe one-liner, continue through pipeline
-      response = pickRandom(SAFE_FALLBACKS) ?? 'no';
-    }
+  const validation = validateResponse(response);
+  if (!validation.valid) {
+    console.log(`[FILTER] ${triggerType} response filtered: ${validation.reason}`);
+    if (onFiltered === 'skip') return false;
+    // Fallback — replace response with safe one-liner, continue through pipeline
+    response = pickRandom(SAFE_FALLBACKS) ?? 'no';
   }
 
   // Step 2: Typing delay — feel more human

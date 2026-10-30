@@ -63,3 +63,21 @@ export function describeApiEndpoint(baseURL: string | undefined, defaultHost: st
     return baseURL;
   }
 }
+
+/** Human-readable chat provider without exposing configured URLs or credentials. */
+export function chatProviderLabel(env: NodeJS.ProcessEnv = process.env): string {
+  const provider = env.AI_PROVIDER?.trim() || 'ollama';
+  if (provider === 'ollama') return 'Ollama';
+  if (provider !== 'openai') return 'Unsupported provider';
+  if (!env.OPENAI_BASE_URL?.trim()) return 'OpenAI';
+  let host: string;
+  try { host = new URL(env.OPENAI_BASE_URL.trim()).hostname; }
+  catch { return 'OpenAI-compatible API'; }
+  const labels: Record<string, string> = {
+    'api.openai.com': 'OpenAI', 'api.anthropic.com': 'Anthropic (Claude)',
+    'openrouter.ai': 'OpenRouter', 'api.groq.com': 'Groq',
+    'api.x.ai': 'xAI', 'api.together.xyz': 'Together', 'api.together.ai': 'Together',
+  };
+  return labels[host] ?? (['localhost', '127.0.0.1', '[::1]'].includes(host)
+    ? 'Local OpenAI-compatible API' : 'OpenAI-compatible API');
+}

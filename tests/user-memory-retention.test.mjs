@@ -91,17 +91,17 @@ test('exported user memory functions retain bounded chronological arrays in Post
     assert.deepEqual(stored.facts, Array(20).fill('duplicate fact'));
   });
 
-  await t.test('creator memory includes facts and topics without adding roast instructions', async () => {
-    await memory.remember('guild-a', 'creator', 'likes astronomy');
-    await memory.addRoast('guild-a', 'creator', 'stargazing');
-    await pool.query("UPDATE users SET message_count = 60 WHERE server_id = 'guild-a' AND user_id = 'creator'");
-    const neutral = await memory.getContext('guild-a', 'creator', 'Example', { neutral: true });
+  await t.test('neutral memory includes facts and topics without adding roast instructions', async () => {
+    await memory.remember('guild-a', 'person', 'likes astronomy');
+    await memory.addRoast('guild-a', 'person', 'stargazing');
+    await pool.query("UPDATE users SET message_count = 60 WHERE server_id = 'guild-a' AND user_id = 'person'");
+    const neutral = await memory.getContext('guild-a', 'person', 'Example', { neutral: true });
     assert.match(neutral, /likes astronomy/);
     assert.match(neutral, /stargazing/);
     assert.doesNotMatch(neutral, /weaponize|be petty|no mercy|destroyed/);
-    assert.match(await memory.getContext('guild-a', 'creator', 'Example'), /weaponize this/);
-    await pool.query("UPDATE users SET distilled_profile = 'Enjoys science', profile_updated_at = NOW() WHERE server_id = 'guild-a' AND user_id = 'creator'");
-    const profile = await memory.getContext('guild-a', 'creator', 'Example', { neutral: true });
+    assert.match(await memory.getContext('guild-a', 'person', 'Example'), /weaponize this/);
+    await pool.query("UPDATE users SET distilled_profile = 'Enjoys science', profile_updated_at = NOW() WHERE server_id = 'guild-a' AND user_id = 'person'");
+    const profile = await memory.getContext('guild-a', 'person', 'Example', { neutral: true });
     assert.match(profile, /Enjoys science/);
     assert.match(profile, /likes astronomy/);
     assert.doesNotMatch(profile, /weaponize/);

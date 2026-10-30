@@ -51,10 +51,10 @@ test('source URLs retain slash-containing branch names', () => {
   assert.equal(result.stdout, 'explicit/branch');
 });
 
-test('README gives the planned public bundle route and states its release status', () => {
+test('README gives the public bundle route and handles missing release availability', () => {
   const readme = readFileSync(join(root, 'README.md'), 'utf8');
   assert.match(readme, /curl[^\n]+\/main\/install\.sh\s*\|\s*bash/);
-  assert.match(readme, /not a working public installer today/i);
+  assert.match(readme, /If none is available, the installer stops/i);
 });
 
 test('failed UI fetch still defines progress and consent helpers', () => {

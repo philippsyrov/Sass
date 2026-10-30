@@ -11,7 +11,7 @@ export function setupInteractionHandler(client: Client): void {
 
       // Per-user slash command cooldown — 5s between commands
       const userId = interaction.user.id;
-      if (userId !== process.env.CREATOR_ID && isOnSlashCooldown(userId)) {
+      if (isOnSlashCooldown(userId)) {
         const cooldownResponses = [
           "slow down, i can only judge you so fast.",
           "bro chill, i'm still recovering from your last one.",
@@ -29,7 +29,7 @@ export function setupInteractionHandler(client: Client): void {
 
       // Extra cooldown for /ship — 15s to prevent spam (AI call each time)
       const commandName = interaction.commandName;
-      if (commandName === 'ship' && userId !== process.env.CREATOR_ID && isOnShipCooldown(userId)) {
+      if (commandName === 'ship' && isOnShipCooldown(userId)) {
         await interaction.reply({
           content: "you just shipped someone. give the matchmaking gods a moment.",
           ephemeral: true,

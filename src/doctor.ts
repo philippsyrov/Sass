@@ -16,7 +16,7 @@ if (existsSync('.env')) {
 
 const { Pool } = pg;
 
-const REQUIRED_VARS = ['DISCORD_TOKEN', 'CLIENT_ID', 'CREATOR_ID', 'AI_PROVIDER'] as const;
+const REQUIRED_VARS = ['DISCORD_TOKEN', 'CLIENT_ID', 'AI_PROVIDER'] as const;
 
 // Values copied straight from .env.example look like "your_..._here".
 function isPlaceholder(value: string | undefined): boolean {

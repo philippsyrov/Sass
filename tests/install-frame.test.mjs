@@ -102,14 +102,15 @@ test('a real Enter key still approves the displayed installation plan', () => {
 });
 
 
-test('bundle consent shows exact sizes, destination and model terms once', () => {
+test('bundle consent shows readable sizes, destination and model terms', () => {
   const { output, code, stateExists } = run('bundle-decline');
   assert.equal(code, 0);
   const screen = terminalScreen(output.slice(0, output.indexOf('Continue?') + 'Continue?'.length)).screen;
-  assert.ok(screen.includes('Download: 123456 bytes'));
-  assert.ok(screen.includes('On disk: 654321 bytes'));
+  assert.ok(screen.includes('Download: ~123.5 KB'));
+  assert.ok(screen.includes('On disk: ~654.3 KB'));
   assert.ok(screen.includes('Apache License 2.0'));
-  assert.ok(screen.includes('apache.org/licenses/LICENSE-2.0'));
+  assert.ok(screen.includes('Details: licenses/'));
+  assert.ok(screen.includes('EmbeddingGemma 2 by Google'));
   assert.ok(screen.includes('Files:'));
   assert.equal(stateExists, false);
 });

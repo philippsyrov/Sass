@@ -253,7 +253,6 @@ export async function buildPeopleContext(guildId: string, recentMessages: Buffer
   if (!recentMessages || recentMessages.length === 0) return '';
 
   const pool = getPool();
-  const creatorId = process.env.CREATOR_ID;
 
   // Collect unique non-bot users
   const seen = new Map<string, string>();
@@ -298,9 +297,7 @@ export async function buildPeopleContext(guildId: string, recentMessages: Buffer
     const user = usersMap[userId];
     const parts: string[] = [];
 
-    if (userId === creatorId) {
-      parts.push('friend — be chill with them');
-    } else if (profilesMap[userId]) {
+    if (profilesMap[userId]) {
       // Use distilled profile — compact AI summary
       parts.push(profilesMap[userId]);
     } else if (user) {
@@ -323,7 +320,7 @@ export async function buildPeopleContext(guildId: string, recentMessages: Buffer
       parts.push('unknown — first time seeing them');
     }
 
-    lines.push(`- ${speakerLabel({ authorId: userId, author: displayName, isBot: false }, creatorId)}: ${parts.join(', ')}`);
+    lines.push(`- ${speakerLabel({ authorId: userId, author: displayName, isBot: false })}: ${parts.join(', ')}`);
   }
 
   return lines.join('\n');
@@ -358,13 +355,12 @@ export async function getLeaderboard(guildId: string, limit = 10): Promise<Leade
   const pool = getPool();
   if (!pool) return [];
 
-  const creatorId = process.env.CREATOR_ID;
   try {
     const result = await pool.query(
       `SELECT user_id, name, times_roasted FROM users
-       WHERE server_id = $1 AND user_id != $2 AND times_roasted > 0
-       ORDER BY times_roasted DESC LIMIT $3`,
-      [guildId, creatorId || '', limit]
+       WHERE server_id = $1 AND times_roasted > 0
+       ORDER BY times_roasted DESC LIMIT $2`,
+      [guildId, limit]
     );
     return result.rows.map((row) => ({
       id: row.user_id as string,
@@ -643,12 +639,11 @@ export async function getServerStats(guildId: string): Promise<ServerStats | nul
   const pool = getPool();
   if (!pool) return null;
 
-  const creatorId = process.env.CREATOR_ID;
   try {
     const result = await pool.query(
       `SELECT user_id, name, message_count, times_roasted, roasts, facts, gender
-       FROM users WHERE server_id = $1 AND user_id != $2`,
-      [guildId, creatorId || '']
+       FROM users WHERE server_id = $1`,
+      [guildId]
     );
     if (result.rows.length === 0) return null;
 
@@ -678,29 +673,4 @@ export async function getServerStats(guildId: string): Promise<ServerStats | nul
     console.error('getServerStats failed:', (err as Error).message);
     return null;
   }
-}
-
-/**
- * Check if a message text mentions the creator by name.
- */
-export async function isAboutCreator(guildId: string, text: string): Promise<boolean> {
-  const creatorName = await getCreatorName(guildId);
-  if (!creatorName) return false;
-  return text.toLowerCase().includes(creatorName.toLowerCase());
-}
-
-/**
- * Get the creator's display name in a specific guild.
- */
-export async function getCreatorName(guildId: string): Promise<string | null> {
-  const creatorId = process.env.CREATOR_ID;
-  if (!creatorId) return null;
-
-  // Check pending seen first (might have recent name)
-  const pendingKey = `${guildId}:${creatorId}`;
-  const pending = pendingSeen.get(pendingKey);
-  if (pending?.displayName) return pending.displayName;
-
-  const user = await getUser(guildId, creatorId);
-  return user?.name || null;
 }

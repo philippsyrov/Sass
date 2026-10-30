@@ -130,6 +130,18 @@ installer_typewriter() {
   printf '\n' >/dev/tty
 }
 
+# Decimal units match common download and disk size displays; metadata stays in bytes.
+installer_format_bytes() {
+  local value="${1:-}"
+  case "$value" in ''|*[!0-9]*) printf 'unknown'; return ;; esac
+  awk -v n="$value" 'BEGIN {
+    if (n >= 1000000000) printf "~%.1f GB", n / 1000000000
+    else if (n >= 1000000) printf "~%.1f MB", n / 1000000
+    else if (n >= 1000) printf "~%.1f KB", n / 1000
+    else printf "%.0f bytes", n
+  }'
+}
+
 installer_trust_preamble() {
   if [[ "${INSTALLER_FRAME_ACTIVE:-0}" == 1 ]]; then
     installer_frame_render
@@ -144,12 +156,11 @@ installer_trust_preamble() {
   installer_out "Here's what I'll do:"
   installer_out "  • Put my files in ${sass_dir}"
   if [[ "${SASS_SOURCE_INSTALL:-0}" != 1 ]]; then
-    installer_out "  • Download ${SASS_BUNDLE_BYTES:-unknown} bytes; use ${SASS_BUNDLE_UNPACKED_BYTES:-unknown} bytes after extraction"
+    installer_out "  • Download $(installer_format_bytes "${SASS_BUNDLE_BYTES:-}"); use $(installer_format_bytes "${SASS_BUNDLE_UNPACKED_BYTES:-}") after extraction"
     installer_out '  • Include the private runtime, database and local memory model'
     installer_out '  • Keep existing configuration and local data'
-    installer_out '  • EmbeddingGemma 2: Apache License 2.0'
-    installer_out '    https://www.apache.org/licenses/LICENSE-2.0'
-    installer_out '  • Terms and third-party notices are included in licenses/'
+    installer_out '  • EmbeddingGemma 2 by Google: Apache License 2.0'
+    installer_out '    Details and third-party notices: licenses/'
     installer_out "  • Add the sass command under ${sass_bin}"
     installer_out '  • Run setup; provider API use may cost money'
     return 0
@@ -389,16 +400,13 @@ installer_frame_render() {
   installer_frame_line 1 "$text_col" 'Sass · Discord roast bot'
   installer_frame_line 3 "$text_col" 'One install; then connect Sass.'
   if [[ "${SASS_SOURCE_INSTALL:-0}" != 1 ]]; then
-    installer_frame_line 5 "$text_col" "Download: ${SASS_BUNDLE_BYTES:-checking} bytes"
-    installer_frame_line 6 "$text_col" "On disk: ${SASS_BUNDLE_UNPACKED_BYTES:-checking} bytes"
+    installer_frame_line 5 "$text_col" "Download: $(installer_format_bytes "${SASS_BUNDLE_BYTES:-}")"
+    installer_frame_line 6 "$text_col" "On disk: $(installer_format_bytes "${SASS_BUNDLE_UNPACKED_BYTES:-}")"
     installer_frame_line 8 "$text_col" 'Runtime, database, memory model.'
     installer_frame_line 9 "$text_col" 'Keep settings and local data.'
-    installer_frame_line 10 "$text_col" 'EmbeddingGemma 2'
+    installer_frame_line 10 "$text_col" 'EmbeddingGemma 2 by Google'
     installer_frame_line 11 "$text_col" 'Apache License 2.0'
-    installer_frame_line 12 "$text_col" 'apache.org/licenses/LICENSE-2.0'
-    installer_frame_line 13 "$text_col" 'Read the bundled license.'
-    installer_frame_line 14 "$text_col" 'Preserve upstream notices.'
-    installer_frame_line 15 "$text_col" 'Notices included in licenses/.'
+    installer_frame_line 12 "$text_col" 'Details: licenses/'
     installer_frame_line 16 "$text_col" 'Files:'
     installer_frame_wrap 17 "$text_col" 4 "$(installer_short_path "$SASS_DIR")"
     installer_frame_wrap 21 "$text_col" 2 "${INSTALLER_ERROR:-${INSTALLER_STATUS:-Preparing setup}}"

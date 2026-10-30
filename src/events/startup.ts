@@ -4,6 +4,7 @@ import { startDistillationScheduler } from '../memory/distillScheduler.js';
 import { pickRandom } from '../shared/commandUtils.js';
 import { AUTO_SASS_CHANCE } from '../handlers/autoSass.js';
 import { loadSassEmoji } from '../emoji.js';
+import { chatProviderLabel } from '../ai/index.js';
 import { inviteInstructions } from '../shared/discordInvite.js';
 
 // Send a message to the first available text channel in a guild
@@ -20,9 +21,8 @@ export function setupStartup(client: Client): void {
   client.once('clientReady', async () => {
     if (!client.user) return;
     console.log(`Sass is online as ${client.user.tag}`);
-    console.log(`AI Provider: ${process.env.AI_PROVIDER || 'ollama'}`);
+    console.log(`AI Provider: ${chatProviderLabel()}`);
     console.log(`Auto-sass chance: ${Number((AUTO_SASS_CHANCE * 100).toFixed(2))}%`);
-    console.log(`Creator mode: ${process.env.CREATOR_ID ? 'configured' : 'not set'}`);
 
     // Look up the app's custom emoji by name (missing ones fall back to Unicode)
     await loadSassEmoji(client);

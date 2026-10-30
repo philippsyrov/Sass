@@ -37,6 +37,7 @@ test('startup leaves the invite block below database output, using the authentic
   const module = { exports: {} };
   const dependencies = {
     '../database/index.js': { initDatabase: async () => output.push('DATABASE_READY'), closeDatabase: async () => {} },
+    '../ai/index.js': { chatProviderLabel: () => 'Anthropic (Claude)' },
     '../userMemory.js': {}, '../vectorMemory.js': {}, '../shared/commandUtils.js': {},
     '../memory/distillScheduler.js': { startDistillationScheduler: () => output.push('MAINTENANCE_SCHEDULED') },
     '../handlers/autoSass.js': { AUTO_SASS_CHANCE: 0.55 },
@@ -57,4 +58,6 @@ test('startup leaves the invite block below database output, using the authentic
   assert.ok(output[block].includes('sass invite'));
   assert.ok(output.indexOf('MAINTENANCE_SCHEDULED') > block);
   assert.ok(output.includes('Auto-sass chance: 55%'));
+  assert.ok(output.includes('AI Provider: Anthropic (Claude)'));
+  assert.ok(!output.some(line => line.includes('Creator mode')));
 });

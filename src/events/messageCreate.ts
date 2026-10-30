@@ -165,7 +165,6 @@ export function setupMessageHandler(client: Client): void {
         userId: message.author.id,
         displayName,
         content: message.content,
-        isCreator: message.author.id === process.env.CREATOR_ID,
         message,
         channel: message.channel as TextChannel,
       };

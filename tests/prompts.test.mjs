@@ -8,7 +8,6 @@ const prompts = await import('../src/ai/prompts.ts');
 const all = {
   SASS_SYSTEM_PROMPT: prompts.SASS_SYSTEM_PROMPT,
   SASS_LITE_PROMPT: prompts.SASS_LITE_PROMPT,
-  CREATOR_SYSTEM_PROMPT: prompts.CREATOR_SYSTEM_PROMPT,
 };
 
 test('prompts only mention "bit" in the banned words list', () => {
@@ -18,10 +17,6 @@ test('prompts only mention "bit" in the banned words list', () => {
     assert.doesNotMatch(rest, /\bbit\b/i, `${name} uses "bit" outside the banned words list`);
   }
   assert.match(prompts.SASS_SYSTEM_PROMPT, /"bit," "doing a bit," "starting a bit"/);
-});
-
-test('the creator prompt does not address the creator as a pair', () => {
-  assert.doesNotMatch(prompts.CREATOR_SYSTEM_PROMPT, /\byou two\b/i);
 });
 
 test('group address ("you two", "both of you") is limited to several people talking', () => {

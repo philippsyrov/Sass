@@ -121,13 +121,9 @@ export async function handleAutoSass(message: Message, _client: Client, options:
     userId: message.author.id,
     displayName: message.author.displayName || message.author.username,
     content: message.content,
-    isCreator: message.author.id === process.env.CREATOR_ID,
     message,
     channel,
   };
-
-  // Never auto-sass the creator (unless they said her name)
-  if (message.author.id === process.env.CREATOR_ID && !heardName) return;
 
   // Wild quote detection — store genuinely unhinged statements, not reactions
   const text = message.content;
@@ -268,7 +264,7 @@ export async function handleAutoSass(message: Message, _client: Client, options:
         const MIN_PLAY_MINUTES = 60; // Only roast if playing for 1+ hours
         // Sync filter: basic eligibility (activity, playtime)
         const candidates = members.filter((m: GuildMember) => {
-          if (m.user.bot || m.user.id === process.env.CREATOR_ID) return false;
+          if (m.user.bot) return false;
           const activity = getActivityDescription(m.presence);
           if (!activity || activity.startsWith('custom status')) return false;
           const playingActivity = m.presence?.activities?.find(a => a.type === 0 && a.timestamps?.start);
