@@ -1,0 +1,11 @@
+{
+  "deny": [
+    ".env",
+    ".env.*",
+    "*.pem",
+    "*.key",
+    "credentials.json",
+    "service-account*.json",
+    "token.json"
+  ]
+}
