@@ -32,3 +32,36 @@ test('ollamaPullHttp aborts when signal is aborted', { timeout: 10_000 }, async 
   controller.abort();
   await assert.rejects(pull, (err) => err instanceof SetupCancelledError || err?.name === 'AbortError');
 });
+
+test('setup signal handlers can be removed and installed for another setup phase', async () => {
+  const { installSetupCancelHandlers } = await importDist('./src/setup/cancelRegistry.ts');
+  const original = process.listeners('SIGINT');
+  const dispose = installSetupCancelHandlers(() => {});
+  assert.equal(process.listenerCount('SIGINT'), original.length + 1);
+  dispose();
+  dispose();
+  assert.deepEqual(process.listeners('SIGINT'), original);
+  const again = installSetupCancelHandlers(() => {});
+  assert.equal(process.listenerCount('SIGINT'), original.length + 1);
+  again();
+  assert.deepEqual(process.listeners('SIGINT'), original);
+});
+
+test('Ollama advice identifies only an interrupted pull, not a completed pull', async (t) => {
+  const { ollamaPullHttp } = await importDist('./src/setup/ollamaHttp.ts');
+  const { cancelAllActiveWork, interruptedOllamaDownloadHint } = await importDist('./src/setup/cancelRegistry.ts');
+  const realFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = realFetch; });
+  globalThis.fetch = async (_url, { signal }) => new Promise((_resolve, reject) => {
+    signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+  });
+  const interrupted = ollamaPullHttp('http://synthetic.invalid', 'synthetic-model');
+  cancelAllActiveWork();
+  await assert.rejects(interrupted, { name: 'SetupCancelledError' });
+  assert.match(interruptedOllamaDownloadHint(), /ollama rm synthetic-model/);
+
+  globalThis.fetch = async () => new Response('{"status":"success"}\n');
+  await ollamaPullHttp('http://synthetic.invalid', 'completed-model');
+  cancelAllActiveWork();
+  assert.equal(interruptedOllamaDownloadHint(), undefined);
+});

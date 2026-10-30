@@ -3,7 +3,7 @@ import { isInkSessionActive, pushInkMessage } from './tui/prompterBridge.js';
  * Ollama pull/create via HTTP streaming API (cancellable, single progress line).
  */
 
-import { SetupCancelledError, createTrackedAbortSignal } from './cancelRegistry.js';
+import { SetupCancelledError, createTrackedAbortSignal, trackOllamaDownload } from './cancelRegistry.js';
 
 const tty = Boolean(process.stdin.isTTY && process.stdout.isTTY);
 const colorOn = tty && !process.env.NO_COLOR;
@@ -121,6 +121,7 @@ async function streamOllamaPost(
 
 export async function ollamaPullHttp(host: string, model: string, signal?: AbortSignal): Promise<void> {
   const sig = signal ?? createTrackedAbortSignal();
+  const untrackDownload = trackOllamaDownload(model, sig);
   try {
     await streamOllamaPost(host, '/api/pull', { name: model }, model, sig);
   } catch (err) {
@@ -128,6 +129,8 @@ export async function ollamaPullHttp(host: string, model: string, signal?: Abort
       throw new SetupCancelledError();
     }
     throw err;
+  } finally {
+    untrackDownload();
   }
 }
 

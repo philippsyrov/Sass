@@ -91,7 +91,13 @@ export function SetupView({ onCancel }: { onCancel?: () => void } = {}): React.R
     : 0;
   const promptRows = questionHeight + (prompt?.kind === 'select' ? optionCount + 1 : prompt?.kind === 'text' ? 1 : 0);
   const maxDone = Math.max(0, rows - promptRows - 6);
-  const messageLines = messages.flatMap(line => wrapPlain(line, '', contentWidth));
+  // wrapPlain keeps long words intact, but Ink wraps those words physically.
+  // Count their actual rows here so the details box cannot overwrite later text.
+  const messageLines = messages.flatMap(line => wrapPlain(line, '', contentWidth)).flatMap(line => {
+    const chunks: string[] = [];
+    for (let i = 0; i < line.length; i += contentWidth) chunks.push(line.slice(i, i + contentWidth));
+    return chunks;
+  });
   const messageEnd = Math.max(maxDone, messageLines.length - historyOffset);
   const visibleMessages = maxDone ? messageLines.slice(Math.max(0, messageEnd - maxDone), messageEnd) : [];
 

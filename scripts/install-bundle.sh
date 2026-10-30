@@ -100,12 +100,13 @@ sass_bundle_preserve() {
     [[ -e "$source" || -L "$source" ]] || continue
     [[ ! -L "$source" ]] || die "Cannot preserve a linked $name. The existing installation is unchanged."
     [[ -z "$(find "$source" ! -type d ! -type f -print -quit)" ]] || die "Cannot preserve special files in $name. The existing installation is unchanged."
-    # -n preserves the pinned model files; extra cache entries remain available.
+    # Keep verified staged files when names overlap, while copying extra cache entries.
     if [[ -d "$source" ]]; then
-      mkdir -p "$SASS_BUNDLE_STAGE/$name"
-      cp -pRn "$source/." "$SASS_BUNDLE_STAGE/$name/"
+      "$SASS_BUNDLE_STAGE/runtime/bin/node" -e 'try { require("node:fs").cpSync(process.argv[1], process.argv[2], { recursive: true, force: false, errorOnExist: false, preserveTimestamps: true }); } catch (error) { console.error("State copy failed:", error.code || "unknown"); process.exit(1); }' "$source" "$SASS_BUNDLE_STAGE/$name" \
+        || die "Cannot preserve $name. The existing installation is unchanged."
     else
-      cp -p "$source" "$SASS_BUNDLE_STAGE/$name"
+      cp -p "$source" "$SASS_BUNDLE_STAGE/$name" \
+        || die "Cannot preserve $name. The existing installation is unchanged."
     fi
   done
 }

@@ -8,7 +8,8 @@ import { once } from 'node:events';
 import React from 'react';
 import { render } from 'ink';
 import { SetupView } from '../dist/setup/tui/SetupView.js';
-import { cancelInkPrompt, inkAskText, inkConfirm, inkSelect, pushDoneLine } from '../dist/setup/tui/prompterBridge.js';
+import { cancelInkPrompt, inkAction, inkAskText, inkConfirm, inkSelect, pushDoneLine, pushInkMessage, setInkStep } from '../dist/setup/tui/prompterBridge.js';
+import { printPrivacyAndRecap } from '../dist/setup/finishSummary.js';
 
 async function mount(t, props = {}) {
   const stdin = new PassThrough();
@@ -153,6 +154,41 @@ test('setup details scroll inside the view with PageUp and PageDown', async (t) 
   ui.stdin.write('\x1b[6~');
   await delay(30);
   assert.ok(stripVTControlCharacters(ui.frame()).includes('Detail 19'));
+});
+
+test('long unbroken details do not overwrite the next line or start action after resize', async (t) => {
+  setInkStep(5, 'Start Sass');
+  pushInkMessage('https://example.invalid/' + 'x'.repeat(100));
+  pushInkMessage('Invite Sass: run sass invite');
+  const response = inkAction('Setup is ready. Enter to start Sass. Ctrl+C keeps her stopped.');
+  response.catch(() => {});
+  const ui = await mount(t);
+  await ui.until('Invite Sass: run sass invite');
+  let frame = stripVTControlCharacters(ui.frame());
+  assert.ok(frame.includes('Invite Sass: run sass invite'));
+  assert.ok(frame.includes('Setup is ready. Enter to start'));
+  assert.ok(frame.trimEnd().split('\n').length <= 23);
+  ui.stdout.columns = 60; ui.stdout.emit('resize');
+  await ui.until('Resize to at least 80');
+  ui.stdout.columns = 80; ui.stdout.emit('resize');
+  await delay(30);
+  frame = stripVTControlCharacters(ui.frame());
+  assert.ok(frame.includes('Invite Sass: run sass invite'));
+  assert.ok(frame.includes('Setup is ready. Enter to start'));
+  ui.stdin.write('\r');
+  assert.equal(await response, true);
+});
+
+test('local memory recap avoids claiming a fixed model cache path', () => {
+  const lines = [];
+  const original = console.log;
+  console.log = (...args) => lines.push(args.join(' '));
+  try {
+    printPrivacyAndRecap({ preset: { key: 'openai', aiProvider: 'openai', label: 'OpenAI' }, values: { SASS_EMBEDDED_PG: '1', SASS_EMBEDDING_PROVIDER: 'local' }, intentsConfirmed: true, skipped: [], wroteEnv: true, startedNow: false });
+    const summary = lines.join('\n');
+    assert.match(summary, /Memory search: on this Mac/);
+    assert.doesNotMatch(summary, /~\/\.sass\/models|npm start/);
+  } finally { console.log = original; }
 });
 
 test('inherited installer screen captures console and subprocess output without a second alternate buffer', { timeout: 5000 }, async (t) => {

@@ -7,14 +7,17 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 const root = resolve(import.meta.dirname, '..');
-function fixture({ corrupt = false, unsafe = false, validateFails = false, extraMember } = {}) {
+function fixture({ corrupt = false, unsafe = false, validateFails = false, extraMember, collision = false } = {}) {
   const work = mkdtempSync(join(tmpdir(), 'sass-bundle-'));
   const bin = join(work, 'bin');
   const tree = join(work, 'tree');
   mkdirSync(bin); mkdirSync(tree);
   for (const dir of ['runtime/bin', 'dist', 'scripts', 'models', 'licenses', 'node_modules', 'assets']) mkdirSync(join(tree, dir), { recursive: true });
   for (const file of ['package.json', 'LICENSE', 'bundle-manifest.json', 'dist/setup.js', 'dist/index.js', 'scripts/validate-bundle.mjs', 'scripts/sass.sh']) writeFileSync(join(tree, file), '{}');
-  writeFileSync(join(tree, 'runtime/bin/node'), `#!/bin/sh\ncase "$1" in *validate-bundle.mjs) exit ${validateFails ? 9 : 0};; dist/setup.js) echo SETUP >>"$SASS_TEST_RUNTIME_RECORD"; exit "$SASS_TEST_SETUP_STATUS";; dist/index.js) echo START >>"$SASS_TEST_RUNTIME_RECORD";; dist/invite.js) echo INVITE >>"$SASS_TEST_RUNTIME_RECORD";; esac\n`, { mode: 0o755 });
+  writeFileSync(join(tree, 'runtime/bin/node'), `#!/bin/sh\ncase "$1" in -e) exec "$SASS_TEST_NODE" "$@";; *validate-bundle.mjs) exit ${validateFails ? 9 : 0};; dist/setup.js) echo SETUP >>"$SASS_TEST_RUNTIME_RECORD"; exit "$SASS_TEST_SETUP_STATUS";; dist/index.js) echo START >>"$SASS_TEST_RUNTIME_RECORD";; dist/invite.js) echo INVITE >>"$SASS_TEST_RUNTIME_RECORD";; esac\n`, { mode: 0o755 });
+  mkdirSync(join(tree, 'models', 'pinned'), { recursive: true });
+  writeFileSync(join(tree, 'models', 'pinned', 'weights'), 'verified-new');
+  if (collision) mkdirSync(join(tree, 'models', 'conflict'));
   if (unsafe) {
     const result = spawnSync('ln', ['-s', '/tmp', join(tree, 'models', 'outside')]);
     assert.equal(result.status, 0);
@@ -50,7 +53,7 @@ function fixture({ corrupt = false, unsafe = false, validateFails = false, extra
       ...process.env, PATH: `${bin}:${process.env.PATH}`, SASS_DIR: destination, SASS_HOME: join(work, 'state'),
       SASS_SETUP_INPUT: join(work, 'setup-input'), SASS_TEST_INTERRUPT_ONCE: '0', SASS_TEST_NO_RESUME: '0', SASS_TEST_MARKER: join(work, 'interrupted'),
       SASS_BIN_DIR: join(work, 'launcher'), SASS_SOURCE_INSTALL: '0', SASS_INSTALL_ASSUME_YES: '1', SASS_SKIP_SETUP: '0', SASS_TEST_ENTRY: join(work, 'entry.sh'), SASS_TEST_RUNTIME_RECORD: join(work, 'runtime-record'), SASS_TEST_SETUP_STATUS: '0',
-      SASS_TEST_MANIFEST: metadata, SASS_TEST_ARCHIVE: archive, SASS_TEST_ROOT: root, ...extra,
+      SASS_TEST_MANIFEST: metadata, SASS_TEST_ARCHIVE: archive, SASS_TEST_ROOT: root, SASS_TEST_NODE: process.execPath, ...extra,
     } });
   }
   return { work, run, runMain: (extra) => run('MAIN', extra), destination, metadata, manifest, close: () => rmSync(work, { recursive: true, force: true }) };
@@ -61,14 +64,43 @@ test('ready bundle installs without Git/npm and preserves private state on updat
   try {
     mkdirSync(f.destination); mkdirSync(join(f.destination, '.sass-data'));
     mkdirSync(join(f.destination, 'models')); writeFileSync(join(f.destination, 'models', 'cached-model'), 'cached');
+    mkdirSync(join(f.destination, 'models', 'pinned'));
+    writeFileSync(join(f.destination, 'models', 'pinned', 'weights'), 'old-weights');
+    writeFileSync(join(f.destination, 'models', 'pinned', 'extra-cache'), 'extra');
     writeFileSync(join(f.destination, '.env'), 'SYNTHETIC=kept\n');
+    writeFileSync(join(f.destination, '.env.backup-20260101'), 'backup');
     writeFileSync(join(f.destination, '.sass-data', 'synthetic-row'), 'kept');
+    mkdirSync(join(f.destination, 'data')); writeFileSync(join(f.destination, 'data', 'entry'), 'data');
+    mkdirSync(join(f.destination, '.cache')); writeFileSync(join(f.destination, '.cache', 'entry'), 'cache');
     const result = f.run();
     assert.equal(result.status, 0, result.stderr + result.stdout);
     assert.equal(readFileSync(join(f.destination, '.env'), 'utf8'), 'SYNTHETIC=kept\n');
+    assert.equal(readFileSync(join(f.destination, '.env.backup-20260101'), 'utf8'), 'backup');
     assert.equal(readFileSync(join(f.destination, '.sass-data', 'synthetic-row'), 'utf8'), 'kept');
+    assert.equal(readFileSync(join(f.destination, 'data', 'entry'), 'utf8'), 'data');
+    assert.equal(readFileSync(join(f.destination, '.cache', 'entry'), 'utf8'), 'cache');
     assert.equal(readFileSync(join(f.destination, 'models', 'cached-model'), 'utf8'), 'cached');
+    assert.equal(readFileSync(join(f.destination, 'models', 'pinned', 'weights'), 'utf8'), 'verified-new');
+    assert.equal(readFileSync(join(f.destination, 'models', 'pinned', 'extra-cache'), 'utf8'), 'extra');
     assert.ok(existsSync(join(f.destination, 'dist/setup.js')));
+  } finally { f.close(); }
+});
+
+test('copy conflict leaves the old installation intact before activation', () => {
+  const f = fixture({ collision: true });
+  try {
+    mkdirSync(join(f.destination, 'models'), { recursive: true });
+    writeFileSync(join(f.destination, 'models', 'conflict'), 'old-cache');
+    writeFileSync(join(f.destination, '.env'), 'SYNTHETIC=kept\n');
+    writeFileSync(join(f.destination, 'sentinel'), 'old');
+    const result = f.run();
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Cannot preserve models.*existing installation is unchanged/);
+    assert.equal(result.stderr.includes(f.work), false, 'copy errors must not print absolute state paths');
+    assert.equal(readFileSync(join(f.destination, 'models', 'conflict'), 'utf8'), 'old-cache');
+    assert.equal(readFileSync(join(f.destination, '.env'), 'utf8'), 'SYNTHETIC=kept\n');
+    assert.equal(readFileSync(join(f.destination, 'sentinel'), 'utf8'), 'old');
+    assert.equal(existsSync(join(f.destination, 'dist')), false);
   } finally { f.close(); }
 });
 

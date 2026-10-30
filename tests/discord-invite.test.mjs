@@ -39,7 +39,7 @@ test('startup leaves the invite block below database output, using the authentic
     '../database/index.js': { initDatabase: async () => output.push('DATABASE_READY'), closeDatabase: async () => {} },
     '../userMemory.js': {}, '../vectorMemory.js': {}, '../shared/commandUtils.js': {},
     '../memory/distillScheduler.js': { startDistillationScheduler: () => output.push('MAINTENANCE_SCHEDULED') },
-    '../handlers/autoSass.js': { AUTO_SASS_CHANCE: 0.4 },
+    '../handlers/autoSass.js': { AUTO_SASS_CHANCE: 0.55 },
     './shutdown.js': {},
     '../emoji.js': { loadSassEmoji: async () => {} },
   };
@@ -56,4 +56,5 @@ test('startup leaves the invite block below database output, using the authentic
   assert.ok(output[block].includes('Invite Sass to your server'));
   assert.ok(output[block].includes('sass invite'));
   assert.ok(output.indexOf('MAINTENANCE_SCHEDULED') > block);
+  assert.ok(output.includes('Auto-sass chance: 55%'));
 });

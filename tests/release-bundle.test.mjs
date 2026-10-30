@@ -3,8 +3,9 @@ import test from 'node:test';
 import { mkdtemp, writeFile, rm, symlink, chmod, readFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
 import { inventory, verifyInventory, validateManifest, safePath, REQUIRED_LICENSES, MODEL_ID, MODEL_REVISION, NODE_VERSION, NODE_ARCHIVES } from '../scripts/validate-bundle.mjs';
-import { buildRelease } from '../scripts/build-release.mjs';
+import { buildRelease, createReleaseArchive } from '../scripts/build-release.mjs';
 const pin = JSON.parse(await readFile(new URL('../release/model-pin.json', import.meta.url), 'utf8'));
 function sized(manifest) {
   manifest.payloadBytes = manifest.files.reduce((sum, file) => sum + (file.bytes || 0), 0);
@@ -67,6 +68,34 @@ test('builder rejects an unverified runtime before copying application data', as
   const config = join(root,'inputs.json');
   await writeFile(config,JSON.stringify({platform:`${process.platform}-${process.arch}`,nodeArchive:'fake-node.tar.gz',appDir:'does-not-exist'}));
   await assert.rejects(buildRelease(config,join(root,'output')), /checksum|target Mac architecture/);
+});
+
+test('Mac release archives use neutral owner metadata and preserve payloads', { skip: process.platform !== 'darwin' }, async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'sass-tar-privacy-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const app = join(root, 'app with spaces');
+  await mkdir(join(app, 'dist'), { recursive: true });
+  await writeFile(join(app, 'dist/index.js'), 'synthetic payload\n', { mode: 0o755 });
+  const archive = join(root, 'private candidate.tar.gz');
+  createReleaseArchive(app, archive);
+  const inspection = spawnSync('python3', ['-c', `
+import json,sys,tarfile
+with tarfile.open(sys.argv[1], 'r:gz') as archive:
+    members=archive.getmembers()
+    payload=archive.getmember('./dist/index.js')
+    print(json.dumps({
+        'members':len(members),
+        'ownersNeutral':all((m.uid,m.gid,m.uname,m.gname)==(0,0,'root','wheel') for m in members),
+        'contentIntact':archive.extractfile(payload).read()==b'synthetic payload\\n',
+        'executablePreserved':bool(payload.mode & 0o111)
+    }))
+`, archive], { encoding: 'utf8' });
+  assert.equal(inspection.status, 0, 'Independent archive metadata inspection failed');
+  const result = JSON.parse(inspection.stdout);
+  assert.ok(result.members >= 3);
+  assert.equal(result.ownersNeutral, true);
+  assert.equal(result.contentIntact, true);
+  assert.equal(result.executablePreserved, true);
 });
 
 

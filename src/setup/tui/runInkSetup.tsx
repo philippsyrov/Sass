@@ -7,7 +7,6 @@ import { InkSetupPrompter } from './InkSetupPrompter.js';
 import type { SetupPrompter } from '../linePrompter.js';
 import { usesSimpleSetup } from '../localFirstRun.js';
 import { inviteInstructions } from '../../shared/discordInvite.js';
-import { inviteUrl } from '../validate.js';
 import { printPrivacyAndRecap, type FinishContext } from '../finishSummary.js';
 import { cancelInkPrompt, pushInkMessage, setInkSessionActive, inkAction } from './prompterBridge.js';
 import { cancelAllActiveWork } from '../cancelRegistry.js';
@@ -53,7 +52,7 @@ export async function runInkSetup(
     const finish = await runCore(prompter);
     if (finish) {
       printPrivacyAndRecap(finish);
-      if (finish.values.CLIENT_ID) pushInkMessage(`Invite Sass: ${inviteUrl(finish.values.CLIENT_ID)}`);
+      if (finish.values.CLIENT_ID) pushInkMessage('Invite Sass: run sass invite');
       if (usesSimpleSetup()) {
         await inkAction('Setup is ready. Enter to start Sass. Ctrl+C keeps her stopped.');
         finish.startedNow = true;
@@ -64,7 +63,8 @@ export async function runInkSetup(
       }
     }
     cleanup();
-    if (ownsScreen && finish?.values.CLIENT_ID) console.log(inviteInstructions(finish.values.CLIENT_ID));
+    // Runtime prints the complete invite after startup; retain it here only when staying stopped.
+    if (ownsScreen && finish?.values.CLIENT_ID && !finish.startedNow) console.log(inviteInstructions(finish.values.CLIENT_ID));
     return finish;
   } catch (err) {
     cleanup();

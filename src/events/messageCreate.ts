@@ -8,6 +8,7 @@ import * as userMemory from '../userMemory.js';
 import { recordPairInteraction } from '../shipScore.js';
 import type { SassEvent } from '../types.js';
 import { pickRandom } from '../shared/commandUtils.js';
+import { mentionsSass } from '../shared/sassMention.js';
 
 // Dedup guard — prevent processing the same message twice
 // Using a Map with timestamps for automatic cleanup
@@ -170,9 +171,9 @@ export function setupMessageHandler(client: Client): void {
       };
 
       // 1. Direct mention or reply to Sass — always respond
-      // Explicit @Sass in message text — always respond
-      const isMentionInText = message.content.includes(`<@${client.user.id}>`)
-        || message.content.includes(`<@!${client.user.id}>`);
+      // Include an explicitly tagged role containing Sass, while keeping reply
+      // metadata and everyone/here broadcasts out of this direct-mention path.
+      const isMentionInText = mentionsSass(message.content, client.user.id, message.guild.members.me?.roles.cache, guildId);
       if (isMentionInText) {
         if (isUserOnCooldown(message.author.id)) return;
         if (isSpamming(message.author.id, message.content)) return;

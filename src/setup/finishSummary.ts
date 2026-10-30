@@ -38,7 +38,7 @@ function chatPrivacyLine(preset: ProviderPreset, values: Record<string, string |
 function embeddingPrivacyLine(values: Record<string, string | undefined>): string | null {
   if (!values.DATABASE_URL && values.SASS_EMBEDDED_PG !== '1') return null;
   if (values.SASS_EMBEDDING_PROVIDER === 'local') {
-    return 'Memory search: on this Mac (local model in ~/.sass/models)';
+    return 'Memory search: on this Mac';
   }
   if (values.SASS_EMBEDDING_PROVIDER === 'off') {
     return 'Memory search: off until configured';

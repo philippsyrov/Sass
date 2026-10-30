@@ -14,7 +14,8 @@ export class SetupCancelledError extends Error {
 const abortControllers = new Set<AbortController>();
 const childProcesses = new Set<ChildProcess>();
 
-let handlersInstalled = false;
+let removeSetupHandlers: (() => void) | undefined;
+let interruptedOllamaModel: string | undefined;
 
 export function trackAbortController(controller: AbortController): AbortController {
   abortControllers.add(controller);
@@ -72,13 +73,31 @@ export function partialOllamaDownloadHint(model: string): string {
   return `If a partial download remains: ollama rm ${model} (or remove it in the Ollama app).`;
 }
 
-export function installSetupCancelHandlers(onCancel: () => void): void {
-  if (handlersInstalled) return;
-  handlersInstalled = true;
+export function trackOllamaDownload(model: string, signal: AbortSignal): () => void {
+  interruptedOllamaModel = undefined;
+  const interrupted = (): void => { interruptedOllamaModel = model; };
+  signal.addEventListener('abort', interrupted, { once: true });
+  if (signal.aborted) interrupted();
+  return () => signal.removeEventListener('abort', interrupted);
+}
+
+export function interruptedOllamaDownloadHint(): string | undefined {
+  return interruptedOllamaModel ? partialOllamaDownloadHint(interruptedOllamaModel) : undefined;
+}
+
+export function installSetupCancelHandlers(onCancel: () => void): () => void {
+  if (removeSetupHandlers) return removeSetupHandlers;
   const handler = (): void => {
     cancelAllActiveWork();
     onCancel();
   };
   process.on('SIGINT', handler);
   process.on('SIGTERM', handler);
+  const remove = (): void => {
+    process.off('SIGINT', handler);
+    process.off('SIGTERM', handler);
+    if (removeSetupHandlers === remove) removeSetupHandlers = undefined;
+  };
+  removeSetupHandlers = remove;
+  return remove;
 }

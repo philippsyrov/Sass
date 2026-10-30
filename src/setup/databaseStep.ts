@@ -38,7 +38,7 @@ export function applySkipDatabase(values: Record<string, string | undefined>): v
 
 export function describeDatabaseSummary(values: Record<string, string | undefined>): string {
   if (values.SASS_EMBEDDED_PG === '1') {
-    return 'local embedded (.sass-data/, starts with npm start)';
+    return 'local embedded (.sass-data/, starts with Sass)';
   }
   if (values.DATABASE_URL) {
     return `set (${values.DATABASE_URL.length} characters, hidden)`;

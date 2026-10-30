@@ -1,5 +1,6 @@
 import { usesSimpleSetup, prepareLocalMemory } from './setup/localFirstRun.js';
 import { startAfterSetup } from './setup/startAfterSetup.js';
+import { runRuntimeCommand } from './setup/runRuntime.js';
 /**
  * `npm run setup`: interactive first-time setup. Asks for the Discord and AI settings,
  * checks them, writes .env (after confirming, with a backup of any existing file) and
@@ -65,7 +66,7 @@ import {
 import {
   cancelAllActiveWork,
   installSetupCancelHandlers,
-  partialOllamaDownloadHint,
+  interruptedOllamaDownloadHint,
   SetupCancelledError,
 } from './setup/cancelRegistry.js';
 import { ollamaPullHttpWithProgress } from './setup/ollamaHttp.js';
@@ -121,8 +122,11 @@ function exitSetupCancelled(): void {
   cancelAllActiveWork();
   if (process.env.SASS_INSTALL_FRAME === '1') process.stdout.write('\u001b[H\u001b[2J');
   console.log(`\n\nSetup cancelled. ${nothingWrittenNote()}`);
-  note(partialOllamaDownloadHint('<model>'));
-  note('List models with: ollama list');
+  const downloadHint = interruptedOllamaDownloadHint();
+  if (downloadHint) {
+    note(downloadHint);
+    note('List models with: ollama list');
+  }
   process.exit(130);
 }
 
@@ -182,8 +186,9 @@ function beginStep(step: number, title: string): void {
 async function setupDiscord(p: SetupPrompter, env: Record<string, string>, values: Record<string, string | undefined>): Promise<boolean> {
   beginStep(1, 'Discord bot');
   if (usesSimpleSetup()) {
-    note('Create your Discord bot and enable Presence and Message Content intents.');
+    note('Create or open your Discord bot and enable Presence and Message Content intents.');
     note(DISCORD_APPLICATIONS_URL);
+    note('Use your saved bot token, or get a new one: your app → Bot → Reset Token. The Application ID and Client Secret are different.');
     for (;;) {
       const token = await p.askValid('Discord bot token', checkDiscordToken, { fallback: env.DISCORD_TOKEN, secret: true });
       const checked = await runWithSpinner('Connecting Discord', () => fetchDiscordApp(token));
@@ -846,7 +851,13 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  installSetupCancelHandlers(exitSetupCancelled);
+  const removeSetupCancelHandlers = installSetupCancelHandlers(exitSetupCancelled);
+  const runRuntime = async (command: string, args: string[]): Promise<boolean> => {
+    removeSetupCancelHandlers();
+    const code = await runRuntimeCommand(command, args);
+    process.exitCode = code;
+    return code === 0;
+  };
 
   if (shouldUseInkTui()) {
     const { runInkSetup } = await import('./setup/tui/runInkSetup.js');
@@ -856,8 +867,8 @@ async function main(): Promise<void> {
       return;
     }
     if (inkFinish?.startedNow) {
-      const ok = await startAfterSetup(runStep, usesSimpleSetup(), existsSync('bundle-manifest.json'));
-      if (!ok) process.exit(1);
+      const ok = await startAfterSetup(runStep, usesSimpleSetup(), existsSync('bundle-manifest.json'), runRuntime);
+      if (!ok) process.exitCode ||= 1;
     }
     return;
   }
@@ -883,8 +894,8 @@ async function main(): Promise<void> {
     process.exitCode = 10;
     return;
   }
-  const ok = await startAfterSetup(runStep, usesSimpleSetup(), existsSync('bundle-manifest.json'));
-  if (!ok) process.exit(1);
+  const ok = await startAfterSetup(runStep, usesSimpleSetup(), existsSync('bundle-manifest.json'), runRuntime);
+  if (!ok) process.exitCode ||= 1;
 }
 
 main().catch((err: unknown) => {

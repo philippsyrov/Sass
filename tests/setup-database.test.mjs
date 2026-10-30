@@ -24,6 +24,8 @@ test('embedded choice sets SASS_EMBEDDED_PG and clears DATABASE_URL', async () =
   assert.equal(values.SASS_EMBEDDED_PG, '1');
   assert.equal(values.DATABASE_URL, '');
   assert.match(describeDatabaseSummary(values), /local embedded/);
+  assert.match(describeDatabaseSummary(values), /starts with Sass/);
+  assert.doesNotMatch(describeDatabaseSummary(values), /npm/);
 
   applyHostedDatabase(values, 'postgres://host/db');
   assert.equal(values.SASS_EMBEDDED_PG, '');

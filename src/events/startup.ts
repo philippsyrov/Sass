@@ -21,7 +21,7 @@ export function setupStartup(client: Client): void {
     if (!client.user) return;
     console.log(`Sass is online as ${client.user.tag}`);
     console.log(`AI Provider: ${process.env.AI_PROVIDER || 'ollama'}`);
-    console.log(`Auto-sass chance: ${AUTO_SASS_CHANCE * 100}%`);
+    console.log(`Auto-sass chance: ${Number((AUTO_SASS_CHANCE * 100).toFixed(2))}%`);
     console.log(`Creator mode: ${process.env.CREATOR_ID ? 'configured' : 'not set'}`);
 
     // Look up the app's custom emoji by name (missing ones fall back to Unicode)

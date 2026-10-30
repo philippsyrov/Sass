@@ -21,6 +21,7 @@ import { SASS_EMOJI } from '../../emoji.js';
 import type { SassEvent } from '../../types.js';
 import { pickRandom } from '../../shared/commandUtils.js';
 import { speakerLabel, resolveMentions } from '../../shared/speaker.js';
+import { stripSassCommandAddress, stripSassMentions } from '../../shared/sassMention.js';
 
 /**
  * Handle direct @Sass mentions and replies to Sass.
@@ -47,8 +48,9 @@ export async function handleMention(message: Message, client: Client, event?: Sa
 
   // Strip the @mention to get the actual user message
   // Other users' mentions become "@Name" so the model sees who is meant, not a raw id.
+  const commandContent = stripSassCommandAddress(message.content, client.user.id, message.guild.members.me?.roles.cache, guildId);
   const cleanContent = resolveMentions(
-    message.content.replace(new RegExp(`<@!?${client.user.id}>`, 'g'), ''),
+    stripSassMentions(message.content, client.user.id, message.guild.members.me?.roles.cache, guildId),
     client.user.id,
     message.mentions.users.values(),
   ).trim();
@@ -148,7 +150,7 @@ export async function handleMention(message: Message, client: Client, event?: Sa
   }
 
   // Remember commands — "@Sass remember ..." (both @user and self)
-  const wasRemember = await handleRemember(message, client, guildId, userId, cleanContent);
+  const wasRemember = await handleRemember(message, client, guildId, userId, commandContent);
   if (wasRemember) return;
 
   // Leaderboard / stats command (before cold shoulder so it always works)

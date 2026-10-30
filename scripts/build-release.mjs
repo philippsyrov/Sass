@@ -13,6 +13,11 @@ async function copyInput(source, destination, options = {}) {
   if (info.isDirectory()) await inventory(source);
   await cp(source, destination, { recursive: true, dereference: true, ...options });
 }
+export function createReleaseArchive(root, archive) {
+  // Neutral owners keep the build account out of archive headers.
+  const tar = spawnSync('/usr/bin/tar', ['--uid', '0', '--gid', '0', '--uname', 'root', '--gname', 'wheel', '-czf', archive, '-C', root, '.'], { encoding: 'utf8', env: { ...process.env, COPYFILE_DISABLE: '1' } });
+  if (tar.status !== 0 || tar.error) throw new Error(`Archive failed: ${tar.error?.message || tar.stderr}`);
+}
 export async function buildRelease(configPath, outputDir) {
   const config = JSON.parse(await readFile(configPath, 'utf8'));
   const base = dirname(resolve(configPath));
@@ -60,8 +65,7 @@ export async function buildRelease(configPath, outputDir) {
     await mkdir(resolve(outputDir), { recursive: true });
     const archiveName = `sass-v${config.version}-${target}.tar.gz`;
     const archive = join(work, archiveName);
-    const tar = spawnSync('/usr/bin/tar', ['-czf', archive, '-C', root, '.'], { encoding: 'utf8', env: { ...process.env, COPYFILE_DISABLE: '1' } });
-    if (tar.status !== 0) throw new Error(`Archive failed: ${tar.stderr}`);
+    createReleaseArchive(root, archive);
     const release = { schemaVersion: 1, version: config.version, platform: target, archive: archiveName, bytes: (await stat(archive)).size, sha256: await sha256(archive), unpackedBytes: manifest.unpackedBytes, model: { id: model.id, revision: model.revision, dtype: model.dtype, dimension: model.dimension } };
     const destination = join(resolve(outputDir), archiveName);
     await cp(archive, destination, { mode: constants.COPYFILE_EXCL, errorOnExist: true, force: false });
