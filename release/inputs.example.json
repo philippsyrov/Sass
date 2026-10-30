@@ -1,5 +1,5 @@
 {
-  "version": "1.0.2",
+  "version": "1.0.3",
   "platform": "darwin-arm64",
   "appDir": "./prepared-app",
   "nodeArchive": "./downloads/node-v24.22.2-darwin-arm64.tar.gz",

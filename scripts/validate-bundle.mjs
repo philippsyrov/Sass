@@ -43,6 +43,7 @@ export async function inventory(root, prefix = '') {
 export function validateManifest(manifest, target = `${process.platform}-${process.arch}`) {
   if (manifest.schemaVersion !== 1 || !/^[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?$/.test(manifest.version)) throw new Error('Unsupported bundle manifest');
   if (!['darwin-arm64', 'darwin-x64'].includes(manifest.platform) || manifest.platform !== target) throw new Error('Bundle platform does not match this computer');
+  if (manifest.minimumMacOS !== '15.0') throw new Error('Bundle macOS requirement is missing or unsupported');
   if (manifest.node?.version !== NODE_VERSION || manifest.node?.archiveSha256 !== NODE_ARCHIVES[target] || manifest.node?.sourceUrl !== `https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-${target}.tar.gz`) throw new Error('Node provenance does not match the official runtime pin');
   if (manifest.model?.id !== MODEL_ID || manifest.model?.revision !== MODEL_REVISION || manifest.model?.dtype !== 'q8' || manifest.model?.dimension !== 768) throw new Error('Bundle model does not match the approved pin');
   if (!Array.isArray(manifest.files) || manifest.files.length === 0) throw new Error('Bundle file inventory is empty');

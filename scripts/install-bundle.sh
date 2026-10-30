@@ -39,10 +39,20 @@ sass_bundle_field() {
     || die "Release metadata is invalid ($1). No installation changed."
 }
 
+sass_bundle_check_macos() {
+  local version major
+  version="$(sw_vers -productVersion 2>/dev/null)" || die 'Could not check the macOS version. No installation changed.'
+  major="${version%%.*}"
+  if [[ ! "$major" =~ ^[1-9][0-9]{0,2}$ ]] || [[ "$major" -lt 15 ]]; then
+    die 'This Mac bundle requires macOS 15 or newer. No installation changed.'
+  fi
+}
+
 sass_bundle_prepare() {
   local platform manifest_url schema archive version
   platform="$(platform_os)-$(platform_arch)"
   case "$platform" in darwin-arm64|darwin-x64) ;; *) die "No ready bundle for $platform. Use the documented source installation." ;; esac
+  sass_bundle_check_macos
   command -v plutil >/dev/null 2>&1 || die 'macOS plutil is required to read release metadata.'
   SASS_BUNDLE_META_DIR="$(mktemp -d)"
   manifest_url="${SASS_RELEASE_MANIFEST_URL:-https://github.com/philippsyrov/Sass/releases/latest/download/sass-${platform}.json}"
@@ -55,6 +65,7 @@ sass_bundle_prepare() {
   version="$(sass_bundle_field version)"
   archive="$(sass_bundle_field archive)"
   [[ "$schema" == 1 && "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]] || die 'Release version is invalid.'
+  [[ "$(sass_bundle_field minimumMacOS)" == '15.0' ]] || die 'Release macOS requirements are invalid.'
   [[ "$(sass_bundle_field platform)" == "$platform" && "$archive" == "sass-v${version}-${platform}.tar.gz" ]] || die 'Release platform or archive name does not match.'
   SASS_BUNDLE_BYTES="$(sass_bundle_field bytes)"
   SASS_BUNDLE_UNPACKED_BYTES="$(sass_bundle_field unpackedBytes)"

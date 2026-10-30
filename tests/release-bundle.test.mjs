@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { inventory, verifyInventory, validateManifest, safePath, REQUIRED_LICENSES, MODEL_ID, MODEL_REVISION, NODE_VERSION, NODE_ARCHIVES } from '../scripts/validate-bundle.mjs';
-import { buildRelease, createReleaseArchive } from '../scripts/build-release.mjs';
+import { buildRelease, createReleaseArchive, pruneOnnxRuntimeTargets } from '../scripts/build-release.mjs';
 const pin = JSON.parse(await readFile(new URL('../release/model-pin.json', import.meta.url), 'utf8'));
 function sized(manifest) {
   manifest.payloadBytes = manifest.files.reduce((sum, file) => sum + (file.bytes || 0), 0);
@@ -18,7 +18,7 @@ function fixture() {
   const paths = ['package.json','LICENSE','dist/index.js','dist/setup.js','dist/doctor.js','dist/register-commands.js','dist/embeddings/localEmbedWorker.js','dist/embeddings/localEmbedLoader.js','scripts/sass.sh','scripts/validate-bundle.mjs','runtime/bin/node', ...REQUIRED_LICENSES.map((x) => `licenses/${x}`), ...['postgres','pg_ctl','initdb'].map((x) => `node_modules/@embedded-postgres/${target}/native/bin/${x}`),'assets/avatar.png','assets/banner.png','assets/emoji/test.png','node_modules/canvas/build/Release/canvas.node','node_modules/onnxruntime-node/bin/test.node'];
   const files = paths.map((path) => ({path,type:'file',bytes:1,sha256:'a'.repeat(64),executable:true}));
   for (const file of pin.files) files.push({path:`models/${MODEL_ID}/${MODEL_REVISION}/${file.path}`,type:'file',bytes:file.bytes,sha256:file.sha256,executable:false});
-  return sized({schemaVersion:1,version:'1.0.2',platform:target,node:{version:NODE_VERSION,sourceUrl:`https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-${target}.tar.gz`,archiveSha256:NODE_ARCHIVES[target]},model:pin,payloadBytes:0,unpackedBytes:0,files});
+  return sized({schemaVersion:1,version:'1.0.2',platform:target,minimumMacOS:'15.0',node:{version:NODE_VERSION,sourceUrl:`https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-${target}.tar.gz`,archiveSha256:NODE_ARCHIVES[target]},model:pin,payloadBytes:0,unpackedBytes:0,files});
 }
 
 test('manifest pins the exact platform, official Node and complete Gemma 2 q8 text model', () => {
@@ -27,6 +27,35 @@ test('manifest pins the exact platform, official Node and complete Gemma 2 q8 te
   assert.throws(() => validateManifest(manifest, 'darwin-x64'), /platform/);
   manifest.model = {...manifest.model,dtype:'q4'};
   assert.throws(() => validateManifest(manifest, 'darwin-arm64'), /model/);
+});
+
+test('bundle requires its explicit supported macOS baseline', () => {
+  const manifest = fixture();
+  delete manifest.minimumMacOS;
+  sized(manifest);
+  assert.throws(() => validateManifest(manifest, 'darwin-arm64'), /macOS requirement/);
+  manifest.minimumMacOS = '13.5';
+  sized(manifest);
+  assert.throws(() => validateManifest(manifest, 'darwin-arm64'), /macOS requirement/);
+});
+
+test('release staging keeps only the target ONNX native binaries and preserves its license', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'sass-onnx-target-'));
+  t.after(() => rm(root, {recursive:true,force:true}));
+  const base = join(root, 'node_modules/onnxruntime-node');
+  await mkdir(base, {recursive:true});
+  await writeFile(join(base, 'LICENSE'), 'upstream notice');
+  for (const target of ['darwin/arm64', 'darwin/x64', 'linux/x64', 'win32/arm64']) {
+    const path = join(base, 'bin/napi-v6', target);
+    await mkdir(path, {recursive:true});
+    await writeFile(join(path, 'onnxruntime_binding.node'), target);
+  }
+  await pruneOnnxRuntimeTargets(root, 'darwin', 'arm64');
+  assert.equal(await readFile(join(base, 'bin/napi-v6/darwin/arm64/onnxruntime_binding.node'), 'utf8'), 'darwin/arm64');
+  assert.equal(await readFile(join(base, 'LICENSE'), 'utf8'), 'upstream notice');
+  for (const target of ['darwin/x64', 'linux/x64', 'win32/arm64']) {
+    await assert.rejects(readFile(join(base, 'bin/napi-v6', target, 'onnxruntime_binding.node')), {code:'ENOENT'});
+  }
 });
 for (const path of ['runtime/bin/node', 'dist/setup.js', 'dist/embeddings/localEmbedLoader.js', 'licenses/NOTICE', `models/${MODEL_ID}/${MODEL_REVISION}/onnx/model_quantized.onnx_data`]) {
   test(`a missing required artifact cannot pass: ${path}`, () => {

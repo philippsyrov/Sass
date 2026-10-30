@@ -1,6 +1,6 @@
 {
   "name": "sass",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -26,7 +26,7 @@
   ],
   "author": "",
   "license": "ISC",
-  "description": "Sass — a sassy AI Discord bot that roasts users",
+  "description": "Sass \u2014 a sassy AI Discord bot that roasts users",
   "engines": {
     "node": ">=20.0.0"
   },

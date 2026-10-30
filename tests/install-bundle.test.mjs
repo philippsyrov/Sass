@@ -7,6 +7,16 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 const root = resolve(import.meta.dirname, '..');
+test('bundle prerequisite rejects unsupported or unreadable macOS before fetching release data', () => {
+  for (const [version, supported] of [['14.7.2', false], ['15.0', true], ['15.6.1', true], ['27.0', true], ['unknown', false], ['', false]]) {
+    const result = spawnSync('/bin/bash', ['-c',
+      'set -e; die(){ echo "$*" >&2; exit 1; }; source "$1"; test_version="$2"; sw_vers(){ printf "%s" "$test_version"; }; sass_bundle_check_macos',
+      'test', join(root, 'scripts/install-bundle.sh'), version], {encoding:'utf8'});
+    assert.equal(result.status, supported ? 0 : 1, `${version}: ${result.stderr}`);
+    if (!supported) assert.match(result.stderr, /requires macOS 15 or newer/);
+  }
+});
+
 function fixture({ corrupt = false, unsafe = false, validateFails = false, extraMember, collision = false } = {}) {
   const work = mkdtempSync(join(tmpdir(), 'sass-bundle-'));
   const bin = join(work, 'bin');
@@ -32,11 +42,12 @@ function fixture({ corrupt = false, unsafe = false, validateFails = false, extra
   }
   const bytes = readFileSync(archive);
   const manifest = {
-    schemaVersion: 1, version: '1.2.3', platform: 'darwin-arm64', archive: 'sass-v1.2.3-darwin-arm64.tar.gz',
+    schemaVersion: 1, version: '1.2.3', platform: 'darwin-arm64', minimumMacOS: '15.0', archive: 'sass-v1.2.3-darwin-arm64.tar.gz',
     bytes: bytes.length, sha256: corrupt ? '0'.repeat(64) : createHash('sha256').update(bytes).digest('hex'), unpackedBytes: 100000,
     model: { id: 'onnx-community/embeddinggemma-300m-ONNX', revision: 'a'.repeat(40), dtype: 'q8', dimension: 768 },
   };
   const metadata = join(work, 'manifest.json'); writeFileSync(metadata, JSON.stringify(manifest));
+  writeFileSync(join(bin, 'sw_vers'), '#!/bin/sh\nprintf "%s\\n" "${SASS_TEST_MACOS_VERSION:-15.0}"\n', { mode: 0o755 });
   writeFileSync(join(bin, 'plutil'), `#!/usr/bin/env python3\nimport json,sys\nv=json.load(open(sys.argv[-1]))\nfor k in sys.argv[sys.argv.index('-extract')+1].split('.'): v=v[k]\nprint(v)\n`, { mode: 0o755 });
   writeFileSync(join(work, 'setup-input'), '');
   writeFileSync(join(bin, 'mv'), '#!/bin/sh\ncase "$1" in */.sass-stage.*) if [ "${SASS_TEST_FAIL_ACTIVATE:-0}" = 1 ]; then exit 9; fi;; esac\nexec /bin/mv "$@"\n', { mode: 0o755 });
@@ -58,6 +69,17 @@ function fixture({ corrupt = false, unsafe = false, validateFails = false, extra
   }
   return { work, run, runMain: (extra) => run('MAIN', extra), destination, metadata, manifest, close: () => rmSync(work, { recursive: true, force: true }) };
 }
+
+test('release preparation on an older Mac does not fetch or activate a bundle', () => {
+  const f = fixture();
+  try {
+    const result = f.run('curl(){ echo UNEXPECTED_FETCH; exit 9; }; sass_bundle_prepare', {SASS_TEST_MACOS_VERSION:'14.7.2'});
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /requires macOS 15 or newer/);
+    assert.ok(!result.stdout.includes('UNEXPECTED_FETCH'));
+    assert.equal(existsSync(f.destination), false);
+  } finally { f.close(); }
+});
 
 test('ready bundle installs without Git/npm and preserves private state on update', () => {
   const f = fixture();

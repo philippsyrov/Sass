@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp, readFile, writeFile, rm, stat, lstat } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, writeFile, rm, stat, lstat, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +18,17 @@ export function createReleaseArchive(root, archive) {
   const tar = spawnSync('/usr/bin/tar', ['--uid', '0', '--gid', '0', '--uname', 'root', '--gname', 'wheel', '-czf', archive, '-C', root, '.'], { encoding: 'utf8', env: { ...process.env, COPYFILE_DISABLE: '1' } });
   if (tar.status !== 0 || tar.error) throw new Error(`Archive failed: ${tar.error?.message || tar.stderr}`);
 }
+export async function pruneOnnxRuntimeTargets(root, platform, arch) {
+  const binaries = join(root, 'node_modules/onnxruntime-node/bin/napi-v6');
+  await stat(join(binaries, platform, arch, 'onnxruntime_binding.node'));
+  for (const entry of await readdir(binaries, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name !== platform) await rm(join(binaries, entry.name), { recursive: true });
+    else for (const cpu of await readdir(join(binaries, platform), { withFileTypes: true })) {
+      if (cpu.isDirectory() && cpu.name !== arch) await rm(join(binaries, platform, cpu.name), { recursive: true });
+    }
+  }
+}
 export async function buildRelease(configPath, outputDir) {
   const config = JSON.parse(await readFile(configPath, 'utf8'));
   const base = dirname(resolve(configPath));
@@ -35,6 +46,7 @@ export async function buildRelease(configPath, outputDir) {
     const root = join(work, 'sass');
     await mkdir(root);
     for (const path of ['dist', 'node_modules', 'assets', 'package.json', 'LICENSE']) await copyInput(join(input('appDir'), path), join(root, path), { filter: (source) => !source.includes('/assets/screenshots') });
+    await pruneOnnxRuntimeTargets(root, process.platform, process.arch);
     await mkdir(join(root, 'scripts'));
     await copyInput(join(input('appDir'), 'scripts/sass.sh'), join(root, 'scripts/sass.sh'));
     await cp(join(here, 'validate-bundle.mjs'), join(root, 'scripts/validate-bundle.mjs'));
@@ -56,7 +68,7 @@ export async function buildRelease(configPath, outputDir) {
     }
     const files = await inventory(root);
     const payloadBytes = files.reduce((total, file) => total + (file.bytes || 0), 0);
-    const manifest = { schemaVersion: 1, version: config.version, platform: target, node, model, payloadBytes, unpackedBytes: payloadBytes, files };
+    const manifest = { schemaVersion: 1, version: config.version, platform: target, minimumMacOS: '15.0', node, model, payloadBytes, unpackedBytes: payloadBytes, files };
     while (manifest.unpackedBytes !== payloadBytes + Buffer.byteLength(JSON.stringify(manifest, null, 2) + '\n')) manifest.unpackedBytes = payloadBytes + Buffer.byteLength(JSON.stringify(manifest, null, 2) + '\n');
     await writeFile(join(root, 'bundle-manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
     await validateBundle(root);
@@ -66,7 +78,7 @@ export async function buildRelease(configPath, outputDir) {
     const archiveName = `sass-v${config.version}-${target}.tar.gz`;
     const archive = join(work, archiveName);
     createReleaseArchive(root, archive);
-    const release = { schemaVersion: 1, version: config.version, platform: target, archive: archiveName, bytes: (await stat(archive)).size, sha256: await sha256(archive), unpackedBytes: manifest.unpackedBytes, model: { id: model.id, revision: model.revision, dtype: model.dtype, dimension: model.dimension } };
+    const release = { schemaVersion: 1, version: config.version, platform: target, minimumMacOS: '15.0', archive: archiveName, bytes: (await stat(archive)).size, sha256: await sha256(archive), unpackedBytes: manifest.unpackedBytes, model: { id: model.id, revision: model.revision, dtype: model.dtype, dimension: model.dimension } };
     const destination = join(resolve(outputDir), archiveName);
     await cp(archive, destination, { mode: constants.COPYFILE_EXCL, errorOnExist: true, force: false });
     outputs.push(destination);
