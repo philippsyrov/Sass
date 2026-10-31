@@ -1,3 +1,4 @@
+import { forwardWorkerOutput } from '../shared/workerOutput.js';
 /**
  * Embedded PostgreSQL for zero-install local dev (embedded-postgres npm package).
  * Data persists under `.sass-data/postgres/`. Started from connectPool(), stopped on shutdown.
@@ -129,9 +130,13 @@ function startWorker(config: LocalDbConfig, initialised: boolean): WorkerState {
   // of the application's terminal process group so the pool can drain first.
   const child = fork(new URL(source ? './embeddedPostgresWorker.ts' : './embeddedPostgresWorker.js', import.meta.url), [], {
     detached: true,
-    stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     execArgv: source ? ['--import', 'tsx'] : [],
   });
+  // Drain worker output through the application so terminal hangup can silence
+  // the lost TTY without blocking the detached database worker's own shutdown.
+  forwardWorkerOutput(child.stdout, process.stdout);
+  forwardWorkerOutput(child.stderr, process.stderr);
   let resolveReady: () => void;
   let rejectReady: (error: Error) => void;
   const ready = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });

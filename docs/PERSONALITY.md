@@ -7,7 +7,7 @@ How Sass decides when to talk, how she feels about each person, and how her tone
 Every message in a server goes through `src/events/messageCreate.ts`, in this order:
 
 1. **@Sass in the message.** She always handles it (`handleMention` in `src/handlers/mention/index.ts`). The exceptions are the per-user cooldown and the spam checks under [Ignoring](#ignoring).
-2. **Reply to one of her messages.** If the reply has 3 or more words, there's a 70% chance she answers. Shorter replies ("lol", "💀") drop through to step 4.
+2. **Reply to one of her messages.** If the reply has 3 or more words, there's a 70% chance she enters the auto-sass handler, which may reply, react or skip after its remaining checks. Shorter replies ("lol", "💀") drop through to step 4.
 3. **"sass" anywhere in the message** (but not "sassy"). A message that's only one or two words gets a canned "what" / "you rang?". Longer ones go straight to the model, skipping the dice.
 4. **Everything else goes to auto-sass** (`handleAutoSass` in `src/handlers/autoSass.ts`).
 
@@ -15,7 +15,7 @@ All users use the same auto-sass eligibility and cooldown rules.
 
 ### Auto-sass: the dice roll
 
-Every message is counted per channel. She only rolls if all of these hold:
+Messages that reach the auto-sass handler are counted per channel; messages handled or filtered earlier are excluded. For unsolicited auto-sass, she only rolls if all of these hold:
 
 | Gate | Value | Where |
 | --- | --- | --- |

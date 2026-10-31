@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { forwardWorkerOutput } from '../dist/shared/workerOutput.js';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import test from 'node:test';
@@ -37,7 +38,7 @@ function embeddedHarness(configText) {
     child.disconnect = () => { child.connected = false; queueMicrotask(() => child.emit('exit', 0, null)); };
     return child;
   };
-  const api = loadSource('../src/database/embeddedPostgres.ts', { fs, child_process: { fork } });
+  const api = loadSource('../src/database/embeddedPostgres.ts', { fs, child_process: { fork }, '../shared/workerOutput.js': { forwardWorkerOutput } });
   return { api, operations };
 }
 

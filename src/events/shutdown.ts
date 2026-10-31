@@ -1,3 +1,4 @@
+import { registerShutdownSignals } from '../shared/shutdownSignals.js';
 import type { Client } from 'discord.js';
 
 interface ShutdownResources {
@@ -50,6 +51,5 @@ export function setupShutdown(client: Client): void {
     log: console.log,
     error: console.error,
   });
-  process.on('SIGTERM', () => void shutdown('SIGTERM'));
-  process.on('SIGINT', () => void shutdown('SIGINT'));
+  registerShutdownSignals((signal) => { void shutdown(signal); });
 }

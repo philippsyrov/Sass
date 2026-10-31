@@ -1,3 +1,4 @@
+import { registerShutdownSignals } from '../shared/shutdownSignals.js';
 /**
  * Track setup subprocesses and in-flight HTTP work so Ctrl+C cancels everything.
  */
@@ -91,11 +92,9 @@ export function installSetupCancelHandlers(onCancel: () => void): () => void {
     cancelAllActiveWork();
     onCancel();
   };
-  process.on('SIGINT', handler);
-  process.on('SIGTERM', handler);
+  const removeSignals = registerShutdownSignals(handler);
   const remove = (): void => {
-    process.off('SIGINT', handler);
-    process.off('SIGTERM', handler);
+    removeSignals();
     if (removeSetupHandlers === remove) removeSetupHandlers = undefined;
   };
   removeSetupHandlers = remove;

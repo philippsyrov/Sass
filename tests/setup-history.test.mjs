@@ -180,9 +180,10 @@ test('a split CRLF after a secret does not submit the next prompt', { timeout: 6
   const from = wizard.output().length;
   wizard.child.stdin.write(`${token}\r`);
   await wizard.until('Your Discord user ID (CREATOR_ID)', from);
-  wizard.child.stdin.write('\nPUBLIC_MARKER\n');
+  wizard.child.stdin.write('\nPUBLIC_MARKER');
   const output = await wizard.until('PUBLIC_MARKER', from);
   assert.ok(!output.includes('234567890123456789'), 'CRLF must not submit CREATOR_ID early');
+  assert.ok(!output.includes('Check the token with Discord now?'), 'CRLF must not advance past CREATOR_ID');
   await wizard.answer('', 'Your Discord user ID (CREATOR_ID)');
 });
 

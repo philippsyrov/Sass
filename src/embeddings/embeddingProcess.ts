@@ -1,3 +1,4 @@
+import { forwardWorkerOutput } from '../shared/workerOutput.js';
 import { fork, type ChildProcess } from 'node:child_process';
 import type { EmbedProgress } from './localEmbedConfig.js';
 
@@ -32,7 +33,10 @@ export function createEmbeddingProcess(worker: URL, timeoutMs = 120_000) {
     for (const key of ['HOME', 'PATH', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL', 'SystemRoot']) {
       if (process.env[key]) env[key] = process.env[key];
     }
-    const instance = fork(worker, [], { env: env as NodeJS.ProcessEnv, execArgv: worker.pathname.endsWith('.ts') ? ['--import', 'tsx'] : [], stdio: ['ignore', 'ignore', 'inherit', 'ipc'] });
+    const instance = fork(worker, [], { env: env as NodeJS.ProcessEnv, execArgv: worker.pathname.endsWith('.ts') ? ['--import', 'tsx'] : [], stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+    forwardWorkerOutput(instance.stderr, process.stderr);
+    // Idle inference must not keep Sass alive solely for this diagnostic pipe.
+    (instance.stderr as (NodeJS.ReadableStream & { unref?: () => void }) | null)?.unref?.();
     child = instance;
     instance.on('message', (message: Reply) => {
       if (!message || !Number.isSafeInteger(message.id)) return;

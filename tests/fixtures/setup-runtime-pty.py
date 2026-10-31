@@ -20,6 +20,7 @@ const stop = signal => {
 };
 process.on('SIGINT', () => stop('SIGINT'));
 process.on('SIGTERM', () => stop('SIGTERM'));
+process.on('SIGHUP', () => stop('SIGHUP'));
 setInterval(() => {}, 1000);
 console.log('CHILD_READY');
 if (process.env.SASS_TEST_RUNTIME_NORMAL === '1') setTimeout(() => { console.log('CHILD_NORMAL_DONE'); process.exit(7); }, 100);
@@ -74,7 +75,9 @@ if (process.env.SASS_TEST_RUNTIME_NORMAL === '1') setTimeout(() => { console.log
                 ('token', b'Discord bot token', b'\x03'),
                 ('start', b'Setup is ready. Enter to start Sass.', b'\r'),
             ]:
-                if prompt in output and label not in sent and (label != 'token' or mode == 'setup-cancel'):
+                if (prompt in output and label not in sent
+                    and (label != 'token' or mode == 'setup-cancel')
+                    and (label != 'start' or b'SASS_TEST_ACTION_READY' in output)):
                     sent.add(label)
                     stage('answering ' + label)
                     os.write(master, answer)
@@ -87,7 +90,8 @@ if (process.env.SASS_TEST_RUNTIME_NORMAL === '1') setTimeout(() => { console.log
                     stage('runtime ready')
                     runtime_state = termios.tcgetattr(master)
                     if mode != 'normal':
-                        if mode == 'terminate': os.killpg(os.tcgetpgrp(master), signal.SIGTERM)
+                        if mode == 'hangup': os.killpg(os.tcgetpgrp(master), signal.SIGHUP)
+                        elif mode == 'terminate': os.killpg(os.tcgetpgrp(master), signal.SIGTERM)
                         else: os.write(master, b'\x03')
                         repeated_at = time.monotonic() + .04
             if repeated_at is not None and time.monotonic() >= repeated_at and 'repeat' not in sent:
@@ -131,7 +135,7 @@ if (process.env.SASS_TEST_RUNTIME_NORMAL === '1') setTimeout(() => { console.log
             shell.kill(); shell.wait(timeout=2)
         stage('PTY closed')
     text = output.decode(errors='replace')
-    markers = ['CHILD_STOP_BEGIN:SIGINT', 'CHILD_STOP_BEGIN:SIGTERM', 'CHILD_STOP_DONE', 'CHILD_NORMAL_DONE', 'PARENT_EXIT:0', 'PARENT_EXIT:7', 'PARENT_EXIT:130', 'Setup cancelled.', 'ollama rm']
+    markers = ['CHILD_STOP_BEGIN:SIGHUP', 'CHILD_STOP_BEGIN:SIGINT', 'CHILD_STOP_BEGIN:SIGTERM', 'CHILD_STOP_DONE', 'CHILD_NORMAL_DONE', 'PARENT_EXIT:0', 'PARENT_EXIT:7', 'PARENT_EXIT:130', 'Setup cancelled.', 'ollama rm']
     print(json.dumps({
         'markers': {marker: text.count(marker) for marker in markers},
         'shutdownBeforeParentExit': text.find('CHILD_STOP_DONE') >= 0 and text.find('CHILD_STOP_DONE') < text.rfind('PARENT_EXIT:'),

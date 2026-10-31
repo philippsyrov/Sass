@@ -15,6 +15,7 @@ pool.on('error', (error) => { console.error('Unexpected pool error:', error.mess
 await pool.query('CREATE TABLE IF NOT EXISTS lifecycle_probe (value text NOT NULL)');
 await pool.query("INSERT INTO lifecycle_probe VALUES ('retained')");
 const result = await pool.query('SELECT count(*) AS count FROM lifecycle_probe');
+const { registerShutdownSignals } = await import('../../src/shared/shutdownSignals.ts');
 const shutdown = createShutdownHandler({
   flushMemory: async () => {
     await pool.query('SELECT pg_sleep(0.2)');
@@ -23,7 +24,6 @@ const shutdown = createShutdownHandler({
   closeClient: async () => {}, closeEmbedder: async () => {}, closeDatabase: async () => { await Promise.all([closeDatabase(), closeDatabase()]); },
   exit: (code) => process.exit(code), log: console.log, error: console.error,
 });
-process.on('SIGINT', () => void shutdown('SIGINT'));
-process.on('SIGTERM', () => void shutdown('SIGTERM'));
+registerShutdownSignals(signal => void shutdown(signal));
 process.send({ type: 'ready', count: Number(result.rows[0].count) });
 setInterval(() => {}, 1000);
