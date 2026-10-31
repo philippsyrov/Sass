@@ -26,4 +26,6 @@ jobs:
       - name: Verify
         run: npm run verify
       - name: Full test suite
+        env:
+          SASS_DISPOSABLE_MAC_RUNNER: '1'
         run: node --test --test-concurrency=1 --test-timeout=60000 tests/*.test.mjs
