@@ -5,7 +5,7 @@ import test from 'node:test';
 import { stripVTControlCharacters } from 'node:util';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import React from 'react';
+import React, { act } from 'react';
 import { render } from 'ink';
 import { SetupView } from '../dist/setup/tui/SetupView.js';
 import { cancelInkPrompt, inkAction, inkAskText, inkConfirm, inkSelect, pushDoneLine, pushInkMessage, setInkStep } from '../dist/setup/tui/prompterBridge.js';
@@ -77,7 +77,7 @@ test('Ink provider selection fits within an 80 by 24 terminal after answered que
 test('Ink does not briefly show the previous secret when a public field opens', async (t) => {
   const response = inkAskText('Secret input', { secret: true });
   const ui = await mount(t);
-  ui.stdin.write('dummy-private-input');
+  await act(async () => { ui.stdin.write('dummy-private-input'); });
   await ui.until('••••');
   ui.stdin.write('\r');
   assert.equal(await response, 'dummy-private-input');
@@ -98,11 +98,16 @@ test('real Ink runner restores the terminal before its cancel handler exits', { 
     await runInkSetup(async p => { await p.ask('CANCEL_TEST_PROMPT'); return null; }, () => {
       process.stdout.write('CANCEL_TEST_DONE'); process.exit(130);
     });
-  `], { stdio: ['pipe', 'pipe', 'pipe'] });
+  `], { env: { ...process.env, CI: 'false' }, stdio: ['pipe', 'pipe', 'pipe'] });
   const exited = once(child, 'close');
-  t.after(() => { if (child.exitCode === null) child.kill(); });
   let output = '';
   let sent = false;
+  t.after(() => {
+    if (child.exitCode === null) {
+      t.diagnostic(`runner pending: prompt=${output.includes('CANCEL_TEST_PROMPT')} sent=${sent} outputBytes=${Buffer.byteLength(output)}`);
+      child.kill();
+    }
+  });
   child.stdout.on('data', chunk => {
     output += chunk;
     if (!sent && output.includes('CANCEL_TEST_PROMPT')) { sent = true; child.stdin.write('\x03'); }
@@ -212,11 +217,16 @@ test('inherited installer screen captures console and subprocess output without 
       await p.ask('LAST_FRAME_PROMPT');
       return null;
     }, () => process.exit(130));
-  `], { env: { ...process.env, SASS_INSTALL_FRAME: '1' }, stdio: ['pipe', 'pipe', 'pipe'] });
+  `], { env: { ...process.env, CI: 'false', SASS_INSTALL_FRAME: '1' }, stdio: ['pipe', 'pipe', 'pipe'] });
   const exited = once(child, 'close');
-  t.after(() => { if (child.exitCode === null) child.kill(); });
   let output = '';
   const sent = new Set();
+  t.after(() => {
+    if (child.exitCode === null) {
+      t.diagnostic(`runner pending: first=${sent.has('FIRST_FRAME_PROMPT')} last=${sent.has('LAST_FRAME_PROMPT')} childMessage=${output.includes('CHILD_MESSAGE')} outputBytes=${Buffer.byteLength(output)}`);
+      child.kill();
+    }
+  });
   child.stdout.on('data', chunk => {
     output += chunk;
     for (const prompt of ['FIRST_FRAME_PROMPT', 'LAST_FRAME_PROMPT']) {
