@@ -75,7 +75,9 @@ if (process.env.SASS_TEST_RUNTIME_NORMAL === '1') setTimeout(() => { console.log
                 ('token', b'Discord bot token', b'\x03'),
                 ('start', b'Setup is ready. Enter to start Sass.', b'\r'),
             ]:
-                if prompt in output and label not in sent and (label != 'token' or mode == 'setup-cancel'):
+                if (prompt in output and label not in sent
+                    and (label != 'token' or mode == 'setup-cancel')
+                    and (label != 'start' or b'SASS_TEST_ACTION_READY' in output)):
                     sent.add(label)
                     stage('answering ' + label)
                     os.write(master, answer)
