@@ -117,8 +117,8 @@ test('bundle consent shows readable sizes, destination and model terms', () => {
 
 
 test('Ctrl+C cancels bundle metadata loading before consent', () => {
-  const { code, restored, stateExists } = run('bundle-metadata-cancel');
-  assert.equal(code, 130);
+  const { code, restored, stateExists, diagnostics } = run('bundle-metadata-cancel');
+  assert.equal(code, 130, JSON.stringify(diagnostics));
   assert.equal(restored, true);
   assert.equal(stateExists, false);
 });

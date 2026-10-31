@@ -18,10 +18,13 @@ run_setup_wizard() {
 }
 if [[ "$SASS_TEST_BUNDLE" = 1 ]]; then
   load_bundle_installer() { :; }
-  sass_bundle_prepare() { if [[ "$SASS_TEST_METADATA_WAIT" = 1 ]]; then installer_out SIMULATED_METADATA_WAIT; sleep 30; fi; SASS_BUNDLE_BYTES=123456; SASS_BUNDLE_UNPACKED_BYTES=654321; }
+  sass_bundle_prepare() { if [[ "$SASS_TEST_METADATA_WAIT" = 1 ]]; then installer_out SIMULATED_METADATA_WAIT; printf 'after-render\n' >>"$SASS_TEST_AUDIT"; sleep 30; fi; SASS_BUNDLE_BYTES=123456; SASS_BUNDLE_UNPACKED_BYTES=654321; }
 fi
 main
 '''
+    audit = pathlib.Path(work) / 'signal-audit'
+    if mode == 'bundle-metadata-cancel':
+        script = script.replace("trap 'exit 130' INT", "trap 'printf \"trap-entered\\n\" >>\"$SASS_TEST_AUDIT\"; exit 130' INT")
     script_path = pathlib.Path(work) / 'run.sh'
     if mode == 'piped':
         script = 'curl() { cp "$SASS_TEST_UI" "$4"; }\n' + script
@@ -32,6 +35,7 @@ main
     original_state = termios.tcgetattr(slave)
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 24, 80, 0, 0))
     env = dict(os.environ, SASS_TEST_METADATA_WAIT='1' if mode == 'bundle-metadata-cancel' else '0', SASS_TEST_BUNDLE='1' if mode.startswith('bundle-') else '0', SASS_SOURCE_INSTALL='0' if mode.startswith('bundle-') else '1', SASS_SETUP_INK='1', SASS_SETUP_ADVANCED='1', TERM='xterm-256color', SASS_DIR=work+'/absent', SASS_HOME=work+'/state', SASS_BIN_DIR=work+'/bin', SASS_TEST_FAIL='1' if mode == 'fail' else '0', SASS_TEST_WAIT='1' if mode == 'cancel-work' else '0', SASS_TEST_HANDOFF='1' if mode == 'handoff' else '0', SASS_TEST_NODE=os.environ.get('SASS_TEST_NODE', 'node'), SASS_TEST_SETUP=str(root/'tests/fixtures/install-ink.mjs'), SASS_TEST_UI=str(pathlib.Path(work)/'scripts/install-ui.sh'))
+    env['SASS_TEST_AUDIT'] = str(audit)
     for key in ['CI', 'NO_COLOR', 'SASS_SETUP_NO_MASCOT', 'SASS_INSTALL_ASSUME_YES']:
         env.pop(key, None)
     def terminal():
@@ -46,6 +50,7 @@ main
     answered = closed = False
     setup_answered = set()
     canceled_work = False
+    signal_state = {}
     resized = False
     small_start = small_end = 0
     premature_close = False
@@ -60,6 +65,8 @@ main
             output += data
         if mode == 'bundle-metadata-cancel' and not canceled_work and b'SIMULATED_METADATA_WAIT' in output:
             canceled_work = True
+            attributes = termios.tcgetattr(master)
+            signal_state = {'isig': bool(attributes[3] & termios.ISIG), 'vintrCtrlC': attributes[6][termios.VINTR] in (b'\x03', 3), 'foregroundMatches': os.tcgetpgrp(master) == child.pid}
             os.write(master, b'\x03')
         if not answered and b'Continue?' in output:
             answered = True
@@ -102,9 +109,11 @@ main
             closed = True
             os.write(master, b'\n')
         if child.poll() is not None: break
-    if child.poll() is None:
+    timed_out = child.poll() is None
+    if timed_out:
         child.kill()
     code = child.wait()
     restored = termios.tcgetattr(master) == original_state
     os.close(master)
-    print(json.dumps({'output': output.decode(errors='replace'), 'code': code, 'prematureClose': premature_close, 'restored': restored, 'smallOutput': output[small_start:small_end].decode(errors='replace'), 'stateExists': pathlib.Path(work+'/state').exists()}))
+    audit_lines = audit.read_text().splitlines() if audit.exists() else []
+    print(json.dumps({'output': output.decode(errors='replace'), 'code': code, 'prematureClose': premature_close, 'restored': restored, 'smallOutput': output[small_start:small_end].decode(errors='replace'), 'stateExists': pathlib.Path(work+'/state').exists(), 'diagnostics': {'metadataMarker': b'SIMULATED_METADATA_WAIT' in output, 'cancelSent': canceled_work, 'consentSeen': answered, 'timedOut': timed_out, **signal_state, 'trapEntered': 'trap-entered' in audit_lines, 'afterRender': 'after-render' in audit_lines}}))
