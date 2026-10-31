@@ -80,7 +80,6 @@ sass_bundle_prepare() {
   [[ "$SASS_BUNDLE_MODEL" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ && "$SASS_BUNDLE_REVISION" =~ ^[a-f0-9]{40}$ && "$SASS_BUNDLE_DTYPE" =~ ^[A-Za-z0-9_]+$ && "$SASS_BUNDLE_DIMENSION" =~ ^[1-9][0-9]{0,4}$ ]] || die 'Release model details are invalid.'
   SASS_BUNDLE_ARCHIVE="$archive"
   SASS_BUNDLE_URL="${manifest_url%/*}/$archive"
-  SASS_BUNDLE_VERSION="$version"
 }
 
 sass_bundle_check_archive() {
