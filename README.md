@@ -40,6 +40,12 @@ curl -fsSL https://raw.githubusercontent.com/philippsyrov/Sass/main/install.sh |
 
 The bundle includes a private Node 24 runtime, built bot, local PostgreSQL, pinned memory-search model and standard artwork. These are required parts of the normal local setup; you do not need to install Git, npm, a compiler or a separate database. The installer shows the size, destinations and model terms before proceeding. It does not silently download a replacement model.
 
+A fixed terminal screen keeps the current step and download progress visible, with command output kept out of the main flow.
+
+<p align="center">
+  <img src="assets/readme/local-installer.png" alt="Sass terminal installer showing the download size, included components and installation location" width="960">
+</p>
+
 Before setup, prepare these:
 
 1. In the [Discord Developer Portal](https://discord.com/developers/applications), create an application. Under **Bot**, reset and copy the bot token. Keep it private.
@@ -63,6 +69,12 @@ sass doctor      # check readiness without downloading a model
 Keep the terminal running while using Sass. Ctrl+C stops the bot and local database; closing or sleeping the computer takes her offline. Local data persists between runs. Run only one bot instance per token.
 
 The ready-to-run bundle requires **macOS 15 or newer on Apple Silicon**. Intel Mac, Linux and Windows bundles are not yet verified.
+
+#### Updating
+
+Stop Sass with Ctrl+C, then run the installation command above again. When setup asks **“Go through setup and update it?”**, press **Enter** to keep the existing configuration. Start her again with `sass start`.
+
+The update retains your bot token, API keys, settings and saved memories. The previous installation is kept beside the Sass folder for recovery; no uninstall or new Discord application is needed.
 
 ### Source and server setup
 
